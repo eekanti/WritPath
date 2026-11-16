@@ -351,13 +351,13 @@ local function BestOrder(start, stops, quick)
 end
 
 -- writs in your bags or quest log; one per customer today, the rest wait for tomorrow
-local function PlanOwned()
+local function PlanOwned(only, skipQuest)   -- only: just these writ ids; skipQuest: a quest just handed in
   Travel.Reset(); ResetMemo()
   local used = UsedToday()
   local stops, later, unknown, byCustomer = {}, {}, {}, {}
   local owned = {}
   for id, w in pairs(DB) do
-    if (Count(id) > 0 or InLog(w.q)) and not Done(w.q) then owned[#owned + 1] = id end
+    if (Count(id) > 0 or InLog(w.q)) and not Done(w.q) and w.q ~= skipQuest and (not only or only[id]) then owned[#owned + 1] = id end
   end
   table.sort(owned, function(a, b)    -- higher rep first, so a shared customer gets the better writ today
     local ra, rb = REP[DB[a].tier] or 0, REP[DB[b].tier] or 0
@@ -1125,7 +1125,12 @@ ev:RegisterEvent("QUEST_TURNED_IN")
 ev:RegisterEvent("TAXIMAP_OPENED")
 ev:SetScript("OnEvent", function(_, event, a1)
   if event == "QUEST_COMPLETE" or event == "QUEST_PROGRESS" then NoteTurnin(); return end
-  if event == "QUEST_TURNED_IN" then LearnTurnin(a1); return end
+  if event == "QUEST_TURNED_IN" then
+    LearnTurnin(a1)
+    local q = a1
+    C_Timer.After(1.5, function() if WritPath_RerouteFromHere then WritPath_RerouteFromHere(q) end end)
+    return
+  end
   if event == "TAXIMAP_OPENED" then
     local n = Travel.RecordFlightPaths()
     if n and n > 0 then Print(("Recorded %d flight paths for route planning."):format(n)) end
@@ -1162,6 +1167,26 @@ end
 -- After buying: the route is rebuilt from the writs and items you actually have (bags and mail), so a writ
 -- that wasn't bought drops out, an item you're still missing shows up as a shopping step, and the shopping
 -- list keeps only what that route needs. Called when you close the auction house.
+-- After each hand-in of a route writ: the rest of the trip is worked out again from where you stand, with
+-- everything WritPath knows now (flight paths placed, roads learned since the route started), and the
+-- remaining customers in the best order from here. Only the writs still on the route are used.
+function WritPath_RerouteFromHere(q)
+  if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
+  local left, onRoute = {}, false
+  for _, st in ipairs(WritPathNav.route) do
+    if st.writ and DB[st.writ] then
+      if DB[st.writ].q == q then onRoute = true elseif not Done(DB[st.writ].q) then left[st.writ] = true end
+    end
+  end
+  if not onRoute or not next(left) then return end
+  local plan = PlanOwned(left, q)
+  if #plan.route == 0 then return end
+  WritPath_SetRoute(Steps(plan), WritPathNav.title, WritPathNav.doneText)
+  local nxt = plan.route[1]
+  Print(("Rerouted from here: next %s (%s), %d writs left, ~%d min."):format(nxt.w.name, nxt.c.npc or MapName(nxt.c.map),
+    #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))
+end
+
 function WritPath_ReplanFromBags()
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
   local before = {}

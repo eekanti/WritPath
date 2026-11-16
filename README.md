@@ -100,6 +100,8 @@ The guide window shows the next steps, and an arrow on screen points to the curr
 - **Road crossings and docks** finish once you're within 200 yards. If you take another road and reach a later
   one first, the guide catches up.
 - **Customer** steps finish only when you hand the writ in.
+- After each hand-in, the rest of the trip is worked out again from where you stand, with everything WritPath
+  knows by then, and chat says what's next.
 - If a step gets stuck, `/writs next` skips it and `/writs back` undoes that.
 
 The footer under the guide shows the running plan's money: **cost** (what you actually paid once you've bought,

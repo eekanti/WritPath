@@ -90,6 +90,16 @@ local function InZone(zones)
   for _, a in ipairs(zones or {}) do if m == a or z == a then return true end end
   return false
 end
+-- the zones whose arrival finishes a step: never the zone the step itself starts in (a flight from Grom'gol
+-- to Booty Bay lands in Stranglethorn, where you already are: being there says nothing)
+local function ArriveZones(s)
+  local d = s and s.done
+  if not (d and d.arrive) then return nil end
+  local own = s.at and (WritPath_Travel and WritPath_Travel.ZoneOf(s.at[1]) or s.at[1])
+  local t = {}
+  for _, a in ipairs(d.arrive) do if a ~= own and (not s.at or a ~= s.at[1]) then t[#t + 1] = a end end
+  return #t > 0 and t or nil
+end
 
 -- Only the current step is tested, and a step once done stays done (WritPathNav.manual),
 -- so landing after a flight or leaving a zone never sends the guide back.
@@ -113,11 +123,7 @@ local function StepDone(i)
     end
   end
   if d.taxi and UnitOnTaxi("player") then hit = true end
-  if d.arrive then
-    local m = PlayerMap()
-    local z = WritPath_Travel and WritPath_Travel.ZoneOf(m) or m
-    for _, a in ipairs(d.arrive) do if m == a or z == a then hit = true end end
-  end
+  if d.arrive and InZone(ArriveZones(s)) then hit = true end
   -- a waypoint on the way (road crossing, dock) is done once you're close to it; a flight master only once
   -- you've taken the flight (or landed), a writ customer only when you've handed the writ in
   if not hit and TravelStep(s) and not d.taxi and Near(s) then hit = true end
@@ -265,7 +271,7 @@ function Refresh(announce)
   for i = cur + 1, TravelStep(ROUTE[cur]) and #ROUTE or 0 do
     local s = ROUTE[i]
     if not TravelStep(s) then break end
-    if Near(s) or InZone(s.done.arrive) then
+    if Near(s) or InZone(ArriveZones(s)) then
       for j = cur, i - 1 do WritPathNav.manual[j] = true end
       cur = i
       while ROUTE[cur] and StepDone(cur) do cur = cur + 1 end
