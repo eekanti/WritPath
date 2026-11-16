@@ -606,6 +606,30 @@ end
 
 local function ZoneName(m) local i = MapInfo(m); return i and i.name or "?" end
 
+-- zeppelins and boats by where they leave from and where they land: { kind, where to board, where it lands }
+local SHIP_NAMES = {
+  [1411] = { [1434] = { "zeppelin", "the zeppelin tower outside Orgrimmar", "Grom'gol Base Camp" },
+             [1420] = { "zeppelin", "the zeppelin tower outside Orgrimmar", "the Undercity zeppelin tower, Tirisfal Glades" } },
+  [1420] = { [1434] = { "zeppelin", "the zeppelin tower outside the Undercity", "Grom'gol Base Camp" },
+             [1411] = { "zeppelin", "the zeppelin tower outside the Undercity", "the Orgrimmar zeppelin tower, Durotar" } },
+  [1434] = { [1411] = { "zeppelin", "the Grom'gol zeppelin tower", "the Orgrimmar zeppelin tower, Durotar" },
+             [1420] = { "zeppelin", "the Grom'gol zeppelin tower", "the Undercity zeppelin tower, Tirisfal Glades" },
+             [1413] = { "boat", "the Booty Bay dock", "Ratchet, The Barrens" } },
+  [1413] = { [1434] = { "boat", "the Ratchet dock", "Booty Bay, Stranglethorn Vale" } },
+  [1456] = { [1458] = { "zeppelin", "the Thunder Bluff zeppelin", "the Undercity" } },
+  [1458] = { [1456] = { "zeppelin", "the Undercity zeppelin", "Thunder Bluff" } },
+  [1454] = { [1418] = { "zeppelin", "the Orgrimmar zeppelin", "the Badlands" } },
+  [1418] = { [1454] = { "zeppelin", "the Badlands zeppelin", "Orgrimmar" } },
+  [2548] = { [1446] = { "boat", "the Powderfuse Port dock", "Steamwheedle Port, Tanaris" } },
+  [1446] = { [2548] = { "boat", "the Steamwheedle Port dock", "Powderfuse Port, Riverglades" } },
+}
+local function ShipText(from, to)
+  local n = SHIP_NAMES[from] and SHIP_NAMES[from][to]
+  if not n then return "{boat} Take the boat or zeppelin to |cFF00FF25" .. ZoneName(to) .. "|r" end
+  return ("{%s} Go to %s and take the %s to |cFF00FF25%s|r"):format(n[1] == "zeppelin" and "zeppelin" or "boat", n[2], n[1], n[3])
+end
+T.ShipText = ShipText
+
 -- the waypoints on the way from a to b: { kind, at = point, into = zone, text }
 function T.Legs(a, b)
   local _, via, r = T.Time(a, b)
@@ -630,7 +654,7 @@ function T.Legs(a, b)
                           text = "{goto} Ride into |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
     elseif k == "sail" then
       legs[#legs + 1] = { kind = "sail", at = c.from.p, into = c.to.zone,
-                          text = "{boat} Take the ship to |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
+                          text = ShipText(c.from.zone, c.to.zone) }
     elseif k == "fly" then
       local secs = FlightTime(c.from.fpid, c.to.fpid)
       local town = function(n) return (n or ""):match("^([^,]+)") or n end

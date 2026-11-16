@@ -797,7 +797,9 @@ local function TravelSteps(steps, from, to, suggested)
     else
       local what = leg.kind == "cross" and ("To " .. MapName(leg.into))
                 or leg.kind == "fly" and (leg.fp or "Flight master") or "Dock"
-      local done = leg.kind == "fly" and { taxi = true, arrive = { leg.into } } or { arrive = { leg.into } }
+      -- a flight is done once you take off, a boat or zeppelin once you land (not on reaching the dock)
+      local done = leg.kind == "fly" and { taxi = true, arrive = { leg.into } }
+                or leg.kind == "sail" and { sail = true, arrive = { leg.into } } or { arrive = { leg.into } }
       steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, lines = { leg.text }, done = done, fpid = leg.fpid }
     end
   end

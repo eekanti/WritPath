@@ -124,9 +124,9 @@ local function StepDone(i)
   end
   if d.taxi and UnitOnTaxi("player") then hit = true end
   if d.arrive and InZone(ArriveZones(s)) then hit = true end
-  -- a waypoint on the way (road crossing, dock) is done once you're close to it; a flight master only once
-  -- you've taken the flight (or landed), a writ customer only when you've handed the writ in
-  if not hit and TravelStep(s) and not d.taxi and not d.taxiMap and Near(s) then hit = true end
+  -- a waypoint on the way (a road crossing) is done once you're close to it; a flight master only once you've
+  -- taken the flight (or landed), a boat or zeppelin once you land, a writ customer only when you've handed it in
+  if not hit and TravelStep(s) and not d.taxi and not d.taxiMap and not d.sail and Near(s) then hit = true end
   if hit then WritPathNav.manual[i] = true end
   return hit
 end
