@@ -305,15 +305,15 @@ ev:SetScript("OnEvent", function(_, event, a1)
   end
 end)
 
--- what one unit costs when you need n of them, from WritPath's scan: commodities can be bought a unit at a time,
--- other listings only whole (a stack of 6 writs costs all 6). nil when the scan didn't see it.
+-- what one unit costs when you need n of them, from WritPath's scan: the cheapest units first (on this auction house
+-- every purchase buys one at a time, items and commodities alike). nil when the scan didn't see it.
 function WritPath_ScanPrice(id, n)
   local e = WritPathPrices and WritPathPrices.items and WritPathPrices.items[id]
   if not (e and e.l and e.l[1]) then return nil end
   n = math.max(1, n or 1)
   local got2, cost = 0, 0
   for _, x in ipairs(e.l) do
-    local take = e.c and math.min(x[2], n - got2) or x[2]
+    local take = math.min(x[2], n - got2)
     got2, cost = got2 + take, cost + take * x[1]
     if got2 >= n then break end
   end

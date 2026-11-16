@@ -35,11 +35,14 @@ end
 ---------------------------------------------------------------- the list
 -- { id, name, total = how many you need, unit = price the plan was built on, base = in your bags when the
 --   list was made, bought = bought here since (may still be in the mail) }
+local ahOpen = false   -- the auction house window is open right now
 function WritPath_SetShopList(list)
   for _, it in ipairs(list or {}) do it.base, it.bought = Count(it.id), 0 end
   WritPathNav.shopList = list
   WritPathNav.shopAt = time()
-  if WritPath_BuyerRefresh then WritPath_BuyerRefresh() end
+  -- a plan started with the auction house already open: open the list right away
+  if ahOpen and WritPath_BuyerOpen then WritPath_BuyerOpen(true)
+  elseif WritPath_BuyerRefresh then WritPath_BuyerRefresh() end
 end
 
 local state = { phase = "idle" }   -- idle, searching, ready, over, none, quote, confirm, buying, unsure, done
@@ -382,23 +385,19 @@ local function ChooseCommodity(it, itemID)
   return { kind = "commodity", itemID = itemID, qty = got, total = total, unit = total / got, top = top }
 end
 
--- items: the cheapest auction that doesn't give you more than you need, else the cheapest one in total
+-- items: the cheapest listing. A row's quantity is how many are available at that price, and each purchase buys one
+-- of them for the listed buyout (the game's own "Buyout auction for 99s 99c"), so the cheapest row always wins.
 local function ChooseItem(it, itemKey)
-  local need, fit, any, perUnit = Need(it), nil, nil, nil
+  local best
   for i = 1, C_AuctionHouse.GetNumItemSearchResults(itemKey) do
     local r = C_AuctionHouse.GetItemSearchResultInfo(itemKey, i)
     if r and r.buyoutAmount and r.buyoutAmount > 0 and not (r.containsOwnerItem or r.containsAccountItem) then
-      local q = r.quantity or 1
-      local l = { kind = "item", auctionID = r.auctionID, qty = q, total = r.buyoutAmount, unit = r.buyoutAmount / q }
-      if q <= need and (not fit or l.unit < fit.unit) then fit = l end
-      if not any or l.total < any.total then any = l end
-      if not perUnit or l.unit < perUnit.unit then perUnit = l end
+      if not best or r.buyoutAmount < best.unit then
+        best = { kind = "item", auctionID = r.auctionID, qty = 1, avail = r.quantity or 1, total = r.buyoutAmount, unit = r.buyoutAmount, bid = r.buyoutAmount }
+      end
     end
   end
-  local pick = fit or any
-  -- cheaper per unit in a stack bigger than you need: say so (it's what an auction house listing shows)
-  if pick and perUnit and perUnit ~= pick and perUnit.unit < pick.unit and perUnit.qty > need then pick.stack = perUnit end
-  return pick or false
+  return best or false
 end
 
 -- classic auction house
@@ -477,7 +476,7 @@ local function Buy()
   if p.kind == "item" then
     state.phase, state.paid = "buying", p.total
     pending[p.auctionID] = { it = state.it, qty = p.qty, paid = p.total }
-    C_AuctionHouse.PlaceBid(p.auctionID, p.total)
+    C_AuctionHouse.PlaceBid(p.auctionID, p.bid or p.total)
   elseif p.kind == "commodity" then
     state.phase = "quote"
     C_AuctionHouse.StartCommoditiesPurchase(p.itemID, p.qty)
@@ -547,22 +546,30 @@ end
 
 local WON = ERR_AUCTION_WON_S and ERR_AUCTION_WON_S:gsub("%%s", "(.+)") or "You won an auction for (.+)"
 
+-- open the list beside the auction house (on opening it, or when a plan is started while it's open)
+function WritPath_BuyerOpen(newList)
+  Build(); Dock()
+  mainBtn:SetScript("OnClick", Click); altBtn:SetScript("OnClick", AltClick)
+  -- a list belongs to a plan: keep it while that route runs, or for a few hours after "Send to Auctionator"
+  -- without a route. A leftover from an old plan is dropped instead of popping up at every visit.
+  local routeOn = WritPathNav.route and #WritPathNav.route > 0
+  local fresh = WritPathNav.shopAt and time() - WritPathNav.shopAt < 3 * 3600
+  if not routeOn and not fresh then WritPathNav.shopList = nil end
+  for _, it in ipairs(List()) do it.skipped = nil end
+  cache, ahead, aheadWaiting, seen, scrollOff = {}, {}, nil, {}, 0
+  if not newList then boughtThisVisit = false end
+  -- only when the planner left you something to buy; an empty or finished list stays out of the way
+  if not NextItem() then panel:Hide(); return end
+  panel:Show()
+  Search()
+end
+
 ev:SetScript("OnEvent", function(_, event, a1, a2)
   if event == "AUCTION_HOUSE_SHOW" then
-    Build(); Dock()
-    mainBtn:SetScript("OnClick", Click); altBtn:SetScript("OnClick", AltClick)
-    -- a list belongs to a plan: keep it while that route runs, or for a few hours after "Send to Auctionator"
-    -- without a route. A leftover from an old plan is dropped instead of popping up at every visit.
-    local routeOn = WritPathNav.route and #WritPathNav.route > 0
-    local fresh = WritPathNav.shopAt and time() - WritPathNav.shopAt < 3 * 3600
-    if not routeOn and not fresh then WritPathNav.shopList = nil end
-    for _, it in ipairs(List()) do it.skipped = nil end
-    cache, ahead, aheadWaiting, boughtThisVisit, seen, scrollOff = {}, {}, nil, false, {}, 0
-    -- only when the planner left you something to buy; an empty or finished list stays out of the way
-    if not NextItem() then panel:Hide(); return end
-    panel:Show()
-    Search()
+    ahOpen = true
+    WritPath_BuyerOpen(false)
   elseif event == "AUCTION_HOUSE_CLOSED" then
+    ahOpen = false
     queued, waiting, aheadWaiting, ahead = false, false, nil, {}
     if boughtThisVisit and WritPath_RunBought then WritPath_RunBought() end
     if panel then panel:Hide() end
