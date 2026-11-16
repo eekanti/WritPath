@@ -1052,11 +1052,17 @@ local function FmtMin(secs)
   if m >= 60 then return ("%d h %02d m"):format(math.floor(m / 60), m % 60) end
   return m .. " m"
 end
+-- a run counts toward your pace only when it was (nearly) finished: its estimate is for the whole route, so a
+-- route cleared early would look far too quick
+local function Counts(run)
+  local done, writs = run.done or 0, run.writs or 0
+  return run.travel and run.est and run.est > 0 and done >= 3 and (writs == 0 or done >= 0.75 * writs)
+end
 function WritPath_Pace()
   local r = {}
   for i = #(WritPathNav and WritPathNav.runs or {}), 1, -1 do
     local run = WritPathNav.runs[i]
-    if run.travel and run.est and run.est > 0 and (run.done or 0) >= 3 then r[#r + 1] = run.travel / run.est end
+    if Counts(run) then r[#r + 1] = run.travel / run.est end
     if #r == 5 then break end
   end
   if #r < 3 then return 1, #r end
@@ -1107,9 +1113,11 @@ function WritPath_RunReport()
   if #runs == 0 then Print("No finished runs yet: start a route from the planner and hand its writs in."); return end
   for i = math.max(1, #runs - 9), #runs do
     local r = runs[i]
-    Print(("%s  %d writs, %d rep%s: travel %s (planner %s, x%.2f)%s"):format(date("%m-%d %H:%M", r.start), r.done or 0, r.rep or 0,
+    Print(("%s  %d%s writs, %d rep%s: travel %s (planner %s, x%.2f)%s%s"):format(date("%m-%d %H:%M", r.start), r.done or 0,
+      (r.writs and r.writs ~= r.done) and (" of " .. r.writs) or "", r.rep or 0,
       r.quick and " (Quick)" or "", FmtMin(r.travel), FmtMin(r.est), (r.est or 0) > 0 and r.travel / r.est or 0,
-      r.boughtAt and (", buying " .. FmtMin(r.boughtAt - r.start)) or ""))
+      r.boughtAt and (", buying " .. FmtMin(r.boughtAt - r.start)) or "",
+      Counts(r) and "" or " |cFFAAAAAA(not finished: not used for your pace)|r"))
   end
   local pace, n = WritPath_Pace()
   Print(n >= 3 and ("Planner times are scaled x%.2f to your pace (median of your last %d runs)."):format(pace, n)
