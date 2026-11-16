@@ -67,19 +67,16 @@ from where you stand, with the customer, the zone and the travel time. Click **S
 1. Pick **Buy writs**, type a **Rep target** (for example 1000) and press **Plan**.
 2. Two plans appear:
    - **Cheapest**: the least gold that reaches the target.
-   - **Fastest**: the shortest trip that reaches the target (it may cost more). It's never slower than Cheapest,
-     and it also weighs the hub plan (customers next to your flight paths) and takes it when that's quicker
-     (the card then says "by flight paths").
+   - **Fastest**: the quickest trip to the target. It starts from the customers next to your flight paths (fly in,
+     hand in, fly out), adds the quickest other writs, and doesn't overpay for a minute or two: of the plans within
+     about 10% of the quickest, it takes the cheapest.
    Each card shows the cost, the time, the rep and the net gold (coin pouches minus what you spend).
-   Your own writs are always used first.
+   Your own writs whose items you have are always used; ones that still need an item compete on price.
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
-4. **Zone-only too** lets WritPath use customers whose exact spot isn't known yet (it
+4. **Include customers known by zone only** lets WritPath use customers whose exact spot isn't known yet (it
    learns the spot when you accept the writ). Leave it off for the most reliable routes.
-5. **Quick: by flight paths** keeps only customers within a short walk (about 300 yards) of a flight path you
-   have: fly in, hand in everything there, fly out (Gadgetzan, Booty Bay, Thorium Point, Marshal's Refuge, ...).
-   Writs of yours that are further away wait for another day. Hover the checkboxes for what they do.
-6. If the target can't be reached today, the plan says how close you can get and why.
-7. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
+5. If the target can't be reached today, the plan says how close you can get and why.
+6. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
    (**Send to Auctionator** also makes a "WritPath" shopping list in Auctionator, if you'd rather buy there.)
 
 ### Buy: the Writ shopping panel at the auction house

@@ -505,9 +505,17 @@ local function CheapestSet(cands, need)
   return set
 end
 
-local function GreedyFast(start, owned, cands, need)
+local function GreedyFast(start, owned, cands, need, seed)
   local route, rep, keys, set = {}, 0, {}, {}
   for _, p in ipairs(owned) do route[#route + 1] = p end
+  -- a starting set (the writs at your flight-path hubs): kept, and the quickest extras added to it
+  for _, c in ipairs(seed or {}) do
+    if not keys[c.c.key] then
+      keys[c.c.key] = true; c.inGreedy = true
+      local _, at = InsertAt(start, route, c.pos)
+      table.insert(route, at, c); set[#set + 1] = c; rep = rep + c.rep
+    end
+  end
   while rep < need do
     local best, bestScore, bestAt
     for _, c in ipairs(cands) do
@@ -570,13 +578,22 @@ end
 
 local function Finish(start, owned, set, target, mine, mode)
   local route = BestOrder(start, Join(owned, set))
-  local rep, cost, pouches, bought = 0, 0, 0, 0
+  local rep, cost, pouches, bought, ownedUsed, used = 0, 0, 0, 0, 0, {}
   for _, p in ipairs(route) do
     rep, cost, pouches = rep + p.rep, cost + p.cost, pouches + PouchAverage(p.w.tier)
-    if not p.have then bought = bought + 1 end
+    if p.have then ownedUsed = ownedUsed + 1 else bought = bought + 1 end
+    used[p.id] = true
+  end
+  -- your writs that still need an item and weren't worth it for this target wait for another day, with why
+  local later = {}
+  for _, l in ipairs(mine.later or {}) do later[#later + 1] = l end
+  for _, p in ipairs(mine.paidOwned or {}) do
+    if not used[p.id] then
+      later[#later + 1] = { id = p.id, w = p.w, why = ("its item costs %s: not needed for this target"):format(Coins(p.cost)) }
+    end
   end
   return { route = route, rep = rep, cost = cost, secs = PathSecs(start, route), pouches = pouches, target = target,
-           start = start, later = mine.later, unknown = mine.unknown, bought = bought, ownedUsed = #mine.route, mode = mode,
+           start = start, later = later, unknown = mine.unknown, bought = bought, ownedUsed = ownedUsed, mode = mode,
            set = set }
 end
 
@@ -592,17 +609,47 @@ local function PlanBoth(target, zoneOnly, quick)
   quickOnly = true
   local ok2, hub = pcall(PlanBothInner, target, zoneOnly)
   quickOnly = false
-  if ok2 and hub and hub.fast and hub.fast.rep >= target and hub.fast.secs < res.fast.secs then
+  -- the hub writs as a start, topped up with the quickest other writs until the target is reached
+  local seeded
+  if ok2 and hub and hub.fast and #hub.fast.route > 0 then
+    local ids = {}
+    for _, p in ipairs(hub.fast.route) do ids[p.id] = true end
+    local ok3, s3 = pcall(PlanBothInner, target, zoneOnly, ids)
+    if ok3 and s3 then seeded = s3.fast; seeded.hubs = true end
     hub.fast.hubs = true
-    res.fast = hub.fast
+  end
+  -- Fastest: the quickest way to the target, without overpaying for a minute or two: of the plans within 10%
+  -- (or 3 minutes) of the quickest, the cheapest
+  local options = { res.fast, res.cheap }
+  if ok2 and hub and hub.fast then options[#options + 1] = hub.fast end
+  if seeded then options[#options + 1] = seeded end
+  local goal = math.min(target, res.cheap.rep)
+  local quickest
+  for _, o in ipairs(options) do if o.rep >= goal and (not quickest or o.secs < quickest) then quickest = o.secs end end
+  if quickest then
+    local pick
+    for _, o in ipairs(options) do
+      if o.rep >= goal and o.secs <= math.max(quickest * 1.10, quickest + 180) and (not pick or o.cost < pick.cost) then pick = o end
+    end
+    if pick and pick ~= res.fast then
+      if pick == res.cheap then pick = Finish(pick.start, {}, pick.route, target, { later = pick.later, unknown = pick.unknown }, "fast") end
+      res.fast = pick
+    end
   end
   return res
 end
-function PlanBothInner(target, zoneOnly)
+function PlanBothInner(target, zoneOnly, seedIds)
   local mine = PlanOwned()
-  local start, owned, ownedKeys = mine.start, mine.route, {}
-  for _, p in ipairs(owned) do ownedKeys[p.c.key] = true end
+  -- writs you have whose items you have too cost nothing: always used. Writs you have that still need an item
+  -- bought compete on price like any writ you'd buy, so a small target doesn't pay for items it doesn't need.
+  local start, owned, ownedKeys, paidOwned = mine.start, {}, {}, {}
+  for _, p in ipairs(mine.route) do
+    if (p.cost or 0) > 0 then paidOwned[#paidOwned + 1] = p
+    else owned[#owned + 1] = p; ownedKeys[p.c.key] = true end
+  end
   local cands = Buyable(zoneOnly, ownedKeys)
+  for _, p in ipairs(paidOwned) do cands[#cands + 1] = p end
+  mine.paidOwned = paidOwned
   local need = target - RepOf(owned)
   local cheapSet = CheapestSet(cands, need)
   local cheap = Finish(start, owned, cheapSet, target, mine, "cheap")
@@ -612,7 +659,12 @@ function PlanBothInner(target, zoneOnly)
     -- between and the fastest plan is the same trip
     fast = cheap
   else
-    local fastA = Improve(start, owned, cands, need, GreedyFast(start, owned, cands, need))
+    local seed
+    if seedIds then
+      seed = {}
+      for _, c in ipairs(cands) do if seedIds[c.id] then seed[#seed + 1] = c end end
+    end
+    local fastA = Improve(start, owned, cands, need, GreedyFast(start, owned, cands, need, seed))
     local fastB = Improve(start, owned, cands, need, cheapSet)
     local fa, fb = Finish(start, owned, fastA, target, mine, "fast"), Finish(start, owned, fastB, target, mine, "fast")
     fast = (fb.secs < fa.secs or (fb.secs == fa.secs and fb.cost < fa.cost)) and fb or fa
@@ -791,10 +843,7 @@ zoneChk:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
 local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("RIGHT", 0, 0)
 local zoneL = Text(buyRow); zoneL:SetPoint("LEFT", zoneChk, "RIGHT", 2, 0)
 zoneL:SetText("Zone-only too"); zoneL:SetWordWrap(false)
-local quickChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); quickChk:SetSize(22, 22)
-quickChk:SetPoint("LEFT", zoneL, "RIGHT", 10, 0)
-local quickL = Text(buyRow); quickL:SetPoint("LEFT", quickChk, "RIGHT", 2, 0); quickL:SetPoint("RIGHT", planBtn, "LEFT", -8, 0)
-quickL:SetText("Quick: by flight paths"); quickL:SetWordWrap(false)
+zoneL:SetPoint("RIGHT", planBtn, "LEFT", -8, 0); zoneL:SetText("Include customers known by zone only")
 local function Tip(frame, title, text)
   frame:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(title); GameTooltip:AddLine(text, 1, 1, 1, true); GameTooltip:Show()
@@ -802,7 +851,6 @@ local function Tip(frame, title, text)
   frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 Tip(zoneChk, "Zone-only customers", "Also use customers whose exact spot isn't known yet; the writ's map pin shows it once you accept it.")
-Tip(quickChk, "Quick plan", "Only customers within a short walk of a flight path you have: fly in, hand in, fly out. Writs of yours that are further away wait for another day.")
 buyRow:Hide()
 
 -- the two answers for a rep target, side by side; click one to see its writs
@@ -863,7 +911,7 @@ local function ApplySkin(S)
   S.CloseButton(closeX)
   for _, btn in ipairs(buttons) do S.Button(btn); if S.StateButtonLabel then S.StateButtonLabel(btn) end end
   S.EditBox(repBox, { padInput = true })
-  S.Checkbox(zoneChk); S.Checkbox(quickChk)
+  S.Checkbox(zoneChk)
   for _, c in pairs(cards) do S.Panel(c, { inset = true }) end
   if Bar() and S.ScrollBar then S.ScrollBar(Bar()) end
   for _, fs in ipairs(fonts) do S.Font(fs) end
@@ -1178,9 +1226,8 @@ local function DoPlan()
   end
   local target = tonumber(repBox:GetText()) or 1000
   local zoneOnly = zoneChk:GetChecked() and true or false
-  local quick = quickChk:GetChecked() and true or false
-  WritPathNav.plan = { target = target, zoneOnly = zoneOnly, quick = quick }
-  plans = PlanBoth(target, zoneOnly, quick)
+  WritPathNav.plan = { target = target, zoneOnly = zoneOnly }
+  plans = PlanBoth(target, zoneOnly)   -- Fastest weighs the flight-path hub plan by itself
   Warm(plans.cheap); Warm(plans.fast)
   cards.cheap.text:SetText(CardText("cheap", plans.cheap, plans.fast))
   cards.fast.text:SetText(CardText("fast", plans.fast, plans.cheap))
@@ -1248,7 +1295,7 @@ function WritPath_ClearAll()
   WritPathNav.plan, WritPathNav.planChoice = nil, nil
   EmptyAuctionatorList()
   current, plans, choice = nil, nil, nil
-  repBox:SetText(""); zoneChk:SetChecked(false); quickChk:SetChecked(false)
+  repBox:SetText(""); zoneChk:SetChecked(false)
   cards.cheap:Hide(); cards.fast:Hide()
   Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -64)
   summary:SetText(GREY .. "Cleared. Pick My writs or Buy writs to plan again.|r"); note:SetText("")
@@ -1289,7 +1336,7 @@ clearBtn:SetScript("OnClick", WritPath_AskClear)
 
 function WritPath_OpenPlanner(mode)
   local o = WritPathNav.plan
-  if o then repBox:SetText(o.target); zoneChk:SetChecked(o.zoneOnly); quickChk:SetChecked(o.quick) end
+  if o then repBox:SetText(o.target); zoneChk:SetChecked(o.zoneOnly) end
   FitWidth(mineBtn); FitWidth(buyBtn); FitWidth(planBtn)
   f:Show()
   if (mode or WritPathNav.planMode) == "buy" then DoPlan() else DoMine() end
