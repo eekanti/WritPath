@@ -69,7 +69,7 @@ from where you stand, with the customer, the zone and the travel time. Click **S
    Each card shows the cost, the time, the rep and the net gold (coin pouches minus what you spend).
    Your own writs are always used first.
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
-4. **Include customers known by zone only** lets WritPath use customers whose exact spot isn't known yet (it
+4. **Zone-only too** lets WritPath use customers whose exact spot isn't known yet (it
    learns the spot when you accept the writ). Leave it off for the most reliable routes.
 5. **Quick: by flight paths** keeps only customers within a short walk (about 300 yards) of a flight path you
    have: fly in, hand in everything there, fly out (Gadgetzan, Booty Bay, Thorium Point, Marshal's Refuge, ...).
