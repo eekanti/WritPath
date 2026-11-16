@@ -80,6 +80,17 @@ local function Count(id)
   return GetItemCount and GetItemCount(id) or 0
 end
 
+-- a step on the way somewhere (it has a waypoint, and it isn't a hand-in or the shopping step)
+local NEAR_YARDS = 200
+local function TravelStep(s) return s and s.at and s.done and not s.done.quests and not s.done.ready end
+local function Near(s) local dist = Vector(s.at); return dist and dist <= NEAR_YARDS end
+local function InZone(zones)
+  local m = PlayerMap(); if not m then return false end
+  local z = WritPath_Travel and WritPath_Travel.ZoneOf(m) or m
+  for _, a in ipairs(zones or {}) do if m == a or z == a then return true end end
+  return false
+end
+
 -- Only the current step is tested, and a step once done stays done (WritPathNav.manual),
 -- so landing after a flight or leaving a zone never sends the guide back.
 local function StepDone(i)
@@ -107,6 +118,9 @@ local function StepDone(i)
     local z = WritPath_Travel and WritPath_Travel.ZoneOf(m) or m
     for _, a in ipairs(d.arrive) do if m == a or z == a then hit = true end end
   end
+  -- a waypoint on the way (road crossing, dock, flight master) is done once you're close to it; a writ
+  -- customer only when you've handed the writ in
+  if not hit and TravelStep(s) and Near(s) then hit = true end
   if hit then WritPathNav.manual[i] = true end
   return hit
 end
@@ -244,6 +258,18 @@ function Refresh(announce)
         while ROUTE[cur] and StepDone(cur) do cur = cur + 1 end
         break
       end
+    end
+  end
+  -- already near a later waypoint before the next customer, or in the zone it leads to: you took another road
+  -- or a shortcut, so the guide catches up (never past a customer you haven't handed in to)
+  for i = cur + 1, TravelStep(ROUTE[cur]) and #ROUTE or 0 do
+    local s = ROUTE[i]
+    if not TravelStep(s) then break end
+    if Near(s) or InZone(s.done.arrive) then
+      for j = cur, i - 1 do WritPathNav.manual[j] = true end
+      cur = i
+      while ROUTE[cur] and StepDone(cur) do cur = cur + 1 end
+      break
     end
   end
   WritPathNav.step = cur
