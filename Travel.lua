@@ -844,10 +844,11 @@ local function RecordCrossing(a, b)
   T.Reset()
 end
 
--- Winding paths: while you ride, a breadcrumb every TRAIL_STEP yards (the last TRAIL_SECS seconds). At a border,
+-- Winding paths: while you ride, a breadcrumb every TRAIL_STEP yards (the last TRAIL_SECS seconds; in memory only,
+-- just the few turns of a path are saved). At a border,
 -- a trail much longer than the straight line from where it began means something was in the way: its turns are
 -- saved as a path to that crossing. A path is used once two rides agree.
-local TRAIL_STEP, TRAIL_SECS, PATH_MIN, PATH_WIND, PATH_TOL, PATH_AGREE = 40, 240, 200, 1.3, 40, 120
+local TRAIL_STEP, TRAIL_SECS, PATH_MIN, PATH_WIND, PATH_TOL, PATH_AGREE = 100, 300, 250, 1.3, 60, 120
 local function SegDist(p, a, b)
   local dx, dy = b.wx - a.wx, b.wy - a.wy
   local l2 = dx * dx + dy * dy
