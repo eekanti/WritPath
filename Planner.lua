@@ -4,7 +4,7 @@
 --  * picking:   cheapest gold per rep, plus travel time priced at "time worth" silver per minute;
 --               one writ per customer per day, customers already used today are skipped
 --  * route:     shortest order through the picked customers, then handed to the guide window
--- /writs plan  opens the planner on your own writs ("My writs"); /writs buy  opens the price planner
+-- /writs plan  opens the planner (a rep target plans what to buy; no target plans just the writs you have)
 
 local DB, CUST = WritPath_Writs, WritPath_Customers
 local REP = { Journeyman = 75, Expert = 125, Artisan = 200 }
@@ -147,7 +147,11 @@ local function LearnTurnin(q)
       WritPathLearned.npcs = WritPathLearned.npcs or {}
       local key = w.c or ("npc:" .. turnin.npc)
       local known = WritPathLearned.npcs[key]
-      WritPathLearned.npcs[key] = { map = spot.map, x = spot.x, y = spot.y, npc = turnin.npc, t = spot.t }
+      -- a writ handed to its own NPC (w.who) next to the customer it shares a daily limit with: that NPC's
+      -- name and spot stay with this writ, not with every writ of the customer
+      if not w.who then
+        WritPathLearned.npcs[key] = { map = spot.map, x = spot.x, y = spot.y, npc = turnin.npc, t = spot.t }
+      else known = true end
       local base = w.c and CUST[w.c]
       if not known and not (base and base.x and base.npc == turnin.npc) then
         Print(("Learned %s's spot for %s: %s %.1f, %.1f."):format(turnin.npc, w.name, MapName(spot.map), spot.x, spot.y))
@@ -180,11 +184,20 @@ function Customer(id)
       end
       key = (DB[low] and DB[low].c) or ("pin" .. low)
     end
-    return { key = key, npc = L.npc or (base and base.npc), map = L.map, x = L.x, y = L.y, exact = true }
+    return { key = key, npc = L.npc or (w.who and w.who.npc) or (base and base.npc), map = L.map, x = L.x, y = L.y, exact = true }
   end
+  -- a writ that goes to its own NPC while sharing another customer's daily limit
+  if w.who then return { key = w.c, npc = w.who.npc, map = w.who.map, x = w.who.x, y = w.who.y, exact = true } end
   -- this customer's spot learned at another writ's turn-in
   local N = w.c and LW.npcs and LW.npcs[w.c]
-  if N then return { key = w.c, npc = N.npc or (base and base.npc), map = N.map, x = N.x, y = N.y, exact = true } end
+  if N then
+    local npc = N.npc or (base and base.npc)
+    -- an older turn-in may have saved a writ's own NPC (w.who) as the customer's name: the customer keeps theirs
+    if base and base.npc and npc ~= base.npc then
+      for _, o in pairs(DB) do if o.c == w.c and o.who and o.who.npc == npc then npc = base.npc; break end end
+    end
+    return { key = w.c, npc = npc, map = N.map, x = N.x, y = N.y, exact = true }
+  end
   if not (base and base.map) then return nil end
   return { key = w.c, npc = base.npc, map = base.map, x = base.x or 50, y = base.y or 50, exact = base.x ~= nil }
 end
@@ -826,20 +839,27 @@ end
 local head = Text(f, "GameFontNormal"); head:SetPoint("TOPLEFT", PAD, -9); head:SetText("Writ Planner")
 local closeX = CreateFrame("Button", nil, f, "UIPanelCloseButton"); closeX:SetSize(22, 22); closeX:SetPoint("TOPRIGHT", -3, -3)
 
--- tabs: "My writs" and "Buy writs", with an accent bar under the active one
-local mineBtn, buyBtn = Btn(f, "My writs"), Btn(f, "Buy writs")
-mineBtn:SetPoint("TOPLEFT", PAD - 2, -32); buyBtn:SetPoint("LEFT", mineBtn, "RIGHT", 4, 0)
-local tabBar = f:CreateTexture(nil, "OVERLAY"); tabBar:SetHeight(2); tabBar:SetColorTexture(1, 0.82, 0, 1)
+-- one planner: a rep target plans what to buy (your own writs first); no target plans just the writs you have
+local tabBar = f:CreateTexture(nil, "OVERLAY"); tabBar:SetHeight(2); tabBar:SetColorTexture(1, 0.82, 0, 1); tabBar:Hide()
 -- how old the prices are: Auctionator's last full scan, and the oldest price the shown plan uses
 local ageText = Text(f, "GameFontHighlightSmall", 200, "RIGHT")
 ageText:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, -32)
 
--- "Buy writs" controls
+-- the rep target and the Plan button
 local buyRow = CreateFrame("Frame", nil, f); buyRow:SetSize(INNER, 24)
 local repL = Text(buyRow); repL:SetPoint("LEFT", 0, 0); repL:SetText("Rep target"); repL:SetWordWrap(false)
 local repBox = CreateFrame("EditBox", nil, buyRow, "InputBoxTemplate"); repBox:SetSize(54, 20); repBox:SetAutoFocus(false)
 repBox:SetNumeric(true); repBox:SetText("1000"); repBox:SetPoint("LEFT", repL, "RIGHT", 10, 0)
 local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
+for _, w in ipairs({ repBox, planBtn }) do
+  w:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan")
+    GameTooltip:AddLine("With a rep target: the cheapest and the fastest writs to reach it, starting from the writs you have.", 1, 1, 1, true)
+    GameTooltip:AddLine("Leave it empty: just the writs you have, in the shortest order.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  w:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
 -- customers known only by their zone are always included: accepting the writ shows its map pin, and WritPath
 -- reads the exact spot from it before you travel
 local ZONE_ONLY = true
@@ -1022,9 +1042,7 @@ local function BuyList(plan)
   return list
 end
 
-local function SelectTab(btn)
-  tabBar:ClearAllPoints(); tabBar:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 2, -1); tabBar:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", -2, -1)
-end
+
 
 local function ShortText(plan)
   local sh = plan.short or {}
@@ -1177,7 +1195,7 @@ local function CardText(key, plan, other)
     net >= 0 and G or "|cFFFF5722", Coins(net))
 end
 
-local CARDS_TOP = -86
+local CARDS_TOP = -60
 local function LayoutCards()
   local h = 0
   for _, c in pairs(cards) do h = math.max(h, c.text:GetStringHeight() + 16) end
@@ -1201,21 +1219,24 @@ local function Warm(plan)   -- ask the client for item names it hasn't loaded ye
 end
 
 local function DoMine()
-  buyRow:Hide(); cards.cheap:Hide(); cards.fast:Hide(); SelectTab(mineBtn)
+  buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
+  cards.cheap:Hide(); cards.fast:Hide()
   WritPathNav.planMode = "mine"
   local plan = PlanOwned(); Warm(plan)
-  Show(plan, -64)
+  Show(plan, -62)
 end
 
-local function DoPlan()
-  buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -60); buyRow:Show(); SelectTab(buyBtn)
+local function DoPlan(buy)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
+  local target = tonumber(repBox:GetText())
+  if buy and not (target and target > 0) then target = WritPathNav.plan and WritPathNav.plan.target or 1000 end
+  if not target or target <= 0 then DoMine(); return end   -- no target: just the writs you have
+  buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
   WritPathNav.planMode = "buy"
   if not HavePrices() then
     cards.cheap:Hide(); cards.fast:Hide()
-    Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -90)
+    Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -62)
     summary:SetText(W_ .. "No prices yet: open the auction house and press \"WritPath: scan writs\" (or install Auctionator).|r"); return
   end
-  local target = tonumber(repBox:GetText()) or 1000
   local zoneOnly = ZONE_ONLY
   WritPathNav.plan = { target = target, zoneOnly = zoneOnly }
   plans = PlanBoth(target, zoneOnly)   -- Fastest weighs the flight-path hub plan by itself
@@ -1225,9 +1246,7 @@ local function DoPlan()
   cards.cheap:Show(); cards.fast:Show()
   Select(WritPathNav.planChoice or "cheap")
 end
-mineBtn:SetScript("OnClick", DoMine)
-buyBtn:SetScript("OnClick", DoPlan)
-planBtn:SetScript("OnClick", DoPlan)
+planBtn:SetScript("OnClick", function() DoPlan() end)
 repBox:SetScript("OnEnterPressed", function(bx) bx:ClearFocus(); DoPlan() end)
 closeX:SetScript("OnClick", function() f:Hide() end)
 
@@ -1292,8 +1311,9 @@ function WritPath_ClearAll()
   current, plans, choice = nil, nil, nil
   repBox:SetText("")
   cards.cheap:Hide(); cards.fast:Hide()
-  Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -64)
-  summary:SetText(GREY .. "Cleared. Pick My writs or Buy writs to plan again.|r"); note:SetText("")
+  buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
+  Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -62)
+  summary:SetText(GREY .. "Cleared. Type a rep target (or leave it empty for just your writs) and press Plan.|r"); note:SetText("")
   Print("Route and plan cleared.")
 end
 -- WritPath's own confirm window. Not Blizzard's StaticPopup: an addon using those shared popups taints them,
@@ -1329,22 +1349,23 @@ function WritPath_AskClear() Confirm():Show() end
 WritPath_PlannerInternals_Confirm = function() return confirm end   -- for tests
 clearBtn:SetScript("OnClick", WritPath_AskClear)
 
-function WritPath_OpenPlanner(mode)
+function WritPath_OpenPlanner(mode)   -- mode: "mine" (just your writs), "buy" (the last rep target), or nil
   local o = WritPathNav.plan
-  if o then repBox:SetText(o.target) end
-  FitWidth(mineBtn); FitWidth(buyBtn); FitWidth(planBtn)
+  if mode == "mine" then repBox:SetText("")
+  elseif o and (mode == "buy" or WritPathNav.planMode ~= "mine") then repBox:SetText(o.target) end
+  FitWidth(planBtn)
   f:Show()
-  if (mode or WritPathNav.planMode) == "buy" then DoPlan() else DoMine() end
+  DoPlan(mode == "buy")
 end
 -- something new was learned (a customer's spot or name): an open planner shows it straight away
 function WritPath_PlannerLearned()
   if f:IsShown() then
-    if WritPathNav.planMode == "buy" then DoPlan() else DoMine() end
+    DoPlan(WritPathNav.planMode == "buy")
   end
 end
 
 function WritPath_TogglePlanner(mode)
-  if f:IsShown() and (not mode or mode == WritPathNav.planMode) then f:Hide() else WritPath_OpenPlanner(mode) end
+  if f:IsShown() then f:Hide() else WritPath_OpenPlanner(mode) end
 end
 
 -- for /writs why: what the planner can't use and why
@@ -1414,10 +1435,17 @@ end
 function WritPath_WritByQuest(q)
   for id, w in pairs(DB) do
     if w.q == q then
-      local planned = WritPathNav and WritPathNav.plannedCost and WritPathNav.plannedCost[q]
-      local writ, item = TakePaid(id, 1), w.req and TakePaid(w.req, w.n or 1)
-      local cost = (writ or item) and math.floor((writ or 0) + (item or 0) + 0.5) or planned
-      return w.name, w.tier, cost
+      -- what the writ and its item cost: what you paid at the auction house, else today's price (an estimate:
+      -- bought elsewhere, or already in your bags)
+      local n = w.n or 1
+      local writ, item = TakePaid(id, 1), w.req and TakePaid(w.req, n)
+      local est = false
+      if not writ then writ = Price(id); est = true end
+      if not item and w.req then local u = Price(w.req, n); item = u and u * n; est = true end
+      local cost
+      if writ or item then cost = math.floor((writ or 0) + (item or 0) + 0.5)
+      else cost = WritPathNav and WritPathNav.plannedCost and WritPathNav.plannedCost[q] end
+      return w.name, w.tier, cost, writ and math.floor(writ + 0.5), item and math.floor(item + 0.5), est
     end
   end
 end
@@ -1453,7 +1481,14 @@ local function Reroute(q, why, quiet)
   if keep then table.insert(steps, 2, keep) end
   -- a quiet re-plan (on entering a zone) leaves the route alone when the way ahead comes out the same
   if quiet and Sig(steps, 2) == Sig(WritPathNav.route, WritPathNav.step or 1) then return end
+  local past = (WritPathNav.step or 1) > 1
   WritPath_SetRoute(steps, WritPathNav.title, WritPathNav.doneText)
+  -- you'd already left the auction house: the new route doesn't send you back to its "buy" step (an item still
+  -- missing shows at that writ's customer step instead)
+  if past and steps[1] and steps[1].done and steps[1].done.ready then
+    WritPathNav.manual[1] = true
+    if WritPath_Refresh then WritPath_Refresh() end
+  end
   local nxt = plan.route[1]
   Print(("Rerouted from here%s: next %s (%s), %d writs left, ~%d min."):format(why and (" (" .. why .. ")") or "",
     nxt.w.name, nxt.c.npc or MapName(nxt.c.map), #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))

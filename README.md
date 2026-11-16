@@ -2,13 +2,13 @@
 
 A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Logistics / merchant reputation).
 
-- **Buy writs:** set a rep target and get the cheapest and the fastest set of writs to reach it, priced from
-  WritPath's own auction house scan (or Auctionator's), never two writs for the same customer in one day.
-- **My writs:** the writs you already have, in the shortest hand-in order.
+- **Plan:** set a rep target and get the cheapest and the fastest set of writs to reach it, starting from the
+  writs you have and priced from WritPath's own auction house scan (or Auctionator's), never two writs for the
+  same customer in one day. With no target, it plans just the writs you have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
 - **Buying help:** "Send to Auctionator" makes a shopping list; at the auction house a "Writ shopping" panel buys
   the list one click at a time, with a price cap.
-- **Money:** what each writ cost and what its coin pouch paid, per plan.
+- **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
 - **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
   flight paths you know.
 
@@ -49,22 +49,23 @@ Roads, boats and flight times you use are learned as you travel.
 2. **Open a flight master's map once on each continent.** That's how WritPath learns which flight paths you know.
    Until then routes can't use flights (`/writs travel` shows what it knows).
 3. Find the **minimap button** (a note icon). Left-click shows or hides the guide window; right-click opens the
-   planner. The guide window's header has the same buttons: map icon = My writs, coin icon = Buy writs,
-   bag icon = money report, red X = Clear.
+   planner. The guide window's header has the same buttons: map icon = Plan, bag icon = money report,
+   red X = Clear.
 
 ### The one rule: one writ per customer per day
 
 Each customer takes one writ a day. Writs that go to the same customer count as one, so WritPath never plans
 two for the same customer on the same day; extra writs are listed as "Tomorrow" and kept for another day.
 
-### Plan: My writs (the writs you already have)
+### Plan
 
-Open the planner and pick **My writs**. It lists every writ in your bags or quest log in the fastest hand-in order
-from where you stand, with the customer, the zone and the travel time. Click **Start route** to follow it.
+Open the planner (map icon). There is one **Plan** button:
 
-### Plan: Buy writs (reach a rep target)
+- **Leave the rep target empty** for just the writs you have: every writ in your bags or quest log in the fastest
+  hand-in order from where you stand, with the customer, the zone and the travel time. Click **Start route**.
+- **Type a rep target** (for example 1000) to reach it, starting from the writs you have:
 
-1. Pick **Buy writs**, type a **Rep target** (for example 1000) and press **Plan**.
+1. Type a **Rep target** and press **Plan**.
 2. Two plans appear:
    - **Cheapest**: the least gold that reaches the target.
    - **Fastest**: the quickest trip to the target. It starts from the customers next to your flight paths (fly in,
@@ -144,10 +145,11 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | Command | What it does |
 |---|---|
 | `/writs` | Show or hide the guide window |
-| `/writs plan` (or `/writs mine`) | Planner on My writs |
-| `/writs buy` | Planner on Buy writs |
+| `/writs plan` | Open the planner |
+| `/writs mine` | Planner with no target: just the writs you have |
+| `/writs buy` | Planner with your last rep target |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
-| `/writs money` | Every turn-in's cost and pouch, in chat |
+| `/writs money` | Every turn-in's cost (writ + item) and pouch, in chat |
 | `/writs accept` | Turn off (or back on) accepting writs for you when you open them |
 | `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
 | `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |

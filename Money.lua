@@ -169,16 +169,19 @@ ev:SetScript("OnEvent", function(_, event, a1, _, a3)
 
   elseif event == "QUEST_TURNED_IN" then
     local qid, money = a1, a3
-    local w = WRITS[qid]
-    if not w and WritPath_WritByQuest then   -- a writ the planner picked: name, tier and planned cost
-      local nm, tier, cost = WritPath_WritByQuest(qid)
-      if nm then w = { nm, tier, cost } end
+    -- what this writ cost: the writ and its item, from what you paid (or today's price where WritPath
+    -- didn't see the purchase); the old fixed table only for a writ the planner doesn't know
+    local w
+    if WritPath_WritByQuest then
+      local nm, tier, cost, writ, item, est = WritPath_WritByQuest(qid)
+      if nm then w = { nm, tier, cost, writ, item, est } end
     end
+    w = w or WRITS[qid]
     local title = C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(qid)
     if w or (title and title:find("Craftsman's Writ")) then
       table.insert(WritPathMoney.log, {
         q = qid, name = w and w[1] or title:gsub("Craftsman's Writ: ", ""), tier = w and w[2] or "Expert",
-        cost = w and w[3], turnedIn = true, questMoney = (money or 0) > 0 and money or nil, t = time() })
+        cost = w and w[3], writCost = w and w[4], itemCost = w and w[5], est = w and w[6] or nil, turnedIn = true, questMoney = (money or 0) > 0 and money or nil, t = time() })
       Update()
     end
 
@@ -203,6 +206,9 @@ function WritPath_MoneyReport()
   for _, e in ipairs(WritPathMoney.log) do
     local paid = e.paid and Coins(e.paid) or "|cFFFCDC00not opened|r"
     local cost = e.cost and Coins(e.cost) or "?"
+    if e.cost and (e.writCost or e.itemCost) then
+      cost = cost .. (" |cFFAAAAAA(writ %s + item %s%s)|r"):format(Coins(e.writCost or 0), Coins(e.itemCost or 0), e.est and ", partly today's price" or "")
+    end
     local net = (e.paid and e.cost) and ("  net " .. Coins(e.paid + (e.questMoney or 0) - e.cost, true)) or ""
     Print(("  %s (%s): cost %s, pouch %s%s"):format(e.name, e.tier, cost, paid, net))
   end

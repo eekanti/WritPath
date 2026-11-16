@@ -151,7 +151,7 @@ WritPath_Writs = {
   [264080] = { q = 94280, name = "Mechanical Dragonling", tier = "Expert", req = 4396, n = 1, c = "264080", note = "Badlands, customer not named (could be Lotwil Veriatus)" },
   [264081] = { q = 94281, name = "Advanced Target Dummy", tier = "Expert", req = 4392, n = 1, c = "Bibbly F'utzbuckle" },
   [264082] = { q = 94282, name = "Craftsman's Monocle", tier = "Expert", req = 4393, n = 1, c = "The Ravenous" },
-  [264083] = { q = 94283, name = "Goblin Land Mine", tier = "Expert", req = 4395, n = 1, c = "Greta Mosshoof", note = "in game it shared Greta Mosshoof's daily limit; QuestieDB says Jessir Moonbow (Felwood 51.4, 82.0)" },
+  [264083] = { q = 94283, name = "Goblin Land Mine", tier = "Expert", req = 4395, n = 1, c = "Greta Mosshoof", who = { npc = "Jessir Moonbow", map = 1448, x = 51.4, y = 82.0 }, note = "handed in to Jessir Moonbow, right next to Greta Mosshoof (player, 2026-11-16); in game it shared Greta's daily limit (2026-11-14), so it keeps her customer key" },
   [264084] = { q = 94284, name = "Catseye Ultra Goggles", tier = "Expert", req = 10501, n = 1, c = "Scout Raroul" },
   [264085] = { q = 94285, name = "Unstable Trigger", tier = "Expert", req = 10560, n = 1, c = "Narianna" },
   [264086] = { q = 94286, name = "Flash Bomb", tier = "Expert", req = 4852, n = 1, c = "Spek" },

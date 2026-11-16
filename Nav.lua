@@ -176,15 +176,13 @@ local function HeadButton(icon, tip, anchor, onClick)
   b:SetScript("OnClick", onClick)
   return b
 end
-local moneyBtn = HeadButton("Interface/Icons/INV_Misc_Bag_10", { "Writ money", "Every turn-in: what it cost and what its pouch paid (in chat)." },
-  count, function() WritPath_MoneyReport() end)
-local buyBtn = HeadButton("Interface/Icons/INV_Misc_Coin_02", { "Buy writs", "Cheapest and fastest writs to reach a rep target, from your Auctionator prices." },
-  moneyBtn, function() WritPath_TogglePlanner("buy") end)
-local mineBtn = HeadButton("Interface/Icons/INV_Misc_Map_01", { "My writs", "The writs you have, in the shortest order." },
-  buyBtn, function() WritPath_TogglePlanner("mine") end)
 local clearBtn = HeadButton("Interface/Buttons/UI-GroupLoot-Pass-Up", { "Clear", "Clear the route, the planner and its shopping list (asks first)." },
-  mineBtn, function() WritPath_AskClear() end)
-title:SetPoint("RIGHT", clearBtn, "LEFT", -4, 0); title:SetJustifyH("LEFT"); title:SetWordWrap(false)
+  count, function() WritPath_AskClear() end)
+local moneyBtn = HeadButton("Interface/Icons/INV_Misc_Bag_10", { "Writ money", "Every turn-in: what the writ and its item cost and what its pouch paid (in chat)." },
+  clearBtn, function() WritPath_MoneyReport() end)
+local planHeadBtn = HeadButton("Interface/Icons/INV_Misc_Map_01", { "Plan", "Plan writs: a rep target gives the cheapest and the fastest writs to reach it, starting from the ones you have; no target plans just the writs you have." },
+  moneyBtn, function() WritPath_TogglePlanner() end)
+title:SetPoint("RIGHT", planHeadBtn, "LEFT", -4, 0); title:SetJustifyH("LEFT"); title:SetWordWrap(false)
 
 local function SavePos(self)
   guide:StopMovingOrSizing()
@@ -528,7 +526,8 @@ SlashCmdList.WRITPATH = function(msg)
   if msg == "scan" then WritPath_Scan()
   elseif msg == "money" then WritPath_MoneyReport()
   elseif msg == "runs" then WritPath_RunReport()
-  elseif msg == "plan" or msg == "mine" then WritPath_OpenPlanner("mine")
+  elseif msg == "plan" then WritPath_OpenPlanner()
+  elseif msg == "mine" then WritPath_OpenPlanner("mine")
   elseif msg == "buy" then WritPath_OpenPlanner("buy")
   elseif msg == "why" then WritPath_WhyNot()
   elseif msg == "accept" then
