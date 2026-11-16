@@ -33,8 +33,30 @@ try {
   $AddOns = (Get-Content $Config -TotalCount 1).Trim()
   $Target = Join-Path $AddOns 'WritPath'
   if (-not (Test-Path $AddOns)) { Say "AddOns folder not found: $AddOns (run Setup Updater.bat again)."; Done 1 }
-  # a git checkout is a developer's copy: never overwrite it
-  if (Test-Path (Join-Path $Target '.git')) { Say "$Target is a git checkout: update it with git pull instead."; Done 1 }
+  # a folder made with git (git clone, GitHub Desktop): update it with git when git is here, never overwrite
+  # changes made in it; without git, offer to turn it into a plain copy the updater can keep up to date
+  if (Test-Path (Join-Path $Target '.git')) {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+      $ErrorActionPreference = 'Continue'   # git reports progress on stderr: not an error
+      $dirty = & git -C $Target status --porcelain 2>$null
+      if ($dirty) { Say "$Target has changes of its own (a git copy): not updating it."; Done 1 }
+      $before = TocVersion $Target
+      $out = & git -C $Target pull --ff-only 2>&1 | ForEach-Object { "$_" }
+      if ($LASTEXITCODE -ne 0) { Say ("git pull didn't work: " + ($out -join ' ')); Done 1 }
+      $after = TocVersion $Target
+      if ($before -eq $after) { Say "WritPath $after is up to date (git copy)." }
+      else { Say "WritPath updated with git: $before -> $after. In game: /reload (or restart the game if it says new files were added)." }
+      Done 0
+    }
+    if ($Quiet) { Say "$Target was made with git (GitHub Desktop?) and git isn't installed: run Update WritPath from the desktop once."; Done 1 }
+    Write-Host "Your WritPath folder was made with git (GitHub Desktop or git clone), and git isn't installed here."
+    $ans = Read-Host 'Turn it into a normal copy that this updater keeps up to date? Its git history is removed. (Y/n)'
+    if ($ans -eq 'n' -or $ans -eq 'N') { Say 'Left as it is.'; Done 1 }
+    Remove-Item -Recurse -Force (Join-Path $Target '.git')
+    if (Test-Path $Stamp) { Remove-Item $Stamp -Force }
+    Say 'WritPath is now a normal copy.'
+  }
 
   $headers = @{ 'User-Agent' = 'WritPath-updater'; 'Accept' = 'application/vnd.github+json' }
   $commit = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/main" -Headers $headers -TimeoutSec 20
