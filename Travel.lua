@@ -176,19 +176,64 @@ T.WorldToZone = WorldToZone
 
 local function ContinentOfFP(f) return f and f.map and ContinentOf(f.map) end
 
--- id -> name for every flight path you know; second result: how many came from your own records
+-- The flight paths this character knows: WritPathChar.fp (saved per character), the one place WritPath keeps
+-- them. Filled in automatically by what the game shows: every flight map you open, "New flight path
+-- discovered!", and each flight you take (you can only fly between flight paths you have). Never removed.
+-- Older WritPath versions kept them account-wide; those move to the first character that logs in, once.
+-- If RestedXP is installed its list is copied in once as a head start; it's never needed.
+local function Char()
+  WritPathChar = WritPathChar or {}
+  WritPathChar.fp = WritPathChar.fp or {}
+  local C = WritPathChar.fp
+  if not WritPathChar.migrated then
+    WritPathChar.migrated = true
+    for id, f in pairs(WritPathLearned and WritPathLearned.fp or {}) do
+      if type(f) == "table" and f.own == true then
+        C[id] = C[id] or { name = f.name, src = "migrated" }
+        f.own = nil
+      end
+    end
+  end
+  if not WritPathChar.rxpSeeded and RXPCData and RXPCData.flightPaths then
+    WritPathChar.rxpSeeded = true
+    for id, name in pairs(RXPCData.flightPaths) do C[id] = C[id] or { name = name, src = "restedxp" } end
+  end
+  return C
+end
+T.CharFlightPaths = Char
+
+-- the other faction's flight points can't be yours (the flight map sometimes lists them)
+local function OurFaction(id)
+  local n = WritPath_Data and WritPath_Data.flightNodes and WritPath_Data.flightNodes[id]
+  if not n then return true end
+  local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
+  return n[4] == mine or n[4] == "AH"
+end
+
+-- record a flight path as yours; true when it's new
+function T.MarkKnown(id, name, src)
+  if not (id and OurFaction(id)) then return false end
+  local C = Char()
+  if C[id] then
+    -- seen by WritPath itself now: no longer only RestedXP's word for it
+    if type(C[id]) == "table" and C[id].src == "restedxp" and src then C[id].src = src end
+    return false
+  end
+  C[id] = { name = name, src = src or "map", t = time and time() or nil }
+  T.Reset()
+  return true
+end
+
+-- id -> name for every flight path you know; second result: how many came from WritPath's own records
 local function Known()
   local known, own = {}, 0
-  local fp, seen = WritPathLearned and WritPathLearned.fp or {}, WritPathLearned and WritPathLearned.fpSeen or {}
-  -- yours: recorded at a flight master (own = true), or saved before this mark existed; not: own = false
-  -- (seen on a flight map but not learned) or src = "map" (only placed from the world map)
-  for id, f in pairs(fp) do
-    if f.own == true or (f.own == nil and f.src ~= "map") then known[id] = f.name or true; own = own + 1 end
+  for id, v in pairs(Char()) do
+    known[id] = (type(v) == "table" and v.name) or true
+    if not (type(v) == "table" and v.src == "restedxp") then own = own + 1 end
   end
-  -- RestedXP keeps its own list of the flight paths this character knows: every one on it counts too (a
-  -- flight path is never unlearned, so either source saying "yours" is enough)
-  for id, name in pairs(RXPCData and RXPCData.flightPaths or {}) do
-    if not known[id] then known[id] = name end
+  -- flags left in the old account-wide place (older saved data)
+  for id, f in pairs(WritPathLearned and WritPathLearned.fp or {}) do
+    if type(f) == "table" and f.own == true and not known[id] then known[id] = f.name or true; own = own + 1 end
   end
   return known, own
 end
@@ -329,11 +374,14 @@ function T.RecordFlightPaths()
   WritPathLearned.fpSeen = WritPathLearned.fpSeen or {}
   local added = 0
   local function Mark(id, name, zone, x, y)
-    local f = WritPathLearned.fp[id] or {}
-    if not f.own then added = added + 1 end
-    f.own, f.name = true, f.name or name
-    if zone and not IsContinent(zone) and not f.map then f.map, f.x, f.y = zone, x, y end
-    WritPathLearned.fp[id] = f
+    if T.MarkKnown(id, name, "flight map") then added = added + 1 end
+    -- where it is, for a flight point the fixed table doesn't list
+    if zone and not IsContinent(zone) and OurFaction(id) then
+      local f = WritPathLearned.fp[id] or {}
+      f.name = f.name or name
+      if not f.map then f.map, f.x, f.y = zone, x, y end
+      WritPathLearned.fp[id] = f
+    end
   end
   local m = (GetTaxiMapID and GetTaxiMapID()) or C_Map.GetBestMapForUnit("player")
   -- the newer API: node ids, positions and a state
@@ -705,6 +753,22 @@ local function RecordShip(dock, land)
   T.Reset()
 end
 
+-- the flight point of your faction you're standing at (within maxYards), known or not
+function T.NearestNode(p, maxYards)
+  if not p then return nil end
+  local best, bd
+  for id, n in pairs(WritPath_Data and WritPath_Data.flightNodes or {}) do
+    if OurFaction(id) then
+      local q = T.Point(n[1], n[2], n[3])
+      if q and q.inst == p.inst then
+        local d = Dist(q, p)
+        if d <= (maxYards or NEAR_FP) and (not bd or d < bd) then best, bd = id, d end
+      end
+    end
+  end
+  return best, bd
+end
+
 local function NearestFP(p)
   if not p then return nil end
   local best, bd
@@ -739,10 +803,16 @@ local function Poll()
   local inside = IsInInstance and IsInInstance()
   local last = REC.last
 
-  -- flights: from the flight master you took off at to the one you landed at
-  if taxi and not REC.onTaxi then REC.flight = { from = NearestFP(last), t = now } end
+  -- flights: from the flight master you took off at to the one you landed at. You can only fly between flight
+  -- paths you have, so both ends are yours.
+  if taxi and not REC.onTaxi then
+    local from = T.NearestNode(last, NEAR_FP) or NearestFP(last)
+    if from then T.MarkKnown(from, nil, "flight") end
+    REC.flight = { from = from, t = now }
+  end
   if not taxi and REC.onTaxi and REC.flight and p then
-    local to = NearestFP(p)
+    local to = T.NearestNode(p, NEAR_FP) or NearestFP(p)
+    if to then T.MarkKnown(to, nil, "flight") end
     if REC.flight.from and to and to ~= REC.flight.from then RecordFlight(REC.flight.from, to, now - REC.flight.t) end
     REC.flight = nil
   end

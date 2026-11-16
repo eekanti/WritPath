@@ -453,16 +453,10 @@ ev:SetScript("OnEvent", function(_, event, ...)
   if event == "UI_INFO_MESSAGE" or event == "CHAT_MSG_SYSTEM" then
     if not (WritPathNav and LearnedFlightPath(...)) then return end
     -- the flight path you were sent to learn (or the one you're standing at): it's yours now
-    local function Own(id)
-      if not id then return end
-      WritPathLearned = WritPathLearned or {}
-      WritPathLearned.fp = WritPathLearned.fp or {}
-      local f = WritPathLearned.fp[id] or {}
-      f.own = true; WritPathLearned.fp[id] = f
-      if WritPath_Travel then WritPath_Travel.Reset() end
-    end
-    local near = FlightHint()
-    Own(near and near.id)
+    local T = WritPath_Travel
+    local function Own(id) if id and T and T.MarkKnown then T.MarkKnown(id, nil, "discovered") end end
+    -- the flight master you're standing at
+    Own(T and T.NearestNode and T.NearestNode(T.PlayerPoint(), 100))
     local s = ROUTE[WritPathNav.step]
     if s and s.fpid then Own(s.fpid) end   -- the flight path this step learns ("learn it, then fly" waits for the flight)
     if s and s.done and s.done.taxiMap then WritPathNav.manual[WritPathNav.step] = true end
