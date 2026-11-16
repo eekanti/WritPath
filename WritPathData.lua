@@ -22,6 +22,7 @@ WritPath_Data = {
     { from = 1456, to = 1412, x = 40.6, y = 12.1 },   -- Thunder Bluff -> Mulgore (lift)
     { from = 1412, to = 1456, x = 39.8, y = 29.2 },   -- Mulgore -> Thunder Bluff (lift)
     { from = 1458, to = 1420, x = 66.3, y = 0.8 },    -- Undercity -> Tirisfal Glades
+    { from = 1431, to = 1434, x = 44.8, y = 84.6 },   -- Duskwood -> Stranglethorn Vale (the road south)
   },
   -- flight times in seconds between flight points (taxi node ids), either direction
   flights = {
