@@ -118,9 +118,9 @@ local function StepDone(i)
     local z = WritPath_Travel and WritPath_Travel.ZoneOf(m) or m
     for _, a in ipairs(d.arrive) do if m == a or z == a then hit = true end end
   end
-  -- a waypoint on the way (road crossing, dock, flight master) is done once you're close to it; a writ
-  -- customer only when you've handed the writ in
-  if not hit and TravelStep(s) and Near(s) then hit = true end
+  -- a waypoint on the way (road crossing, dock) is done once you're close to it; a flight master only once
+  -- you've taken the flight (or landed), a writ customer only when you've handed the writ in
+  if not hit and TravelStep(s) and not d.taxi and Near(s) then hit = true end
   if hit then WritPathNav.manual[i] = true end
   return hit
 end
