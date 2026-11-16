@@ -42,7 +42,7 @@ Roads, boats and flight times you use are learned as you travel.
 
 ### Before you start
 
-1. **Scan writ prices at the auction house**: press **WritPath: scan writs** under the auction house window. It
+1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath prices** panel under the auction house window. It
    reads the whole auction house once (about as long as an Auctionator full scan) and keeps the prices of writs
    and the items they ask for. The game allows one full scan every 15 minutes. The planner shows how old the
    prices are in the top right. If you also use Auctionator, the newer of the two scans is used.
@@ -159,7 +159,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 
 - **The route walks everywhere**: run `/writs travel`. If flight paths are missing or "not placed", open a flight
   master's map and plan again.
-- **"No AH price"** or writs missing from plans: press **WritPath: scan writs** at the auction house; `/writs why` gives the reasons.
+- **"No AH price"** or writs missing from plans: press **Scan** in the WritPath prices panel at the auction house; `/writs why` gives the reasons.
 - **The Writ shopping panel doesn't open**: it only opens while a running plan still has something to buy.
 - **A customer's spot is wrong**: accept the writ (its map pin corrects it) or hand it in (your spot is saved).
 

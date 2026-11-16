@@ -1004,6 +1004,23 @@ local function Ago(secs)
   return math.floor(secs / 86400) .. " days"
 end
 
+local WhyNone
+-- why nothing could be planned, counted by reason ("120 no AH price · 30 customer unknown")
+function WhyNone()
+  local _, skipped = Candidates(WritPathNav.plan and WritPathNav.plan.zoneOnly)
+  local counts, order = {}, {}
+  for _, sk in ipairs(skipped) do
+    local k = sk.why:gsub(" %(.*%)", ""):gsub("no AH price for .*", "no AH price for an item it asks for")
+    if not counts[k] then order[#order + 1] = k end
+    counts[k] = (counts[k] or 0) + 1
+  end
+  table.sort(order, function(a, b) return counts[a] > counts[b] end)
+  local parts = {}
+  for i = 1, math.min(4, #order) do parts[#parts + 1] = counts[order[i]] .. " " .. order[i] end
+  if #parts == 0 then return "" end
+  return "\n" .. GREY .. "Why: " .. table.concat(parts, " · ") .. ". Prices come from WritPath's own scan (Scan at the auction house) or Auctionator's.|r"
+end
+
 local function PriceAge(plan)
   local last = math.max(AuctionatorTime(), WritPath_ScanTime and WritPath_ScanTime() or 0)
   local t
@@ -1064,7 +1081,7 @@ local function Show(plan, top)
   if #plan.route == 0 then
     summary:SetText(W_ .. (plan.mine and (plan.owned == 0 and "No writs in your bags or quest log."
       or "None of your writs can go today: see the lines above.")
-      or "Nothing to plan: no writ with a known customer and an AH price is free today.") .. "|r")
+      or ("Nothing to plan: no writ with a known customer and an AH price is free today." .. WhyNone())) .. "|r")
   elseif plan.mine then
     summary:SetText(("%s%d writs today, %d rep|r · ~%d min · pouches ~%s%s"):format(G, #plan.route, plan.rep,
       Minutes(plan.secs), Coins(plan.pouches), plan.cost > 0 and (" · missing items " .. Coins(plan.cost)) or ""))

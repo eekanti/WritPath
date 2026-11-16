@@ -11,7 +11,7 @@ local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " 
 local TEX = {
   arrow   = "Interface/AddOns/WritPath/Media/arrow",
   flat    = "Interface/BUTTONS/WHITE8X8",
-  icon    = "Interface/Icons/INV_Misc_Note_01",
+  icon    = "Interface/AddOns/WritPath/Media/icon",
   box     = "Interface/Buttons/UI-CheckBox-Up",
   checked = "Interface/Buttons/UI-CheckBox-Check",
 }
@@ -407,14 +407,37 @@ function WritPath_Refresh() if WritPathNav then Refresh() end end
 local mini = CreateFrame("Button", "WritPathMinimapButton", Minimap)
 mini:SetSize(31, 31); mini:SetFrameStrata("MEDIUM"); mini:SetFrameLevel(8)
 mini:RegisterForClicks("LeftButtonUp", "RightButtonUp"); mini:RegisterForDrag("LeftButton")
-mini:SetHighlightTexture("Interface/Minimap/UI-Minimap-ZoomButton-Highlight")
-local miniIcon = mini:CreateTexture(nil, "BACKGROUND"); miniIcon:SetSize(20, 20); miniIcon:SetPoint("TOPLEFT", 7, -5)
-miniIcon:SetTexture("Interface/Icons/INV_Misc_Note_01")
-local miniBorder = mini:CreateTexture(nil, "OVERLAY"); miniBorder:SetSize(53, 53); miniBorder:SetPoint("TOPLEFT")
-miniBorder:SetTexture("Interface/Minimap/MiniMap-TrackingBorder")
+-- WritPath's own badge (it has its own ring, so no extra border)
+local miniIcon = mini:CreateTexture(nil, "ARTWORK"); miniIcon:SetAllPoints(); miniIcon:SetTexture(TEX.icon)
+local miniGlow = mini:CreateTexture(nil, "HIGHLIGHT"); miniGlow:SetAllPoints(); miniGlow:SetTexture(TEX.icon)
+miniGlow:SetBlendMode("ADD"); miniGlow:SetAlpha(0.35)
+-- on the minimap's outer edge like other addons' buttons, following its shape (round, square, ...): the same
+-- placement LibDBIcon uses
+local SHAPES = {
+  ["ROUND"] = { true, true, true, true }, ["SQUARE"] = { false, false, false, false },
+  ["CORNER-TOPLEFT"] = { false, false, false, true }, ["CORNER-TOPRIGHT"] = { false, false, true, false },
+  ["CORNER-BOTTOMLEFT"] = { false, true, false, false }, ["CORNER-BOTTOMRIGHT"] = { true, false, false, false },
+  ["SIDE-LEFT"] = { false, true, false, true }, ["SIDE-RIGHT"] = { true, false, true, false },
+  ["SIDE-TOP"] = { false, false, true, true }, ["SIDE-BOTTOM"] = { true, true, false, false },
+  ["TRICORNER-TOPLEFT"] = { false, true, true, true }, ["TRICORNER-TOPRIGHT"] = { true, false, true, true },
+  ["TRICORNER-BOTTOMLEFT"] = { true, true, false, true }, ["TRICORNER-BOTTOMRIGHT"] = { true, true, true, false },
+}
 local function PlaceMini()
+  if not (Minimap and Minimap.GetWidth) then return end
   local a = math.rad(WritPathNav and WritPathNav.miniAngle or 200)
-  mini:ClearAllPoints(); mini:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * 80, math.sin(a) * 80)
+  local x, y, q = math.cos(a), math.sin(a), 1
+  if x < 0 then q = q + 1 end
+  if y > 0 then q = q + 2 end
+  local shape = GetMinimapShape and GetMinimapShape() or "ROUND"
+  local quad = SHAPES[shape] or SHAPES.ROUND
+  local w, h = (Minimap:GetWidth() or 140) / 2 + 10, (Minimap:GetHeight() or 140) / 2 + 10
+  if quad[q] then
+    x, y = x * w, y * h
+  else   -- a square corner: slide along the edge
+    local dw, dh = math.sqrt(2 * w ^ 2) - 10, math.sqrt(2 * h ^ 2) - 10
+    x = math.max(-w, math.min(x * dw, w)); y = math.max(-h, math.min(y * dh, h))
+  end
+  mini:ClearAllPoints(); mini:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 mini:SetScript("OnDragStart", function(self)
   self:SetScript("OnUpdate", function()
