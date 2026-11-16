@@ -419,8 +419,9 @@ local function BestOrder(start, stops, quick)
 end
 
 -- writs in your bags or quest log; one per customer today, the rest wait for tomorrow
-local function PlanOwned(only, skipQuest, planned)   -- only: just these writ ids; skipQuest: a quest just handed in;
-                                                     -- planned: the "only" writs count even if not bought yet
+local function PlanOwned(only, skipQuest, planned, ready)   -- only: just these writ ids; skipQuest: a quest just handed in;
+                                                     -- planned: the "only" writs count even if not bought yet;
+                                                     -- ready: only writs you can hand in now (their item in your bags)
   Travel.Reset(); ResetMemo()
   local used = UsedToday()
   local stops, later, unknown, byCustomer = {}, {}, {}, {}
@@ -439,6 +440,8 @@ local function PlanOwned(only, skipQuest, planned)   -- only: just these writ id
       unknown[#unknown + 1] = { id = id, w = w, why = InLog(w.q) and "map pin not read yet" or "accept it so its map pin shows where it goes" }
     elseif used[c.key] then
       later[#later + 1] = { id = id, w = w, why = "already handed in to this customer today (" .. used[c.key] .. ")" }
+    elseif ready and math.max(0, (w.n or 1) - Count(w.req)) > 0 then
+      later[#later + 1] = { id = id, w = w, why = "needs its item first (" .. (ItemName(w.req) or "the item") .. "): buy it, or plan with a rep target" }
     elseif byCustomer[c.key] then
       later[#later + 1] = { id = id, w = w, why = "same customer as " .. byCustomer[c.key].w.name }
     elseif not QuickOK(c) then
@@ -1222,7 +1225,7 @@ local function DoMine()
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
   cards.cheap:Hide(); cards.fast:Hide()
   WritPathNav.planMode = "mine"
-  local plan = PlanOwned(); Warm(plan)
+  local plan = PlanOwned(nil, nil, nil, true); Warm(plan)   -- just what you can hand in now
   Show(plan, -62)
 end
 
@@ -1475,13 +1478,14 @@ local function Reroute(q, why, quiet)
     end
   end
   if not onRoute or not next(left) then return end
-  local plan = PlanOwned(left, q)
+  -- once you've left the auction house, a writ still missing its item comes off the route (it's listed as waiting)
+  local past = (WritPathNav.step or 1) > 1
+  local plan = PlanOwned(left, q, nil, past)
   if #plan.route == 0 then return end
   local steps = Steps(plan)
   if keep then table.insert(steps, 2, keep) end
   -- a quiet re-plan (on entering a zone) leaves the route alone when the way ahead comes out the same
   if quiet and Sig(steps, 2) == Sig(WritPathNav.route, WritPathNav.step or 1) then return end
-  local past = (WritPathNav.step or 1) > 1
   WritPath_SetRoute(steps, WritPathNav.title, WritPathNav.doneText)
   -- you'd already left the auction house: the new route doesn't send you back to its "buy" step (an item still
   -- missing shows at that writ's customer step instead)
@@ -1490,8 +1494,11 @@ local function Reroute(q, why, quiet)
     if WritPath_Refresh then WritPath_Refresh() end
   end
   local nxt = plan.route[1]
-  Print(("Rerouted from here%s: next %s (%s), %d writs left, ~%d min."):format(why and (" (" .. why .. ")") or "",
-    nxt.w.name, nxt.c.npc or MapName(nxt.c.map), #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))
+  local waiting = {}
+  for _, l in ipairs(plan.later or {}) do if l.why:find("^needs its item") then waiting[#waiting + 1] = l.w.name end end
+  Print(("Rerouted from here%s: next %s (%s), %d writs left, ~%d min.%s"):format(why and (" (" .. why .. ")") or "",
+    nxt.w.name, nxt.c.npc or MapName(nxt.c.map), #plan.route, math.floor((plan.secs or 0) / 60 + 0.5),
+    #waiting > 0 and (" Left out until you have the item: " .. table.concat(waiting, ", ") .. ".") or ""))
 end
 function WritPath_RerouteFromHere(q) Reroute(q) end
 function WritPath_RerouteNow(why, quiet) Reroute(nil, why, quiet) end
