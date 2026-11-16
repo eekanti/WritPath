@@ -1,14 +1,14 @@
 ## Interface: 16001
 ## Title: WritPath
-## Notes: Plans which Craftsman's Writs to buy and the best order to hand them in, with a guided route. Includes RestedXP pathing data (CC BY-NC-SA 4.0); credits in CREDITS.md.
-## Version: 0.9.3
+## Notes: Plans which Craftsman's Writs to buy and the best order to hand them in, with a guided route. MIT licensed; credits in CREDITS.md.
+## Version: 1.0.0
 ## OptionalDeps: EllesmereUI, Auctionator
 ## SavedVariables: WritPathDB, WritPathNav, WritPathMoney, WritPathLearned
 ## SavedVariablesPerCharacter: WritPathChar
 
 WritPath.lua
 WritDB.lua
-RXPData.lua
+TravelFacts.lua
 WritPathData.lua
 Travel.lua
 Nav.lua

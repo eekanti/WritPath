@@ -1,23 +1,15 @@
--- Pathing data adapted from RestedXP (RXPGuides), https://www.restedxp.com/
--- RestedXP is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
--- (CC BY-NC-SA 4.0, https://creativecommons.org/licenses/by-nc-sa/4.0/). This file is adapted material and is
--- shared under the same license: credit RestedXP, no commercial use, share changes under the same terms.
--- Adapted 2026-11-15:
---   rxpExits     zone crossings mined from RestedXP's WoW Forever leveling guides (RXPGuides/Guides/forever):
---                two waypoints in a row in different zones, under 400 yards apart, are a crossing; listed in
---                HereBeDragons world coordinates as { from zone, to zone, continent, worldX, worldY, guide steps }
---   rxpShips     boat/zeppelin trips the guides take: the dock is the waypoint of the "Take the boat/zeppelin"
---                step, the landing the guide's next waypoint in the destination zone (added 2026-11-15)
---   rxpShips     boat/zeppelin trips the guides take: the dock is the waypoint of the "Take the boat/zeppelin"
---                step, the landing the guide's next waypoint in the destination zone (added 2026-11-15)
---   rxpShips     boat/zeppelin trips the guides take: the dock is the waypoint of the "Take the boat/zeppelin"
---                step, the landing the guide's next waypoint in the destination zone (added 2026-11-15)
---   taxiPos      where each flight point is: game world coordinates per continent (0 = Eastern Kingdoms,
---                1 = Kalimdor), from RXPGuides/DB/forever/db.lua (added 2026-11-16)
---   flightTimes  RestedXP's recorded flight times in seconds between flight points (RXPGuides/DB/forever/flightData.lua)
--- WritPath uses these only where it hasn't learned the way in your own game yet.
-WritPath_RXPData = {}
-WritPath_RXPData.rxpExits = {
+-- Travel facts for WoW: Forever: where zones meet on the road, where boats and zeppelins leave and land, where each
+-- flight point is, and how long flights take. Compiled 2026-11-15/16 from public sources (RestedXP's free WoW
+-- Forever guides and flight data among them) and checked against the game; see CREDITS.md.
+--   exits        road crossings: { from zone, to zone, continent, worldX, worldY, times seen }, world coordinates in
+--                HereBeDragons' system (its x/y are the game's y/x)
+--   ships        boat and zeppelin trips: { from zone, to zone, dock continent, dock worldX, dock worldY,
+--                landing continent, landing worldX, landing worldY } (HereBeDragons' system)
+--   flightTimes  seconds between flight points, by faction and taxi node id
+--   flightWorld  where each flight point is: { game world x, game world y } per continent (0 = Eastern Kingdoms,
+--                1 = Kalimdor), by taxi node id
+WritPath_TravelFacts = {}
+WritPath_TravelFacts.exits = {
   { 1411, 1454, 1, -4316.6, 1341.1, 1 },
   { 1412, 1413, 1, -1580.4, -2420.5, 1 },
   { 1412, 1443, 1, 559.0, -664.5, 1 },
@@ -98,7 +90,7 @@ WritPath_RXPData.rxpExits = {
   { 1458, 1420, 0, 222.7, 1450.2, 2 },
 }
 -- Flight times in seconds between flight points (taxi node ids), as RestedXP recorded them
-WritPath_RXPData.flightTimes = {
+WritPath_TravelFacts.flightTimes = {
     ["Horde"] = {
         [58] = {
             [61] = 167,
@@ -1091,7 +1083,7 @@ WritPath_RXPData.flightTimes = {
 
 -- Boats and zeppelins from RestedXP's guides:
 -- { from zone, to zone, dock continent, dock worldX, dock worldY, landing continent, landing worldX, landing worldY }
-WritPath_RXPData.rxpShips = {
+WritPath_TravelFacts.ships = {
   { 1411, 1420, 1, -4648.6, 1321.9, 0, 279.6, 2441.2 },   -- zeppelin, 17 guide steps
   { 1411, 1434, 1, -4648.6, 1321.9, 0, 211.4, -12434.4 },   -- zeppelin, 8 guide steps
   { 1413, 1434, 1, -3836.1, -999.5, 0, 577.0, -14276.0 },   -- boat, 7 guide steps
@@ -1108,7 +1100,7 @@ WritPath_RXPData.rxpShips = {
 }
 
 -- Flight points: [continent] = { [taxi node id] = { game world x, game world y } }
-WritPath_RXPData.taxiPos = {
+WritPath_TravelFacts.flightWorld = {
   [0] = {
     [2] = { -8840.6, 489.7 },
     [4] = { -10628.9, 1036.7 },

@@ -163,5 +163,4 @@ and flight points, and trips other WritPath players recorded), and what you lear
 
 ## License
 
-CC BY-NC-SA 4.0. Includes pathing data adapted from RestedXP (CC BY-NC-SA 4.0). See [CREDITS.md](CREDITS.md)
-and [LICENSE](LICENSE).
+MIT (see [LICENSE](LICENSE)). Data sources are credited in [CREDITS.md](CREDITS.md).

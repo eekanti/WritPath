@@ -1,6 +1,6 @@
 -- WritPath travel: how to actually get from A to B.
 -- A graph of the places you pass through, with travel time as the cost. What you've learned in your own
--- game comes first; RestedXP's pathing data (RXPData.lua, CC BY-NC-SA 4.0) fills in the rest:
+-- game comes first; the shipped travel facts (TravelFacts.lua) fill in the rest:
 --   road crossings between zones   recorded when you ride from one zone into the next, plus the crossings
 --                                  RestedXP's leveling guides walk you through
 --   boats and zeppelins            recorded when you cross to the other continent by ship
@@ -56,7 +56,7 @@ function T.Point(map, x, y)
 end
 
 -- seconds for a flight between two flight points (either direction): what it took you, else RestedXP's time
-local RXP = WritPath_RXPData or {}
+local RXP = WritPath_TravelFacts or {}
 local function FlightTime(a, b)
   if not (a and b) then return nil end
   local t = WritPathLearned and WritPathLearned.flights or {}
@@ -306,7 +306,7 @@ local function LocateFlightPaths()
   if Missing() then
     for id in pairs(known) do
       if not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) then
-        for inst, list in pairs(RXP.taxiPos or {}) do
+        for inst, list in pairs(RXP.flightWorld or {}) do
           local t = list[id]
           if t then
             local zone, x, y = PlaceWorld(inst, t[1], t[2])
@@ -358,7 +358,7 @@ function T.Report()
   local lines = {
     ("Flight paths you know: %d placed on the map%s."):format(#placed, #lost > 0 and (", " .. #lost .. " not placed: " .. table.concat(lost, ", ")) or ""),
     ("Road crossings: %d learned, %d from RestedXP, %d shipped. Ships: %d learned, %d from RestedXP, %d shipped."):format(
-      #(L.crossings or {}), #(RXP.rxpExits or {}), #(D.crossings or {}), #(L.transports or {}), #(RXP.rxpShips or {}), #(D.transports or {})),
+      #(L.crossings or {}), #(RXP.exits or {}), #(D.crossings or {}), #(L.transports or {}), #(RXP.ships or {}), #(D.transports or {})),
   }
   if not next(known) then lines[#lines + 1] = "Open any flight master's map once per continent so WritPath learns which flight paths you know." end
   return lines
@@ -464,7 +464,7 @@ function T.Build()
     end
   end
   -- crossings RestedXP's leveling guides use (world coordinates, placed on the zone you leave), both ways
-  for _, c in ipairs(RXP.rxpExits or {}) do
+  for _, c in ipairs(RXP.exits or {}) do
     local zx, zy = WorldToZone(c[1], c[3], c[4], c[5])
     local p = zx and T.Point(c[1], zx, zy)
     if p then
@@ -502,7 +502,7 @@ function T.Build()
       if dock and land then Sail(from, dock, to, land); sailed[from .. ">" .. to] = true end
     end
   end
-  for _, t in ipairs(RXP.rxpShips or {}) do   -- { from, to, inst, wx, wy, landInst, landWx, landWy }
+  for _, t in ipairs(RXP.ships or {}) do   -- { from, to, inst, wx, wy, landInst, landWx, landWy }
     if not sailed[t[1] .. ">" .. t[2]] then
       local x, y = WorldToZone(t[1], t[3], t[4], t[5])
       local tx, ty = WorldToZone(t[2], t[6], t[7], t[8])

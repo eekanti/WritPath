@@ -1,26 +1,14 @@
 # WritPath credits
 
-WritPath ships no other addon's code or art. It does include pathing data adapted from RestedXP (below),
-under RestedXP's license. Everything else is facts gathered from public community sources, or something
-WritPath reads from another addon at runtime when you have it installed.
+WritPath is MIT licensed (see LICENSE) and ships no other addon's code or art. Its data is facts about the game:
+where customers and flight masters stand, where zones meet, where boats leave, how long flights take. These were
+gathered from the public sources below, refined by what players record in game, or read at runtime from other addons you have.
 
-## RestedXP pathing data (RXPData.lua)
+## Travel facts (TravelFacts.lua)
 
-**Adapted from RestedXP (RXPGuides), https://www.restedxp.com/**, licensed under Creative Commons
-Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0,
-https://creativecommons.org/licenses/by-nc-sa/4.0/).
-
-- Zone crossings mined from RestedXP's WoW Forever leveling guides (waypoints in a row, in different zones,
-  under 400 yards apart).
-- Boat and zeppelin trips the guides take (the dock from each "Take the boat/zeppelin" step, the landing from the
-  dock the trip back leaves from). Added 2026-11-15.
-- Where every flight point is (RXPGuides/DB/forever/db.lua `taxiPos`), used to place the flight paths you know
-  when the game can't. Added 2026-11-16.
-- RestedXP's recorded flight times between flight points.
-
-RXPData.lua is adapted material and is shared under the same CC BY-NC-SA 4.0 license: credit RestedXP,
-no commercial use, and share any changes to it under the same terms. WritPath uses this data only where it
-hasn't learned the way in your own game. RestedXP does not endorse WritPath.
+Zone crossings, boat and zeppelin routes, flight point positions and flight times, compiled from public sources,
+among them RestedXP's free WoW: Forever guides and flight data (https://www.restedxp.com/). RestedXP does not
+endorse WritPath. What you learn in your own game always wins over this file.
 
 ## Writ customers (WritDB.lua)
 
@@ -48,8 +36,8 @@ Thunder Bluff, Undercity -> Tirisfal) and three flight times. Nothing in this fi
 
 ## Flight points (WritPathData.lua, `flightNodes`)
 
-Every flight point by taxi node id, with its zone and exact spot: ids, names and factions from RestedXP's node
-list, spots from QuestieDB's flight masters, and city flight masters plus a few QuestieDB lacks filled in by hand
+Every flight point by taxi node id, with its zone and exact spot: ids, names and factions from public node lists
+(RestedXP's among them), spots from QuestieDB's flight masters, and city flight masters plus a few QuestieDB lacks filled in by hand
 (2026-11-16). Flight points never move, so WritPath always takes their spot from this table.
 
 ## Roads, ships and flight times (WritPathLearned)
