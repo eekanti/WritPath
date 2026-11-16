@@ -40,7 +40,7 @@ Roads, boats and flight times you use are learned as you travel.
 
 ### Staying up to date
 
-1. Once: open `Interface\AddOns\WritPath	ools` and double-click **Setup Updater.bat**. It puts an
+1. Once: open `Interface\AddOns\WritPath\tools` and double-click **Setup Updater.bat**. It puts an
    **Update WritPath** shortcut on your desktop and checks for a new version each time you log in to Windows.
    No administrator rights needed; your settings and learned data are never touched.
 2. In game, WritPath tells you when a newer version is out (it hears it from friends, guild or group members who
