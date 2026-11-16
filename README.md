@@ -131,6 +131,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | `/writs money` | Every turn-in's cost and pouch, in chat |
 | `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
 | `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |
+| `/writs leg` | Why the way to the next customer looks the way it does (times, route, nearest flight points and docks); also saved for a `/reload` |
 | `/writs why` | Why some writs aren't in plans (no price, customer unknown, ...) |
 | `/writs scan` | Read the map pins of the writs you've accepted |
 | `/writs next` / `/writs back` | Skip the current guide step / undo the last skip |

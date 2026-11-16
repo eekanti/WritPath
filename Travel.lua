@@ -527,6 +527,43 @@ function T.Legs(a, b)
   return legs
 end
 
+-- /writs leg: everything WritPath weighed for one leg, for finding out why a route looks wrong
+function T.Explain(a, b)
+  if not nodes then T.Build() end
+  local out = {}
+  local function P(p) return p and ("%s %.1f,%.1f inst %s world %.0f,%.0f"):format(tostring(p.map), p.x or -1, p.y or -1, tostring(p.inst), p.wx or 0, p.wy or 0) or "?" end
+  local function N(n) return ("%s %s %.1f,%.1f%s"):format(n.kind, tostring(n.zone), n.p.x or -1, n.p.y or -1, n.name and (" " .. n.name) or (n.peer and (" ->" .. n.peer) or "")) end
+  out[#out + 1] = "from " .. P(a) .. " | to " .. P(b)
+  local count = {}
+  for _, n in ipairs(nodes) do count[n.kind] = (count[n.kind] or 0) + 1 end
+  local parts = {}; for k, v in pairs(count) do parts[#parts + 1] = k .. " " .. v end; table.sort(parts)
+  out[#out + 1] = "map: " .. #nodes .. " places (" .. table.concat(parts, ", ") .. ")"
+  if a and b and a.inst == b.inst then
+    out[#out + 1] = ("straight: %d s (%d yd)"):format(math.floor(Dist(a, b) / RIDE * (a.map == b.map and 1 or UNKNOWN)), math.floor(Dist(a, b)))
+  else out[#out + 1] = "straight: different continent" end
+  local best, via, r = T.Time(a, b)
+  out[#out + 1] = ("best: %s s%s"):format(tostring(best and math.floor(best)), via and (" via " .. N(via)) or " (straight)")
+  if via then
+    local i, chain = via.i, {}
+    while i and r.prev[i] do local pr = r.prev[i]; table.insert(chain, 1, pr[2].kind .. " " .. N(nodes[i])); i = pr[1] end
+    if i then table.insert(chain, 1, "start at " .. N(nodes[i])) end
+    out[#out + 1] = "route: " .. table.concat(chain, " | ")
+  end
+  local function Nearest(p, kinds, k)
+    local list = {}
+    for _, n in ipairs(nodes) do if kinds[n.kind] and p and n.p.inst == p.inst then list[#list + 1] = { n = n, d = Dist(n.p, p) } end end
+    table.sort(list, function(x, y) return x.d < y.d end)
+    local s = {}
+    for j = 1, math.min(k, #list) do s[#s + 1] = ("%s (%d yd)"):format(N(list[j].n), math.floor(list[j].d)) end
+    return #s > 0 and table.concat(s, "; ") or "none"
+  end
+  out[#out + 1] = "flight points near start: " .. Nearest(a, { fp = true }, 3)
+  out[#out + 1] = "flight points near end: " .. Nearest(b, { fp = true }, 3)
+  out[#out + 1] = "docks near start: " .. Nearest(a, { dock = true }, 3)
+  out[#out + 1] = "landings near end: " .. Nearest(b, { land = true }, 3)
+  return out
+end
+
 function T.KnownFlightPaths()
   local known, own = Known()
   local n = 0; for _ in pairs(known) do n = n + 1 end

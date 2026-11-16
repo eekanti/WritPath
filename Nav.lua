@@ -436,6 +436,18 @@ SlashCmdList.WRITPATH = function(msg)
   elseif msg == "plan" or msg == "mine" then WritPath_OpenPlanner("mine")
   elseif msg == "buy" then WritPath_OpenPlanner("buy")
   elseif msg == "why" then WritPath_WhyNot()
+  elseif msg == "leg" then
+    -- why the way to the next customer looks the way it does; also saved for a /reload so it can be read later
+    local T = WritPath_Travel
+    local target
+    for i = cur, #ROUTE do local s = ROUTE[i]; if s.done and s.done.quests and s.at then target = s; break end end
+    if not (T and target) then Print("No customer ahead on the route."); return end
+    local a, b = T.PlayerPoint(), T.Point(target.at[1], target.at[2], target.at[3])
+    local lines = T.Explain(a, b)
+    table.insert(lines, 1, "leg to " .. tostring(target.at[4]) .. ", step " .. cur .. " of " .. #ROUTE .. ": " .. ((ROUTE[cur] and ROUTE[cur].lines[1]) or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+    for _, l in ipairs(lines) do Print(l) end
+    WritPathLearned.debugLeg = { t = time(), lines = lines }
+    Print("Saved. /reload and it can be read from WritPath's saved data.")
   elseif msg == "travel" then
     for _, l in ipairs(WritPath_Travel and WritPath_Travel.Report and WritPath_Travel.Report() or {}) do Print(l) end
   elseif msg == "clear" then
