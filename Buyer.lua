@@ -129,7 +129,24 @@ local function Build()
     r.skip:SetNormalTexture("Interface/Buttons/UI-StopButton"); r.skip:SetHighlightTexture("Interface/Buttons/UI-StopButton", "ADD")
     r.skip:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Skip"); GameTooltip:AddLine("Skips this and its writ or item.", 1, 1, 1, true); GameTooltip:Show() end)
     r.skip:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    r:SetScript("OnEnter", function(self) self.hl:Show() end); r:SetScript("OnLeave", function(self) self.hl:Hide() end)
+    r:SetScript("OnEnter", function(self)
+      self.hl:Show()
+      local it = self.it; if not it then return end
+      local pk = seen[it.id]
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:SetText(ItemName(it.id) or it.name or "?")
+      if pk then
+        GameTooltip:AddLine(("Cheapest for the %d you need: %s (%d %s, %s each)"):format(Need(it), Coins(pk.total), pk.qty, pk.qty == 1 and "listing" or "units", Coins(pk.unit)), 1, 1, 1, true)
+        if pk.stack then
+          GameTooltip:AddLine(("Cheapest per unit: %s each, but only as a stack of %d (%s for the stack)."):format(Coins(pk.stack.unit), pk.stack.qty, Coins(pk.stack.total)), 1, 0.82, 0, true)
+        end
+      elseif pk == false then GameTooltip:AddLine("None listed right now.", 1, 0.5, 0.3)
+      else GameTooltip:AddLine("Not looked up yet.", 0.7, 0.7, 0.7) end
+      if it.unit and it.unit > 0 then GameTooltip:AddLine(("The plan expected %s each."):format(Coins(it.unit)), 0.7, 0.7, 0.7) end
+      GameTooltip:AddLine("Click: buy this one next.", 0.5, 0.8, 1)
+      GameTooltip:Show()
+    end)
+    r:SetScript("OnLeave", function(self) self.hl:Hide(); GameTooltip:Hide() end)
     r:SetScript("OnClick", function(self) if self.it and JumpTo then JumpTo(self.it) end end)
     rows[i] = r
   end
@@ -163,7 +180,8 @@ local function RowPrice(it)
   if pk == false then return W_ .. "none listed|r" end
   if not pk then return GREY .. "..." .. "|r" end
   local over = it.unit and it.unit > 0 and pk.total > it.unit * math.min(pk.qty, Need(it)) * CAP + 0.5
-  return (over and W_ or Y) .. Coins(pk.total) .. "|r"
+  -- a star: cheaper per unit in a stack bigger than you need (hover the row for it)
+  return (over and W_ or Y) .. Coins(pk.total) .. "|r" .. (pk.stack and (GREY .. "*|r") or "")
 end
 -- what's left to buy at what the auction house asks now (the plan's price where nothing was found yet)
 local function Totals()
