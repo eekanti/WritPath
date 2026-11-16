@@ -1,0 +1,37 @@
+# Pushing a version tag (v1.9.1) builds WritPath-1.9.1.zip, with the addon in a "WritPath" folder ready to drop
+# into Interface\AddOns, and publishes it as a GitHub release. The tag's message is the release notes.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the zip
+        run: |
+          git fetch --force --tags
+          VER="${GITHUB_REF_NAME#v}"
+          TOC_VER="$(sed -n 's/^## Version: *//p' WritPath.toc | tr -d '\r')"
+          if [ "$VER" != "$TOC_VER" ]; then echo "Tag $GITHUB_REF_NAME doesn't match WritPath.toc version $TOC_VER"; exit 1; fi
+          mkdir -p build/WritPath
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'mockups' --exclude 'build' ./ build/WritPath/
+          (cd build && zip -qr "WritPath-$VER.zip" WritPath)
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > build/notes.md
+          echo "VER=$VER" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "build/WritPath-$VER.zip" \
+            --title "WritPath $VER" --notes-file build/notes.md --latest
