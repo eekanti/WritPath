@@ -360,6 +360,10 @@ function T.Report()
     ("Road crossings: %d learned, %d from RestedXP, %d shipped. Ships: %d learned, %d from RestedXP, %d shipped."):format(
       #(L.crossings or {}), #(RXP.exits or {}), #(D.crossings or {}), #(L.transports or {}), #(RXP.ships or {}), #(D.transports or {})),
   }
+  local trusted, once = 0, 0
+  for _, c in ipairs(L.paths or {}) do if (c.n or 1) >= 2 then trusted = trusted + 1 else once = once + 1 end end
+  lines[#lines + 1] = ("Winding paths to a border: %d shipped, %d learned (ridden twice), %d ridden once."):format(
+    #(D.paths or {}), trusted, once)
   if not next(known) then lines[#lines + 1] = "Open any flight master's map once per continent so WritPath learns which flight paths you know." end
   return lines
 end
@@ -457,12 +461,24 @@ local function Edge(a, b, cost, kind, legs) a.edges[#a.edges + 1] = { to = b, co
 function T.Build()
   nodes, byZone, cache, roads = {}, {}, {}, {}
   local L = WritPathLearned or {}
+  -- winding paths (shipped, and learned ones ridden twice) replace a plain crossing at the same spot: riding
+  -- straight there is what the path goes around
+  local paths, ends = {}, {}
+  for _, c in ipairs(WritPath_Data and WritPath_Data.paths or {}) do paths[#paths + 1] = c end
+  for _, c in ipairs(L.paths or {}) do if (c.n or 1) >= 2 then paths[#paths + 1] = c end end
+  for _, c in ipairs(paths) do local q = T.Point(c.from, c.x, c.y); if q then ends[#ends + 1] = { c.from, c.to, q } end end
+  local function Replaced(from, to, p)
+    for _, e in ipairs(ends) do
+      if ((e[1] == from and e[2] == to) or (e[1] == to and e[2] == from)) and p and e[3].inst == p.inst and Dist(e[3], p) < 150 then return true end
+    end
+    return false
+  end
   -- road crossings you've ridden: an exit on this side, an entry at the same spot on the far side, both ways
   for _, c in ipairs(L.crossings or {}) do
     -- an old record taken out at sea (map = a whole continent) isn't a road; an imported one where Forever has
     -- no road isn't either (one you rode yourself has no src, and stays)
     local p = not (IsContinent(c.from) or IsContinent(c.to)) and not (c.src and NoRoad(c.from, c.to)) and T.Point(c.from, c.x, c.y)
-    if p then
+    if p and not Replaced(c.from, c.to, p) then
       local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })
       local entry = Add({ zone = c.to, p = p, kind = "entry", peer = c.from })
       Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
@@ -471,7 +487,7 @@ function T.Build()
   -- crossings WritPath players have ridden (WritPathData.lua), both ways
   for _, c in ipairs(WritPath_Data and WritPath_Data.crossings or {}) do
     local p = not (IsContinent(c.from) or IsContinent(c.to)) and not NoRoad(c.from, c.to) and T.Point(c.from, c.x, c.y)
-    if p then
+    if p and not Replaced(c.from, c.to, p) then
       local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })
       local entry = Add({ zone = c.to, p = p, kind = "entry", peer = c.from })
       Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
@@ -479,7 +495,8 @@ function T.Build()
   end
   -- mountain paths (WritPathData.lua): the first waypoint to the crossing, both ways, with a guide step for
   -- every waypoint so the arrow follows the path
-  for _, c in ipairs(WritPath_Data and WritPath_Data.paths or {}) do
+  -- the paths themselves (learned ones once two rides agree, so one detour doesn't count)
+  for _, c in ipairs(paths) do
     local pts = {}
     for _, v in ipairs(c.via or {}) do pts[#pts + 1] = T.Point(c.from, v[1], v[2]) end
     local cross = T.Point(c.from, c.x, c.y)
@@ -490,7 +507,7 @@ function T.Build()
       local len = 0; for i = 2, #all do len = len + Dist(all[i - 1], all[i]) end
       local cost = CROSS + len / RIDE
       local into, back = ZoneName(c.to), ZoneName(c.from)
-      local function Way(q, i, n) return { at = q, into = c.from, text = ("{goto} Follow the path through the mountains (%d of %d): |cFF00FF25%.1f, %.1f|r"):format(i, n, q.x, q.y) } end
+      local function Way(q, i, n) return { at = q, into = c.from, text = ("{goto} Follow the path (%d of %d): |cFF00FF25%.1f, %.1f|r"):format(i, n, q.x, q.y) } end
       -- there: the waypoints, then over the border
       local there = {}
       for i = 2, #pts do there[#there + 1] = Way(pts[i], i, #pts) end
@@ -511,7 +528,7 @@ function T.Build()
     local zx, zy
     if not NoRoad(c[1], c[2]) then zx, zy = WorldToZone(c[1], c[3], c[4], c[5]) end
     local p = zx and T.Point(c[1], zx, zy)
-    if p then
+    if p and not Replaced(c[1], c[2], p) then
       local exit = Add({ zone = c[1], p = p, kind = "exit", peer = c[2] })
       local entry = Add({ zone = c[2], p = p, kind = "entry", peer = c[1] })
       Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
@@ -695,7 +712,7 @@ function T.Legs(a, b)
     if k == "cross" and c.e.legs then   -- a mountain path: start of the path, its waypoints, the border
       if not c.e.legs[1].cross then
         legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.from.zone,
-                            text = ("{goto} Go to the path through the mountains: |cFF00FF25%.1f, %.1f|r"):format(c.from.p.x, c.from.p.y) }
+                            text = ("{goto} Go to the start of the path: |cFF00FF25%.1f, %.1f|r"):format(c.from.p.x, c.from.p.y) }
       end
       for _, l in ipairs(c.e.legs) do legs[#legs + 1] = { kind = "cross", at = l.at, into = l.into, text = l.text } end
     elseif k == "cross" then
@@ -827,6 +844,94 @@ local function RecordCrossing(a, b)
   T.Reset()
 end
 
+-- Winding paths: while you ride, a breadcrumb every TRAIL_STEP yards (the last TRAIL_SECS seconds). At a border,
+-- a trail much longer than the straight line from where it began means something was in the way: its turns are
+-- saved as a path to that crossing. A path is used once two rides agree.
+local TRAIL_STEP, TRAIL_SECS, PATH_MIN, PATH_WIND, PATH_TOL, PATH_AGREE = 40, 240, 200, 1.3, 40, 120
+local function SegDist(p, a, b)
+  local dx, dy = b.wx - a.wx, b.wy - a.wy
+  local l2 = dx * dx + dy * dy
+  local t = l2 > 0 and math.max(0, math.min(1, ((p.wx - a.wx) * dx + (p.wy - a.wy) * dy) / l2)) or 0
+  local x, y = a.wx + t * dx, a.wy + t * dy
+  return math.sqrt((p.wx - x) ^ 2 + (p.wy - y) ^ 2)
+end
+-- the few points where the trail turns (Douglas-Peucker), both ends kept
+local function Simplify(pts, tol)
+  local keep = { [1] = true, [#pts] = true }
+  local function Rec(i, j)
+    local far, at = 0, nil
+    for k = i + 1, j - 1 do local d = SegDist(pts[k], pts[i], pts[j]); if d > far then far, at = d, k end end
+    if at and far > tol then keep[at] = true; Rec(i, at); Rec(at, j) end
+  end
+  Rec(1, #pts)
+  local out = {}
+  for k = 1, #pts do if keep[k] then out[#out + 1] = pts[k] end end
+  return out
+end
+local function Polyline(map, via, x, y)
+  local out = {}
+  for _, v in ipairs(via) do local q = T.Point(map, v[1], v[2]); if q then out[#out + 1] = q end end
+  local c = T.Point(map, x, y); if c then out[#out + 1] = c end
+  return out
+end
+-- every turn of one path lies near the other path (where they overlap: trails start wherever a ride began)
+local function Agree(a, b)
+  local A, B = Polyline(a.from, a.via, a.x, a.y), Polyline(b.from, b.via, b.x, b.y)
+  if #A < 2 or #B < 2 then return false end
+  local function Near(P, Q)   -- the points of P after where Q starts
+    local d0 = Dist(Q[1], Q[#Q])
+    for _, p in ipairs(P) do
+      if Dist(p, Q[#Q]) <= d0 + 30 then   -- only where Q covers the way (it began d0 from the border)
+        local best = math.huge
+        for k = 2, #Q do best = math.min(best, SegDist(p, Q[k - 1], Q[k])) end
+        if best > PATH_AGREE then return false end
+      end
+    end
+    return true
+  end
+  return Near(A, B) and Near(B, A)
+end
+local function RecordPath(trail, a, b)
+  local pts = {}
+  for _, q in ipairs(trail or {}) do if q.map == a.map and q.inst == a.inst then pts[#pts + 1] = q end end
+  pts[#pts + 1] = a
+  if #pts < 3 then return end
+  local len = 0
+  for k = 2, #pts do len = len + Dist(pts[k - 1], pts[k]) end
+  local straight = Dist(pts[1], a)
+  if straight < PATH_MIN or len < PATH_WIND * straight then return end   -- near enough straight: nothing to learn
+  local s = Simplify(pts, PATH_TOL)
+  local via = {}
+  for k = 1, #s - 1 do via[#via + 1] = { math.floor(s[k].x * 10 + 0.5) / 10, math.floor(s[k].y * 10 + 0.5) / 10 } end
+  local new = { from = a.map, to = b.map, x = math.floor(a.x * 10 + 0.5) / 10, y = math.floor(a.y * 10 + 0.5) / 10,
+                via = via, len = math.floor(len), n = 1, t = time() }
+  WritPathLearned.paths = WritPathLearned.paths or {}
+  local L = WritPathLearned.paths
+  local same = {}
+  for i, c in ipairs(L) do
+    local q = c.from == new.from and c.to == new.to and T.Point(c.from, c.x, c.y)
+    if q and Dist(q, a) < 80 then
+      if Agree(c, new) then
+        c.n = (c.n or 1) + 1; c.t = new.t
+        if new.len > (c.len or 0) then c.via, c.len = new.via, new.len end   -- the longer ride covers more of the way
+        if c.n == 2 then T.Reset() end
+        return
+      end
+      same[#same + 1] = i
+    end
+  end
+  -- a new way to this crossing (or a detour): kept as a candidate, at most three per crossing
+  if #same >= 3 then
+    local worst = same[1]
+    for _, i in ipairs(same) do
+      if (L[i].n or 1) < (L[worst].n or 1) or ((L[i].n or 1) == (L[worst].n or 1) and (L[i].t or 0) < (L[worst].t or 0)) then worst = i end
+    end
+    table.remove(L, worst)
+  end
+  L[#L + 1] = new
+end
+T.Path = { Simplify = Simplify, Agree = Agree, Record = function(trail, a, b) RecordPath(trail, a, b) end }
+
 local function RecordShip(dock, land)
   WritPathLearned.transports = WritPathLearned.transports or {}
   local hit = Near(WritPathLearned.transports, function(t)
@@ -908,9 +1013,25 @@ local function Poll()
   if not p or inside or p.sea then return end
 
   local clean = not taxi and not dead and not (last and last.taxi) and now - REC.teleport > 30
+  -- the breadcrumb trail (reset by anything that isn't riding: a flight, a teleport, dying, a big jump)
+  if not clean or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
+    REC.trail = nil
+  else
+    REC.trail = REC.trail or {}
+    local tr = REC.trail
+    local tail = tr[#tr]
+    if not tail or Dist(tail, p) >= TRAIL_STEP then
+      tr[#tr + 1] = { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now }
+    end
+    while tr[1] and now - tr[1].t > TRAIL_SECS do table.remove(tr, 1) end
+  end
   if last and clean and p.map ~= last.map then
     if p.inst == last.inst then
-      if Dist(p, last) < NEAR_CROSS and now - last.t < 5 then RecordCrossing(last, p) end
+      if Dist(p, last) < NEAR_CROSS and now - last.t < 5 then
+        RecordCrossing(last, p)
+        RecordPath(REC.trail, last, p)
+        REC.trail = { { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now } }
+      end
     elseif REC.still and now - REC.still.t < 600 then
       RecordShip(REC.still, p)   -- a ship: from where you last stood waiting
     end

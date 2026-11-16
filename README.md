@@ -151,6 +151,10 @@ list after asking. What WritPath has learned stays.
 - **Customer spots**: the map pin when you accept a writ, and your exact spot when you hand one in. Customers
   that were "zone only" become exact.
 - **Roads, boats and zeppelins** you ride, and **flight times** of flights you take.
+- **Winding paths**: when the way you rode to a border was much longer than a straight line (around mountains),
+  its turns are saved. Once two of your rides agree, routes follow it, with a guide step at each turn
+  (`/writs travel` shows how many it knows).
+- **Your hearthstone's spot**, when you set it at an innkeeper or land from it.
 - **Flight paths you know**, each time you open a flight master's map.
 
 It starts from what ships with it (customer spots from community sources and QuestieDB, RestedXP's roads, boats
