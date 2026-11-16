@@ -108,7 +108,8 @@ the current step when that one is done.
 - **Fly** steps finish when you take the flight.
 - **Road crossings and docks** finish once you're within 200 yards. If you take another road and reach a later
   one first, the guide catches up.
-- **Customer** steps finish only when you hand the writ in.
+- **Customer** steps finish only when you hand the writ in. Talk to the customer and WritPath hands it in for you
+  (`/writs accept` turns that off).
 - **Learn the flight path** steps appear for any zone the route takes you to where you don't have its flight
   path, on your way in or right after the hand-in. They finish when you learn it ("New flight path discovered!") or open that flight master's map
   (`/writs next` skips one you don't want). As soon as you enter a zone whose flight path
@@ -150,7 +151,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | `/writs buy` | Planner with your last rep target |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs money` | Every turn-in's cost (writ + item) and pouch, in chat |
-| `/writs accept` | Turn off (or back on) accepting writs for you when you open them |
+| `/writs accept` | Turn off (or back on) accepting writs for you when you open them, and handing them in when you talk to their customer |
 | `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
 | `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |
 | `/writs leg` | Why the way to the next customer looks the way it does (times, route, nearest flight points and docks); also saved for a `/reload` |
