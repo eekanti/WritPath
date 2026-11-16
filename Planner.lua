@@ -280,6 +280,16 @@ end
 
 ---------------------------------------------------------------- picking writs
 -- every writ you could do right now, with why the others can't be
+-- Quick plans: only customers within a short walk of a flight path you have, so the trip is fly in, hand in,
+-- fly out. Set while a Quick plan is being made.
+local QUICK_YARDS = 300
+local quickOnly = false
+local function QuickOK(c)
+  if not quickOnly then return true end
+  local pos = c and Pos(c.map, c.x, c.y)
+  return pos and c.exact and Travel.NearKnown(pos, QUICK_YARDS) ~= nil
+end
+
 local function Candidates(zoneOnly)
   local used, list, skipped = UsedToday(), {}, {}
   for id, w in pairs(DB) do
@@ -289,7 +299,8 @@ local function Candidates(zoneOnly)
     if Done(w.q) then why = "done today"
     elseif not c then why = "customer unknown"
     elseif used[c.key] then why = "customer used today (" .. used[c.key] .. ")"
-    elseif not c.exact and not zoneOnly then why = "only the zone is known" end
+    elseif not c.exact and not zoneOnly then why = "only the zone is known"
+    elseif not QuickOK(c) then why = "not next to a flight path you have (Quick)" end
     local cost, have, need
     if not why then cost, have = Cost(id); if not cost then why = have end end
     if why then skipped[#skipped + 1] = { id = id, why = why }
@@ -399,6 +410,8 @@ local function PlanOwned(only, skipQuest)   -- only: just these writ ids; skipQu
       later[#later + 1] = { id = id, w = w, why = "already handed in to this customer today (" .. used[c.key] .. ")" }
     elseif byCustomer[c.key] then
       later[#later + 1] = { id = id, w = w, why = "same customer as " .. byCustomer[c.key].w.name }
+    elseif not QuickOK(c) then
+      later[#later + 1] = { id = id, w = w, why = "not next to a flight path you have (Quick)" }
     else
       local cost, have, need = Cost(id)
       local stop = { id = id, w = w, rep = REP[w.tier] or 0, c = c, pos = Pos(c.map, c.x, c.y),
@@ -550,7 +563,16 @@ local function Finish(start, owned, set, target, mine, mode)
            set = set }
 end
 
-local function PlanBoth(target, zoneOnly)
+local PlanBothInner
+local function PlanBoth(target, zoneOnly, quick)
+  quickOnly = quick and true or false
+  local ok, res = pcall(PlanBothInner, target, zoneOnly)
+  quickOnly = false
+  if not ok then error(res, 0) end
+  if quick then res.cheap.quick, res.fast.quick = true, true end
+  return res
+end
+function PlanBothInner(target, zoneOnly)
   local mine = PlanOwned()
   local start, owned, ownedKeys = mine.start, mine.route, {}
   for _, p in ipairs(owned) do ownedKeys[p.c.key] = true end
@@ -741,8 +763,20 @@ repBox:SetNumeric(true); repBox:SetText("1000"); repBox:SetPoint("LEFT", repL, "
 local zoneChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); zoneChk:SetSize(22, 22)
 zoneChk:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
 local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("RIGHT", 0, 0)
-local zoneL = Text(buyRow); zoneL:SetPoint("LEFT", zoneChk, "RIGHT", 2, 0); zoneL:SetPoint("RIGHT", planBtn, "LEFT", -8, 0)
-zoneL:SetText("Include customers known by zone only")
+local zoneL = Text(buyRow); zoneL:SetPoint("LEFT", zoneChk, "RIGHT", 2, 0)
+zoneL:SetText("Zone-only too"); zoneL:SetWordWrap(false)
+local quickChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); quickChk:SetSize(22, 22)
+quickChk:SetPoint("LEFT", zoneL, "RIGHT", 10, 0)
+local quickL = Text(buyRow); quickL:SetPoint("LEFT", quickChk, "RIGHT", 2, 0); quickL:SetPoint("RIGHT", planBtn, "LEFT", -8, 0)
+quickL:SetText("Quick: by flight paths"); quickL:SetWordWrap(false)
+local function Tip(frame, title, text)
+  frame:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(title); GameTooltip:AddLine(text, 1, 1, 1, true); GameTooltip:Show()
+  end)
+  frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+Tip(zoneChk, "Zone-only customers", "Also use customers whose exact spot isn't known yet; the writ's map pin shows it once you accept it.")
+Tip(quickChk, "Quick plan", "Only customers within a short walk of a flight path you have: fly in, hand in, fly out. Writs of yours that are further away wait for another day.")
 buyRow:Hide()
 
 -- the two answers for a rep target, side by side; click one to see its writs
@@ -803,7 +837,7 @@ local function ApplySkin(S)
   S.CloseButton(closeX)
   for _, btn in ipairs(buttons) do S.Button(btn); if S.StateButtonLabel then S.StateButtonLabel(btn) end end
   S.EditBox(repBox, { padInput = true })
-  S.Checkbox(zoneChk)
+  S.Checkbox(zoneChk); S.Checkbox(quickChk)
   for _, c in pairs(cards) do S.Panel(c, { inset = true }) end
   if Bar() and S.ScrollBar then S.ScrollBar(Bar()) end
   for _, fs in ipairs(fonts) do S.Font(fs) end
@@ -1029,8 +1063,9 @@ local function DoPlan()
   end
   local target = tonumber(repBox:GetText()) or 1000
   local zoneOnly = zoneChk:GetChecked() and true or false
-  WritPathNav.plan = { target = target, zoneOnly = zoneOnly }
-  plans = PlanBoth(target, zoneOnly)
+  local quick = quickChk:GetChecked() and true or false
+  WritPathNav.plan = { target = target, zoneOnly = zoneOnly, quick = quick }
+  plans = PlanBoth(target, zoneOnly, quick)
   Warm(plans.cheap); Warm(plans.fast)
   cards.cheap.text:SetText(CardText("cheap", plans.cheap, plans.fast))
   cards.fast.text:SetText(CardText("fast", plans.fast, plans.cheap))
@@ -1096,7 +1131,7 @@ function WritPath_ClearAll()
   WritPathNav.plan, WritPathNav.planChoice = nil, nil
   EmptyAuctionatorList()
   current, plans, choice = nil, nil, nil
-  repBox:SetText(""); zoneChk:SetChecked(false)
+  repBox:SetText(""); zoneChk:SetChecked(false); quickChk:SetChecked(false)
   cards.cheap:Hide(); cards.fast:Hide()
   Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -64)
   summary:SetText(GREY .. "Cleared. Pick My writs or Buy writs to plan again.|r"); note:SetText("")
@@ -1137,7 +1172,7 @@ clearBtn:SetScript("OnClick", WritPath_AskClear)
 
 function WritPath_OpenPlanner(mode)
   local o = WritPathNav.plan
-  if o then repBox:SetText(o.target); zoneChk:SetChecked(o.zoneOnly) end
+  if o then repBox:SetText(o.target); zoneChk:SetChecked(o.zoneOnly); quickChk:SetChecked(o.quick) end
   FitWidth(mineBtn); FitWidth(buyBtn); FitWidth(planBtn)
   f:Show()
   if (mode or WritPathNav.planMode) == "buy" then DoPlan() else DoMine() end

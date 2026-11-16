@@ -71,8 +71,11 @@ from where you stand, with the customer, the zone and the travel time. Click **S
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
 4. **Include customers known by zone only** lets WritPath use customers whose exact spot isn't known yet (it
    learns the spot when you accept the writ). Leave it off for the most reliable routes.
-5. If the target can't be reached today, the plan says how close you can get and why.
-6. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
+5. **Quick: by flight paths** keeps only customers within a short walk (about 300 yards) of a flight path you
+   have: fly in, hand in everything there, fly out (Gadgetzan, Booty Bay, Thorium Point, Marshal's Refuge, ...).
+   Writs of yours that are further away wait for another day. Hover the checkboxes for what they do.
+6. If the target can't be reached today, the plan says how close you can get and why.
+7. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
    (**Send to Auctionator** also makes a "WritPath" shopping list in Auctionator, if you'd rather buy there.)
 
 ### Buy: the Writ shopping panel at the auction house

@@ -689,6 +689,21 @@ function T.Explain(a, b)
   return out
 end
 
+-- the nearest flight path you have to a place, within maxYards (id, yards, name)
+function T.NearKnown(p, maxYards)
+  if not p then return nil end
+  local best, bd, bn
+  for id, name in pairs((Known())) do
+    local map, x, y, fixed = FlightSpot(id)
+    local q = map and T.Point(map, x, y)
+    if q and q.inst == p.inst then
+      local d = Dist(q, p)
+      if d <= maxYards and (not bd or d < bd) then best, bd, bn = id, d, fixed or (type(name) == "string" and name) end
+    end
+  end
+  return best, bd, bn
+end
+
 -- flight points of your faction in a zone that you haven't learned, nearest first from a place in it
 function T.UnlearnedNear(p, maxYards)
   if not p then return nil end
