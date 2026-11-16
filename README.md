@@ -23,11 +23,12 @@ through it; add `#buy` to the address to start on the Buy writs plan).
 
 ## Install
 
-1. On GitHub, click **Code > Download ZIP** and unzip it.
-2. The folder inside is called `WritPath-main`: **rename it to `WritPath`** (WoW only loads an addon whose folder
-   matches its `.toc` name).
-3. Put it in `World of Warcraft/_forever_/Interface/AddOns/`, so you have `AddOns/WritPath/WritPath.toc`.
-   (The `mockups` folder is only for this page; the game ignores it.)
+1. Open the [latest release](https://github.com/eekanti/WritPath/releases/latest) and download
+   **WritPath-x.y.z.zip** (under Assets).
+2. Unzip it into `World of Warcraft/_forever_/Interface/AddOns/`, so you have `AddOns/WritPath/WritPath.toc`.
+3. Restart the game the first time (a `/reload` doesn't load a new addon).
+
+(Downloading **Code > Download ZIP** works too, but its folder is called `WritPath-main`: rename it to `WritPath`.)
 
 Everything WritPath needs is in this folder. Optional addons it uses when you have them:
 
