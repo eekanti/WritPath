@@ -1,7 +1,9 @@
 -- WritPath's own price scan: one full read of the auction house (the same "replicate" request Auctionator's full
 -- scan uses, so it takes about as long), keeping only the writs and the items they ask for. For each of those it
 -- saves the cheapest listings with their sizes, so a writ only sold as a stack is priced as what you'd really pay.
--- The game allows one full read every 15 minutes (for any addon: Auctionator's counts too).
+-- The game allows one full read every 15 minutes (for any addon: Auctionator's counts too). In between, the same
+-- button runs a summary scan instead (what Auctionator's no-wait scan does): an empty search paged to the end, one
+-- line per item with its lowest price and how many are listed. No stack sizes, but no wait either.
 -- WritPathPrices = { t = when, auctions = how many were read, items = { [item id] = { c = commodity, l = { {unit, qty}, ... } } } }
 -- At the auction house a small WritPath panel sits under the window: the scan button, how old the prices are, and a
 -- progress bar while it scans. EllesmereUI's look when it's installed.
@@ -64,7 +66,7 @@ local function Build()
   scanBtn:SetScript("OnClick", function() S.Start() end)
   scanBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Scan writ prices")
-    GameTooltip:AddLine("Reads the whole auction house once and keeps the prices of writs and the items they ask for. The game allows one full scan every 15 minutes.", 1, 1, 1, true)
+    GameTooltip:AddLine("Reads the auction house and keeps the prices of writs and the items they ask for. A detailed scan (every listing, stacks too) when the game allows one, every 15 minutes; otherwise a quick summary scan (lowest price per item).", 1, 1, 1, true)
     GameTooltip:Show()
   end)
   scanBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -91,9 +93,11 @@ local function Build()
   local acc = 0
   panel:SetScript("OnUpdate", function(_, e)
     acc = acc + e
-    if phase.kind == "wait" then
-      local p = (math.sin(GetTime() * 3) + 1) / 2
-      bar:SetMinMaxValues(0, 1); bar:SetValue(0.1 + 0.15 * p)
+    if phase.kind == "wait" or phase.kind == "browse" then
+      if phase.kind == "wait" then
+        local p = (math.sin(GetTime() * 3) + 1) / 2
+        bar:SetMinMaxValues(0, 1); bar:SetValue(0.1 + 0.15 * p)
+      end
     end
     if acc > 0.5 then acc = 0; Render() end
   end)
@@ -105,24 +109,30 @@ function Render()
   local t = WritPathPrices and WritPathPrices.t
   local wait = S.Wait()
   local line = t and ("Prices " .. Ago(time() - t)) or (RED .. "No scan yet|r")
-  if wait > 0 and phase.kind ~= "wait" and phase.kind ~= "read" then line = line .. GREY .. " · next scan in " .. Clock(wait) .. "|r" end
+  local working = phase.kind == "wait" or phase.kind == "read" or phase.kind == "load" or phase.kind == "browse"
+  if not working then
+    line = line .. GREY .. (wait > 0 and (" · detailed scan in " .. Clock(wait)) or " · detailed scan ready") .. "|r"
+  end
   status:SetText(line)
-  local busy = phase.kind == "wait" or phase.kind == "read" or phase.kind == "load"
-  if busy or wait > 0 then scanBtn:Disable() else scanBtn:Enable() end
+  if working then scanBtn:Disable() else scanBtn:Enable() end
   if phase.kind == "idle" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(t and 1 or 0)
-    barText:SetText(t and (GREY .. (WritPathPrices.count or 0) .. " writ prices from " .. (WritPathPrices.auctions or 0) .. " auctions|r") or (GREY .. "Press Scan to read writ prices|r"))
+    barText:SetText(t and (GREY .. (WritPathPrices.count or 0) .. " writ prices · " .. (WritPathPrices.kind == "summary" and "summary scan" or "detailed scan") .. "|r") or (GREY .. "Press Scan to read writ prices|r"))
   elseif phase.kind == "wait" then
     barText:SetText("Waiting for the auction house...")
   elseif phase.kind == "read" then
     bar:SetMinMaxValues(0, math.max(1, phase.n)); bar:SetValue(phase.i)
     barText:SetText(("Reading %s / %s auctions"):format(BreakUpLargeNumbers and BreakUpLargeNumbers(phase.i) or phase.i, BreakUpLargeNumbers and BreakUpLargeNumbers(phase.n) or phase.n))
+  elseif phase.kind == "browse" then
+    local p = (math.sin(GetTime() * 2) + 1) / 2
+    bar:SetMinMaxValues(0, 1); bar:SetValue(0.2 + 0.6 * p)
+    barText:SetText(("Summary scan: %s items read..."):format(BreakUpLargeNumbers and BreakUpLargeNumbers(phase.n or 0) or (phase.n or 0)))
   elseif phase.kind == "load" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(0.95)
     barText:SetText(("Loading item data for %d auctions..."):format(phase.left))
   elseif phase.kind == "done" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(1)
-    barText:SetText(GOLD .. ("Done: %d writ prices in %d s"):format(phase.count, phase.secs) .. "|r")
+    barText:SetText(GOLD .. ("Done (%s): %d writ prices in %d s"):format(phase.summary and "summary" or "detailed", phase.count, phase.secs) .. "|r")
   elseif phase.kind == "fail" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(0)
     barText:SetText(RED .. phase.why .. "|r")
@@ -133,7 +143,7 @@ end
 local busy, got, startedAt = false, false, 0
 local ev = CreateFrame("Frame")
 
-local function Finish(found, n, missed)
+local function Finish(found, n, missed, summary)
   local items, count = {}, 0
   local statusFn = C_AuctionHouse and C_AuctionHouse.GetItemCommodityStatus
   local COMMODITY = Enum and Enum.ItemCommodityStatus and Enum.ItemCommodityStatus.Commodity or 2
@@ -142,17 +152,20 @@ local function Finish(found, n, missed)
     while #l > KEEP do table.remove(l) end
     local ok, st = false, nil
     if statusFn then ok, st = pcall(statusFn, id) end
-    items[id] = { c = ok and st == COMMODITY or nil, l = l }
+    items[id] = { c = summary or (ok and st == COMMODITY) or nil, l = l }
     count = count + 1
   end
   WritPathPrices = WritPathPrices or {}
   WritPathPrices.items, WritPathPrices.t, WritPathPrices.auctions, WritPathPrices.count = items, time(), n, count
+  WritPathPrices.kind = summary and "summary" or "detailed"
   busy = false
   ev:UnregisterEvent("REPLICATE_ITEM_LIST_UPDATE")
+  ev:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED"); ev:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
   local secs = math.floor(GetTime() - startedAt + 0.5)
-  phase = { kind = "done", count = count, secs = secs }
+  phase = { kind = "done", count = count, secs = secs, summary = summary }
   Render()
-  Print(("Scanned %d auctions in %d s: prices for %d writs and writ items saved."):format(n, secs, count)
+  Print(("%s scan: %d %s in %d s, prices for %d writs and writ items saved."):format(summary and "Summary" or "Detailed", n,
+    summary and "items" or "auctions", secs, count)
     .. ((missed or 0) > 0 and (" %d auctions' item data never loaded."):format(missed) or ""))
   if WritPath_PlannerLearned then WritPath_PlannerLearned() end
 end
@@ -214,12 +227,44 @@ local function Fail(why)
   Print(why)
 end
 
+-- the summary scan: an empty search, paged to the end; one line per item (lowest price, how many listed)
+local sFound, sCount, sWant
+local function SummaryAdd(results)
+  for _, r in ipairs(results or {}) do
+    local id = r.itemKey and r.itemKey.itemID
+    sCount = sCount + 1
+    if id and sWant[id] and (r.totalQuantity or 0) > 0 and (r.minPrice or 0) > 0 then
+      sFound[id] = { { r.minPrice, r.totalQuantity } }
+    end
+  end
+  phase = { kind = "browse", n = sCount }
+end
+local function SummaryNext()
+  if C_AuctionHouse.HasFullBrowseResults and not C_AuctionHouse.HasFullBrowseResults() then
+    C_AuctionHouse.RequestMoreBrowseResults()
+  else
+    Finish(sFound, sCount, 0, true)
+  end
+end
+local function StartSummary()
+  if not (C_AuctionHouse and C_AuctionHouse.SendBrowseQuery) then Fail("This auction house can't do a summary scan."); return end
+  busy, got, startedAt = true, false, GetTime()
+  sFound, sCount, sWant = {}, 0, Wanted()
+  phase = { kind = "browse", n = 0 }
+  Render()
+  ev:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED"); ev:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
+  C_AuctionHouse.SendBrowseQuery({ searchString = "", sorts = {}, filters = {}, itemClassFilters = {} })
+  C_Timer.After(120, function() if busy and phase.kind == "browse" then Fail("The summary scan didn't finish. Try again.") end end)
+end
+S.Summary = { Add = SummaryAdd, Next = SummaryNext }
+
+-- one button: the detailed scan when the game allows one, otherwise the summary scan
 function S.Start()
   if busy then return end
-  if not (C_AuctionHouse and C_AuctionHouse.ReplicateItems) then Fail("This auction house can't do a full scan."); return end
   local wait = S.Wait()
-  if wait > 0 then
-    Print(("The auction house allows one full scan every 15 minutes (Auctionator's count too): try again in %s."):format(Clock(wait)))
+  if wait > 0 or not (C_AuctionHouse and C_AuctionHouse.ReplicateItems) then
+    if wait > 0 then Print(("Detailed scan possible again in %s: running a summary scan now."):format(Clock(wait))) end
+    StartSummary()
     return
   end
   busy, got, startedAt = true, false, GetTime()
@@ -236,9 +281,16 @@ end
 
 ev:RegisterEvent("AUCTION_HOUSE_SHOW")
 ev:RegisterEvent("AUCTION_HOUSE_CLOSED")
-ev:SetScript("OnEvent", function(_, event)
+ev:SetScript("OnEvent", function(_, event, a1)
   if event == "REPLICATE_ITEM_LIST_UPDATE" then
     if busy and not got then got = true; Process() end
+  elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
+    if busy and phase.kind == "browse" then
+      sFound, sCount = {}, 0   -- a fresh batch: the results so far, from the start
+      SummaryAdd(C_AuctionHouse.GetBrowseResults()); Render(); SummaryNext()
+    end
+  elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
+    if busy and phase.kind == "browse" then SummaryAdd(a1); Render(); SummaryNext() end
   elseif event == "AUCTION_HOUSE_SHOW" then
     Build()
     local ah = AuctionHouseFrame or AuctionFrame

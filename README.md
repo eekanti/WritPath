@@ -42,10 +42,10 @@ Roads, boats and flight times you use are learned as you travel.
 
 ### Before you start
 
-1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath prices** panel above the auction house window. It
-   reads the whole auction house once (about as long as an Auctionator full scan) and keeps the prices of writs
-   and the items they ask for. The game allows one full scan every 15 minutes. The planner shows how old the
-   prices are in the top right. If you also use Auctionator, the newer of the two scans is used.
+1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath prices** panel above the auction
+   house window. It runs a detailed scan (every listing, stack sizes too) when the game allows one, once every 15
+   minutes, and otherwise a quick summary scan (lowest price per item) with no wait. The panel shows how old the
+   prices are and which kind of scan they came from. If you also use Auctionator, the newer prices are used.
 2. **Open a flight master's map once on each continent.** That's how WritPath learns which flight paths you know.
    Until then routes can't use flights (`/writs travel` shows what it knows).
 3. Find the **minimap button** (a note icon). Left-click shows or hides the guide window; right-click opens the
