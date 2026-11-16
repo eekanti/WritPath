@@ -1,0 +1,521 @@
+-- WritPath travel: how to actually get from A to B.
+-- A graph of the places you pass through, with travel time as the cost. What you've learned in your own
+-- game comes first; RestedXP's pathing data (RXPData.lua, CC BY-NC-SA 4.0) fills in the rest:
+--   road crossings between zones   recorded when you ride from one zone into the next, plus the crossings
+--                                  RestedXP's leveling guides walk you through
+--   boats and zeppelins            recorded when you cross to the other continent by ship
+--   flight times                   recorded when you land after a flight, else RestedXP's recorded times
+--   your flight paths              recorded at any flight master's map (RestedXP's list, if installed, only
+--                                  until WritPath has seen a flight map on that continent)
+-- Inside one zone you ride in a straight line. The cheapest path becomes waypoint steps: one per zone
+-- crossing, ship or flight. Where WritPath hasn't learned the way yet, the arrow points straight at the stop.
+
+local T = {}
+WritPath_Travel = T
+local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, yards/s, s, s, s
+local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
+local HOSTILE = 1200   -- extra seconds for a dock in the other faction's town: use it only when nothing else works
+-- zones whose dock is in a faction town (classic): Southshore, Menethil, Auberdine, Rut'theran, Theramore,
+-- Stormwind / Orgrimmar's and the Undercity's zeppelin towers, Grom'gol
+local ALLIANCE_DOCKS = { [1424] = true, [1437] = true, [1439] = true, [1438] = true, [1445] = true, [1453] = true }
+local HORDE_DOCKS = { [1411] = true, [1420] = true, [1412] = true }
+
+---------------------------------------------------------------- points
+local function HBD() return LibStub and LibStub("HereBeDragons-2.0", true) end
+
+local function MapInfo(m) return m and C_Map.GetMapInfo(m) end
+
+-- caves and city sub-maps belong to the zone around them
+local function ZoneOf(m)
+  local zoneType = Enum and Enum.UIMapType and Enum.UIMapType.Zone or 3
+  local info = MapInfo(m)
+  while info and info.mapType and info.mapType > zoneType and info.parentMapID and info.parentMapID > 0 do
+    m = info.parentMapID; info = MapInfo(m)
+  end
+  return m
+end
+T.ZoneOf = ZoneOf
+
+-- a place: zone map + percent coordinates, plus where that is in the world
+function T.Point(map, x, y)
+  local hbd = HBD()
+  if hbd then
+    local wx, wy, inst = hbd:GetWorldCoordinatesFromZone(x / 100, y / 100, map)
+    if wx then return { map = map, x = x, y = y, inst = inst, wx = wx, wy = wy } end
+  end
+  local ok, cont, v = pcall(C_Map.GetWorldPosFromMapPos, map, CreateVector2D(x / 100, y / 100))
+  if ok and v then local a, b = v:GetXY(); return { map = map, x = x, y = y, inst = cont, wx = a, wy = b } end
+end
+
+-- seconds for a flight between two flight points (either direction): what it took you, else RestedXP's time
+local RXP = WritPath_RXPData or {}
+local function FlightTime(a, b)
+  if not (a and b) then return nil end
+  local t = WritPathLearned and WritPathLearned.flights or {}
+  local mine = (t[a] and t[a][b]) or (t[b] and t[b][a])
+  if mine then return mine end
+  local r = RXP.flightTimes and RXP.flightTimes[UnitFactionGroup("player")] or {}
+  return (r[a] and r[a][b]) or (r[b] and r[b][a])
+end
+T.FlightTime = FlightTime
+
+-- a continent (or bigger) map rather than a zone: what the game reports while you're out at sea
+local function IsContinent(m)
+  local info = MapInfo(m)
+  local contType = Enum and Enum.UIMapType and Enum.UIMapType.Continent or 2
+  return info and info.mapType and info.mapType <= contType or false
+end
+T.IsContinent = IsContinent
+
+function T.PlayerPoint()
+  local m = C_Map.GetBestMapForUnit("player"); if not m then return nil end
+  local z = ZoneOf(m)
+  local p = C_Map.GetPlayerMapPosition(z, "player") or C_Map.GetPlayerMapPosition(m, "player")
+  if not p then return nil end
+  local x, y = p:GetXY()
+  local pt = T.Point(z, x * 100, y * 100)
+  if pt and IsContinent(z) then pt.sea = true end
+  return pt
+end
+
+local function Dist(a, b) return math.sqrt((a.wx - b.wx) ^ 2 + (a.wy - b.wy) ^ 2) end
+T.Dist = Dist
+
+---------------------------------------------------------------- flight paths you know
+-- Which flight paths you have: WritPath records them itself. Opening any flight master's map lists every
+-- flight point on that continent with whether you know it, so one visit per continent is enough, and
+-- learning a new one opens the map again. Until WritPath has seen a flight map on a continent, it borrows
+-- RestedXP's list for that continent (RXPCData.flightPaths) if RestedXP is installed; after that, never.
+-- Where each one is: the flight map itself, or the world map's flight points (C_TaxiMap.GetTaxiNodesForMap
+-- works anywhere), turned into zone coordinates once and saved.
+
+local function ContinentOf(m)
+  local contType = Enum and Enum.UIMapType and Enum.UIMapType.Continent or 2
+  local info = MapInfo(m)
+  while info and info.mapType and info.mapType > contType and info.parentMapID and info.parentMapID > 0 do
+    m = info.parentMapID; info = MapInfo(m)
+  end
+  return (info and info.mapType == contType) and m or nil
+end
+
+-- a point given in one map's coordinates (0-1, may lie outside that map) -> the zone it is in, zone percent
+local function PlaceByGame(srcMap, px, py)
+  local ok, inst, world = pcall(C_Map.GetWorldPosFromMapPos, srcMap, CreateVector2D(px, py))
+  if not (ok and world) then return nil end
+  local cont = ContinentOf(srcMap); if not cont then return nil end
+  local _, cpos = C_Map.GetMapPosFromWorldPos(inst, world, cont)
+  if not cpos then return nil end
+  local here = C_Map.GetMapInfoAtPosition and C_Map.GetMapInfoAtPosition(cont, cpos:GetXY())
+  local zone = here and ZoneOf(here.mapID)
+  if not zone then return nil end
+  local _, zpos = C_Map.GetMapPosFromWorldPos(inst, world, zone)
+  if not zpos then return nil end
+  local zx, zy = zpos:GetXY()
+  return zone, math.floor(zx * 1000 + 0.5) / 10, math.floor(zy * 1000 + 0.5) / 10
+end
+
+local function Place(srcMap, px, py)
+  local hbd = HBD(); if not hbd then return PlaceByGame(srcMap, px, py) end
+  local wx, wy, inst = hbd:GetWorldCoordinatesFromZone(px, py, srcMap)
+  if not wx then return nil end
+  local cont = ContinentOf(srcMap); if not cont then return nil end
+  local cx, cy = hbd:GetZoneCoordinatesFromWorld(wx, wy, cont, true)
+  if not cx then return nil end
+  local here = C_Map.GetMapInfoAtPosition and C_Map.GetMapInfoAtPosition(cont, cx, cy)
+  local zone = here and ZoneOf(here.mapID)
+  if not zone then return nil end
+  local zx, zy = hbd:GetZoneCoordinatesFromWorld(wx, wy, zone, true)
+  if not zx then return nil end
+  return zone, math.floor(zx * 1000 + 0.5) / 10, math.floor(zy * 1000 + 0.5) / 10
+end
+
+-- RestedXP's world coordinates (HereBeDragons' system) -> percent on a zone map. Uses HereBeDragons when
+-- another addon has loaded it, otherwise the game's own map API (HereBeDragons' world x/y are the game's y/x).
+local function WorldToZone(zone, inst, hx, hy)
+  local hbd = HBD()
+  if hbd then
+    local zx, zy = hbd:GetZoneCoordinatesFromWorld(hx, hy, zone, true)
+    if zx then return zx * 100, zy * 100 end
+    return nil
+  end
+  local ok, _, pos = pcall(C_Map.GetMapPosFromWorldPos, inst, CreateVector2D(hy, hx), zone)
+  if ok and pos then local zx, zy = pos:GetXY(); return zx * 100, zy * 100 end
+end
+T.WorldToZone = WorldToZone
+
+local function ContinentOfFP(f) return f and f.map and ContinentOf(f.map) end
+
+-- id -> name for every flight path you know; second result: how many came from your own records
+local function Known()
+  local known, own = {}, 0
+  local fp, seen = WritPathLearned and WritPathLearned.fp or {}, WritPathLearned and WritPathLearned.fpSeen or {}
+  -- yours: recorded at a flight master (own = true), or saved before this mark existed; not: own = false
+  -- (seen on a flight map but not learned) or src = "map" (only placed from the world map)
+  for id, f in pairs(fp) do
+    if f.own == true or (f.own == nil and f.src ~= "map") then known[id] = f.name or true; own = own + 1 end
+  end
+  for id, name in pairs(RXPCData and RXPCData.flightPaths or {}) do
+    local cont = ContinentOfFP(fp[id])
+    if not known[id] and not (cont and seen[cont]) then known[id] = name end
+  end
+  return known, own
+end
+
+-- fill in positions for known flight paths that don't have one yet
+local function LocateFlightPaths()
+  if not (C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap) then return end
+  WritPathLearned.fp = WritPathLearned.fp or {}
+  local known, missing = Known(), false
+  for id in pairs(known) do if not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) then missing = true end end
+  if not missing then return end
+  for _, cont in ipairs({ 1414, 1415 }) do
+    local ok, list = pcall(C_TaxiMap.GetTaxiNodesForMap, cont)
+    for _, n in ipairs(ok and list or {}) do
+      local id = n.nodeID
+      if id and known[id] and not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) and n.position then
+        local zone, x, y = Place(cont, n.position:GetXY())
+        if zone then WritPathLearned.fp[id] = { name = n.name or (type(known[id]) == "string" and known[id]) or nil, map = zone, x = x, y = y, src = "map" } end
+      end
+    end
+  end
+end
+T.LocateFlightPaths = LocateFlightPaths
+
+-- at a flight master: record every flight path on the map you can fly to (the way RestedXP does it: the
+-- nodes for the zone you're standing in)
+function T.RecordFlightPaths()
+  if not (C_TaxiMap and C_TaxiMap.GetAllTaxiNodes) then return end
+  local m = (GetTaxiMapID and GetTaxiMapID()) or C_Map.GetBestMapForUnit("player")
+  if not m then return end
+  local ok, list = pcall(C_TaxiMap.GetAllTaxiNodes, m)
+  if not (ok and list) then return end
+  local S = Enum and Enum.FlightPathState or { Current = 0, Reachable = 1, Unreachable = 2 }
+  WritPathLearned.fp = WritPathLearned.fp or {}
+  WritPathLearned.fpSeen = WritPathLearned.fpSeen or {}
+  local added = 0
+  for _, n in ipairs(list) do
+    if n.nodeID then
+      local zone, x, y
+      if n.position then zone, x, y = Place(m, n.position:GetXY()) end
+      local old = WritPathLearned.fp[n.nodeID]
+      local knows = n.state ~= S.Unreachable
+      if knows and not (old and old.own) then added = added + 1 end
+      WritPathLearned.fp[n.nodeID] = { name = n.name, map = zone or (old and old.map), x = x or (old and old.x),
+                                       y = y or (old and old.y), own = knows }
+    end
+  end
+  local cont = ContinentOf(ZoneOf(m) or m)
+  if cont then WritPathLearned.fpSeen[cont] = time() end
+  T.Reset()
+  return added
+end
+
+---------------------------------------------------------------- the graph
+local nodes, byZone, cache
+
+function T.Reset() nodes, byZone, cache = nil, nil, nil end
+function T.Nodes() if not nodes then T.Build() end; return nodes end   -- for tests and debugging
+
+local function Add(n)
+  nodes[#nodes + 1] = n; n.i = #nodes; n.edges = {}
+  byZone[n.zone] = byZone[n.zone] or {}; table.insert(byZone[n.zone], n)
+  return n
+end
+local function Edge(a, b, cost, kind) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind } end
+
+function T.Build()
+  nodes, byZone, cache = {}, {}, {}
+  local L = WritPathLearned or {}
+  -- road crossings you've ridden: an exit on this side, an entry at the same spot on the far side, both ways
+  for _, c in ipairs(L.crossings or {}) do
+    -- an old record taken out at sea (map = a whole continent) isn't a road
+    local p = not (IsContinent(c.from) or IsContinent(c.to)) and T.Point(c.from, c.x, c.y)
+    if p then
+      local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })
+      local entry = Add({ zone = c.to, p = p, kind = "entry", peer = c.from })
+      Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
+    end
+  end
+  -- crossings RestedXP's leveling guides use (world coordinates, placed on the zone you leave), both ways
+  for _, c in ipairs(RXP.rxpExits or {}) do
+    local zx, zy = WorldToZone(c[1], c[3], c[4], c[5])
+    local p = zx and T.Point(c[1], zx, zy)
+    if p then
+      local exit = Add({ zone = c[1], p = p, kind = "exit", peer = c[2] })
+      local entry = Add({ zone = c[2], p = p, kind = "entry", peer = c[1] })
+      Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
+    end
+  end
+  -- ships you've taken, one way each (the way back is its own record); ships between the other faction's
+  -- towns cost a lot more: guards on both ends
+  local hostile = UnitFactionGroup("player") == "Horde" and ALLIANCE_DOCKS or HORDE_DOCKS
+  local sailed = {}   -- from..to pairs you've taken yourself: those win over the shipped routes
+  local function Sail(from, dock, to, land)
+    local cost = SAIL + ((hostile[from] or hostile[to]) and HOSTILE or 0)
+    Edge(Add({ zone = from, p = dock, kind = "dock" }), Add({ zone = to, p = land, kind = "land" }), cost, "sail")
+  end
+  -- a place recorded on a continent map (out at sea) -> the zone it's in
+  local function OnZone(m, x, y)
+    if not IsContinent(m) then return m, x, y end
+    local z, zx, zy = Place(m, x / 100, y / 100)
+    return z, zx, zy
+  end
+  for _, t in ipairs(L.transports or {}) do
+    local from, x, y = OnZone(t.from, t.x, t.y)
+    local to, tx, ty = OnZone(t.to, t.tx, t.ty)
+    local dock, land = from and T.Point(from, x, y), to and T.Point(to, tx, ty)
+    if dock and land then Sail(from, dock, to, land); sailed[from .. ">" .. to] = true end
+  end
+  -- ships WritPath players have recorded (WritPathData.lua), then the ones RestedXP's guides take
+  for _, t in ipairs(WritPath_Data and WritPath_Data.transports or {}) do
+    local from, x, y = OnZone(t.from, t.x, t.y)
+    local to, tx, ty = OnZone(t.to, t.tx, t.ty)
+    if from and to and not sailed[from .. ">" .. to] then
+      local dock, land = T.Point(from, x, y), T.Point(to, tx, ty)
+      if dock and land then Sail(from, dock, to, land); sailed[from .. ">" .. to] = true end
+    end
+  end
+  for _, t in ipairs(RXP.rxpShips or {}) do   -- { from, to, inst, wx, wy, landInst, landWx, landWy }
+    if not sailed[t[1] .. ">" .. t[2]] then
+      local x, y = WorldToZone(t[1], t[3], t[4], t[5])
+      local tx, ty = WorldToZone(t[2], t[6], t[7], t[8])
+      local dock, land = x and T.Point(t[1], x, y), tx and T.Point(t[2], tx, ty)
+      if dock and land then Sail(t[1], dock, t[2], land) end
+    end
+  end
+  -- flights between any two flight masters you know on the same continent
+  local fps = {}
+  LocateFlightPaths()
+  local known = Known()
+  for id, f in pairs(WritPathLearned and WritPathLearned.fp or {}) do
+    local p = known[id] and f.map and T.Point(f.map, f.x, f.y)
+    if p then fps[#fps + 1] = Add({ zone = f.map, p = p, kind = "fp", name = f.name, fpid = id }) end
+  end
+  for _, a in ipairs(fps) do
+    for _, b in ipairs(fps) do
+      if a ~= b and a.p.inst == b.p.inst then
+        -- the time this flight took you (or RestedXP's time), otherwise a guess from distance
+        local secs = FlightTime(a.fpid, b.fpid)
+        Edge(a, b, secs and (secs + 15) or (FLIGHT_OVERHEAD + Dist(a.p, b.p) / FLY), "fly")
+      end
+    end
+  end
+  -- riding between any two places in the same zone
+  for _, list in pairs(byZone) do
+    for _, a in ipairs(list) do
+      for _, b in ipairs(list) do
+        if a ~= b and a.p.inst == b.p.inst then Edge(a, b, Dist(a.p, b.p) / RIDE, "ride") end
+      end
+    end
+  end
+end
+
+-- shortest times from a place to every node (cached per place)
+local function From(src)
+  local key = src.map .. ":" .. src.x .. ":" .. src.y
+  if cache[key] then return cache[key] end
+  local dist, prev, done = {}, {}, {}
+  -- start: ride to any known place on this continent; straight across a zone you haven't learned roads for
+  -- costs a bit more, because the straight line may run into hills
+  for _, n in ipairs(nodes) do
+    if n.p.inst == src.inst then dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and 1 or UNKNOWN) end
+  end
+  while true do
+    local u, best
+    for i, d in pairs(dist) do if not done[i] and (not best or d < best) then u, best = i, d end end
+    if not u then break end
+    done[u] = true
+    for _, e in ipairs(nodes[u].edges) do
+      local nd = best + e.cost
+      if not dist[e.to.i] or nd < dist[e.to.i] then dist[e.to.i], prev[e.to.i] = nd, { u, e } end
+    end
+  end
+  cache[key] = { dist = dist, prev = prev }
+  return cache[key]
+end
+
+-- seconds from a to b, and the last node before riding to b (nil when riding straight there)
+function T.Time(a, b)
+  if not (a and b) then return 600 end
+  if not nodes then T.Build() end
+  -- straight there, or over the known roads, ships and flights and then straight to the stop
+  local best = (a.inst == b.inst) and Dist(a, b) / RIDE * (a.map == b.map and 1 or UNKNOWN) or nil
+  local via
+  local r = From(a)
+  for _, n in ipairs(nodes) do
+    local d = r.dist[n.i]
+    if d and n.p.inst == b.inst then
+      d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and 1 or UNKNOWN)
+      if not best or d < best then best, via = d, n end
+    end
+  end
+  if not best then return 900 end   -- another continent and no ship learned yet: a rough guess
+  return best, via, r
+end
+
+local function ZoneName(m) local i = MapInfo(m); return i and i.name or "?" end
+
+-- the waypoints on the way from a to b: { kind, at = point, into = zone, text }
+function T.Legs(a, b)
+  local _, via, r = T.Time(a, b)
+  local legs = {}
+  if not via then
+    if a and b and a.inst ~= b.inst then legs[1] = { kind = "unknown", into = b.map } end
+    return legs
+  end
+  local chain, i = {}, via.i
+  while i and r.prev[i] do table.insert(chain, 1, { from = nodes[r.prev[i][1]], e = r.prev[i][2], to = nodes[i] }); i = r.prev[i][1] end
+  -- the first known place the route rides to: if it's a road crossing and the route doesn't go over it as an
+  -- edge, it still passes that border there
+  local first = chain[1] and chain[1].from or via
+  if (first.kind == "exit" or first.kind == "entry") and not (chain[1] and chain[1].e.kind == "cross") then
+    local into = first.kind == "exit" and first.peer or first.zone
+    legs[#legs + 1] = { kind = "cross", at = first.p, into = into, text = "{goto} Ride into |cFF00FF25" .. ZoneName(into) .. "|r" }
+  end
+  for _, c in ipairs(chain) do
+    local k = c.e.kind
+    if k == "cross" then
+      legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.to.zone,
+                          text = "{goto} Ride into |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
+    elseif k == "sail" then
+      legs[#legs + 1] = { kind = "sail", at = c.from.p, into = c.to.zone,
+                          text = "{boat} Take the ship to |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
+    elseif k == "fly" then
+      local secs = FlightTime(c.from.fpid, c.to.fpid)
+      legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name,
+                          text = "{fly} Fly from |cFF00FF25" .. (c.from.name or "here") .. "|r to |cFF00FF25" .. (c.to.name or ZoneName(c.to.zone)) .. "|r"
+                                 .. (secs and (" (" .. math.floor(secs / 60 + 0.5) .. " min)") or "") }
+    end
+  end
+  -- two crossings at the same spot (a border straight back out) say nothing useful twice
+  for j = #legs, 2, -1 do
+    if legs[j].kind == "cross" and legs[j - 1].kind == "cross" and Dist(legs[j].at, legs[j - 1].at) < 30 then table.remove(legs, j - 1) end
+  end
+  return legs
+end
+
+function T.KnownFlightPaths()
+  local known, own = Known()
+  local n = 0; for _ in pairs(known) do n = n + 1 end
+  return n, own
+end
+
+function T.Learned()
+  local L = WritPathLearned or {}
+  local f = 0; for _, row in pairs(L.flights or {}) do for _ in pairs(row) do f = f + 1 end end
+  return #(L.crossings or {}), #(L.transports or {}), f
+end
+
+---------------------------------------------------------------- learning the way as you travel
+-- Every half second WritPath notes where you are. Changing zone a few yards from where you were is a road
+-- crossing. Changing continent without a flight, a dungeon, a hearthstone, a portal or dying is a ship: the
+-- dock is where you last stood waiting. Landing after a flight records how long it took.
+local REC = { last = nil, still = nil, history = {}, flight = nil, teleport = 0 }
+local NEAR_CROSS, NEAR_FP = 250, 120
+
+local function Near(list, test) for _, e in ipairs(list) do if test(e) then return e end end end
+
+local function RecordCrossing(a, b)
+  WritPathLearned.crossings = WritPathLearned.crossings or {}
+  local hit = Near(WritPathLearned.crossings, function(c)
+    if not (c.from == a.map and c.to == b.map) then return false end
+    local q = T.Point(c.from, c.x, c.y)
+    return q and Dist(q, a) < 80
+  end)
+  if hit then hit.n = (hit.n or 1) + 1; return end
+  table.insert(WritPathLearned.crossings, { from = a.map, to = b.map, x = math.floor(a.x * 10 + 0.5) / 10,
+                                            y = math.floor(a.y * 10 + 0.5) / 10, n = 1, t = time() })
+  T.Reset()
+end
+
+local function RecordShip(dock, land)
+  WritPathLearned.transports = WritPathLearned.transports or {}
+  local hit = Near(WritPathLearned.transports, function(t)
+    if not (t.from == dock.map and t.to == land.map) then return false end
+    local q = T.Point(t.from, t.x, t.y)
+    return q and Dist(q, dock) < 150
+  end)
+  if hit then hit.n = (hit.n or 1) + 1; return end
+  table.insert(WritPathLearned.transports, { from = dock.map, x = math.floor(dock.x * 10 + 0.5) / 10, y = math.floor(dock.y * 10 + 0.5) / 10,
+                                             to = land.map, tx = math.floor(land.x * 10 + 0.5) / 10, ty = math.floor(land.y * 10 + 0.5) / 10,
+                                             n = 1, t = time() })
+  T.Reset()
+end
+
+local function NearestFP(p)
+  if not p then return nil end
+  local best, bd
+  local known = Known()
+  for id, f in pairs(WritPathLearned and WritPathLearned.fp or {}) do
+    if known[id] and f.map then
+      local q = T.Point(f.map, f.x, f.y)
+      if q and q.inst == p.inst then
+        local d = Dist(q, p)
+        if d < NEAR_FP and (not bd or d < bd) then best, bd = id, d end
+      end
+    end
+  end
+  return best
+end
+
+local function RecordFlight(a, b, secs)
+  WritPathLearned.flights = WritPathLearned.flights or {}
+  WritPathLearned.flights[a] = WritPathLearned.flights[a] or {}
+  local old = WritPathLearned.flights[a][b]
+  WritPathLearned.flights[a][b] = math.floor(old and (old + secs) / 2 or secs)
+  T.Reset()
+end
+
+local function Poll()
+  if not WritPathLearned then return end
+  local now = GetTime()
+  local p = T.PlayerPoint()
+  local taxi = UnitOnTaxi("player") and true or false
+  local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
+  local inside = IsInInstance and IsInInstance()
+  local last = REC.last
+
+  -- flights: from the flight master you took off at to the one you landed at
+  if taxi and not REC.onTaxi then REC.flight = { from = NearestFP(last), t = now } end
+  if not taxi and REC.onTaxi and REC.flight and p then
+    local to = NearestFP(p)
+    if REC.flight.from and to and to ~= REC.flight.from then RecordFlight(REC.flight.from, to, now - REC.flight.t) end
+    REC.flight = nil
+  end
+  REC.onTaxi = taxi
+  if not p or inside or p.sea then return end
+
+  local clean = not taxi and not dead and not (last and last.taxi) and now - REC.teleport > 30
+  if last and clean and p.map ~= last.map then
+    if p.inst == last.inst then
+      if Dist(p, last) < NEAR_CROSS and now - last.t < 5 then RecordCrossing(last, p) end
+    elseif REC.still and now - REC.still.t < 600 then
+      RecordShip(REC.still, p)   -- a ship: from where you last stood waiting
+    end
+  end
+
+  -- where you last stood still for ten seconds (waiting at a dock looks like this)
+  if last and Dist(p, last) < 2 then
+    REC.stillSince = REC.stillSince or now
+    if now - REC.stillSince >= 10 then REC.still = { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now } end
+  else
+    REC.stillSince = nil
+  end
+  p.t, p.taxi = now, taxi
+  REC.last = p
+end
+
+local rec = CreateFrame("Frame")
+rec:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+rec:RegisterEvent("PLAYER_ENTERING_WORLD")
+rec:SetScript("OnEvent", function(_, event, unit, _, spellID)
+  if event == "PLAYER_ENTERING_WORLD" then return end
+  if unit ~= "player" then return end
+  local name = spellID and ((C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)) or (GetSpellInfo and GetSpellInfo(spellID)))
+  if name and (name:find("Hearthstone") or name:find("Teleport") or name:find("Portal") or name:find("Astral Recall")) then
+    REC.teleport = GetTime()   -- what follows isn't a road or a ship
+  end
+end)
+local acc = 0
+rec:SetScript("OnUpdate", function(_, e) acc = acc + e; if acc >= 0.5 then acc = 0; Poll() end end)
+T.Recorder = { Poll = Poll, State = REC }
