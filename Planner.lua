@@ -624,15 +624,16 @@ local function Crossing(toInst)
 end
 
 -- guide steps for the way from one place to the next
-local function TravelSteps(steps, from, to, label)
+local function TravelSteps(steps, from, to, suggested)
   for _, leg in ipairs(Travel.Legs(from, to)) do
+    if leg.learn and suggested then suggested[leg.fpid] = true end   -- learned on the way: no separate suggestion
     if leg.kind == "unknown" then
       steps[#steps + 1] = { lines = { Crossing(to.inst) }, done = { arrive = { leg.into } } }
     else
       local what = leg.kind == "cross" and ("To " .. MapName(leg.into))
                 or leg.kind == "fly" and (leg.fp or "Flight master") or "Dock"
       local done = leg.kind == "fly" and { taxi = true, arrive = { leg.into } } or { arrive = { leg.into } }
-      steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, lines = { leg.text }, done = done }
+      steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, lines = { leg.text }, done = done, fpid = leg.fpid }
     end
   end
 end
@@ -656,7 +657,7 @@ local function Steps(plan)
 
   local prev = plan.start
   for _, p in ipairs(plan.route) do
-    if prev and p.pos then TravelSteps(steps, prev, p.pos) end
+    if prev and p.pos then TravelSteps(steps, prev, p.pos, suggested) end
     local zone, lines = MapName(p.c.map), {}
     lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
     lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
@@ -1219,7 +1220,12 @@ end
 -- hand-in (q = the quest just handed in), and whenever you gain a flight path. Only the writs still on the
 -- route are used, the remaining customers go in the best order from here, and a "learn the flight path" step
 -- still ahead of you is kept.
-local function Reroute(q, why)
+local function Sig(list, from)   -- the next few steps, as text, to tell whether a re-plan changes anything
+  local t = {}
+  for i = from, math.min(#list, from + 2) do t[#t + 1] = table.concat(list[i].lines or {}, "|") end
+  return table.concat(t, "#")
+end
+local function Reroute(q, why, quiet)
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
   local left, onRoute, keep = {}, q == nil, nil
   for i, st in ipairs(WritPathNav.route) do
@@ -1236,13 +1242,27 @@ local function Reroute(q, why)
   if #plan.route == 0 then return end
   local steps = Steps(plan)
   if keep then table.insert(steps, 2, keep) end
+  -- a quiet re-plan (on entering a zone) leaves the route alone when the way ahead comes out the same
+  if quiet and Sig(steps, 2) == Sig(WritPathNav.route, WritPathNav.step or 1) then return end
   WritPath_SetRoute(steps, WritPathNav.title, WritPathNav.doneText)
   local nxt = plan.route[1]
   Print(("Rerouted from here%s: next %s (%s), %d writs left, ~%d min."):format(why and (" (" .. why .. ")") or "",
     nxt.w.name, nxt.c.npc or MapName(nxt.c.map), #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))
 end
 function WritPath_RerouteFromHere(q) Reroute(q) end
-function WritPath_RerouteNow(why) Reroute(nil, why) end
+function WritPath_RerouteNow(why, quiet) Reroute(nil, why, quiet) end
+
+-- entering a new zone: plan the rest of the trip again (at most every 20 seconds, never in the air)
+local lastZoneReplan = 0
+local zoneWatch = CreateFrame("Frame")
+zoneWatch:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+zoneWatch:SetScript("OnEvent", function()
+  C_Timer.After(2, function()
+    if UnitOnTaxi("player") or GetTime() - lastZoneReplan < 20 then return end
+    lastZoneReplan = GetTime()
+    Reroute(nil, "new zone", true)
+  end)
+end)
 
 function WritPath_ReplanFromBags()
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end

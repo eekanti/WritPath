@@ -105,8 +105,10 @@ The guide window shows the next steps, and an arrow on screen points to the curr
   (`/writs next` skips one you don't want). As soon as you enter a zone whose flight path
   you don't have, the guide says so at the top (with the flight master's spot), and learning one re-plans the
   rest of the trip.
-- After each hand-in, the rest of the trip is worked out again from where you stand, with everything WritPath
-  knows by then, and chat says what's next.
+- **Learn the flight path at X, then fly to Y**: routes also use your faction's flight paths you haven't learned
+  yet. Riding up to one learns it, and you can take off from it straight away to any you have.
+- The rest of the trip is worked out again from where you stand after each hand-in, whenever you gain a flight
+  path, and when you enter a new zone (chat only says so when the way ahead changes).
 - If a step gets stuck, `/writs next` skips it and `/writs back` undoes that.
 
 The footer under the guide shows the running plan's money: **cost** (what you actually paid once you've bought,

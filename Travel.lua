@@ -13,6 +13,7 @@
 local T = {}
 WritPath_Travel = T
 local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, yards/s, s, s, s
+local LEARN_FP = 20     -- seconds to talk to a new flight master before taking off
 local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
 local HOSTILE = 1200   -- extra seconds for a dock in the other faction's town: use it only when nothing else works
 -- zones whose dock is in a faction town (classic): Southshore, Menethil, Auberdine, Rut'theran, Theramore,
@@ -470,12 +471,22 @@ function T.Build()
     local p = map and T.Point(map, x, y)
     if p then fps[#fps + 1] = Add({ zone = map, p = p, kind = "fp", name = name, fpid = id }) end
   end
+  -- your faction's flight paths you haven't learned: riding up to one learns it, and you can take off from it
+  -- straight away to any you know (never fly to one you don't have)
+  local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
+  for id, n in pairs(WritPath_Data and WritPath_Data.flightNodes or {}) do
+    if not known[id] and (n[4] == mine or n[4] == "AH") then
+      local p = T.Point(n[1], n[2], n[3])
+      if p then fps[#fps + 1] = Add({ zone = n[1], p = p, kind = "fp", name = n[5], fpid = id, unlearned = true }) end
+    end
+  end
   for _, a in ipairs(fps) do
     for _, b in ipairs(fps) do
-      if a ~= b and a.p.inst == b.p.inst then
-        -- the time this flight took you (or RestedXP's time), otherwise a guess from distance
+      if a ~= b and a.p.inst == b.p.inst and not b.unlearned then
+        -- the time this flight took you (or RestedXP's time), otherwise a guess from distance; learning first
+        -- takes a moment more
         local secs = FlightTime(a.fpid, b.fpid)
-        Edge(a, b, secs and (secs + 15) or (FLIGHT_OVERHEAD + Dist(a.p, b.p) / FLY), "fly")
+        Edge(a, b, (secs and (secs + 15) or (FLIGHT_OVERHEAD + Dist(a.p, b.p) / FLY)) + (a.unlearned and LEARN_FP or 0), "fly")
       end
     end
   end
@@ -574,9 +585,16 @@ function T.Legs(a, b)
                           text = "{boat} Take the ship to |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
     elseif k == "fly" then
       local secs = FlightTime(c.from.fpid, c.to.fpid)
-      legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name,
-                          text = "{fly} Fly from |cFF00FF25" .. (c.from.name or "here") .. "|r to |cFF00FF25" .. (c.to.name or ZoneName(c.to.zone)) .. "|r"
-                                 .. (secs and (" (" .. math.floor(secs / 60 + 0.5) .. " min)") or "") }
+      local town = function(n) return (n or ""):match("^([^,]+)") or n end
+      local mins = secs and (" (" .. math.floor(secs / 60 + 0.5) .. " min)") or ""
+      if c.from.unlearned then   -- a flight path you don't have yet: learn it, then take off
+        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, learn = true,
+                            text = "{fp} Learn the flight path at |cFF00FF25" .. (town(c.from.name) or "the flight master") .. "|r, then fly to |cFF00FF25"
+                                   .. (town(c.to.name) or ZoneName(c.to.zone)) .. "|r" .. mins }
+      else
+        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid,
+                            text = "{fly} Fly from |cFF00FF25" .. (c.from.name or "here") .. "|r to |cFF00FF25" .. (c.to.name or ZoneName(c.to.zone)) .. "|r" .. mins }
+      end
     end
   end
   -- two crossings at the same spot (a border straight back out) say nothing useful twice

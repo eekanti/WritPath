@@ -464,10 +464,8 @@ ev:SetScript("OnEvent", function(_, event, ...)
     local near = FlightHint()
     Own(near and near.id)
     local s = ROUTE[WritPathNav.step]
-    if s and s.done and s.done.taxiMap then
-      Own(s.fpid)
-      WritPathNav.manual[WritPathNav.step] = true
-    end
+    if s and s.fpid then Own(s.fpid) end   -- the flight path this step learns ("learn it, then fly" waits for the flight)
+    if s and s.done and s.done.taxiMap then WritPathNav.manual[WritPathNav.step] = true end
     Refresh(true)
     -- a new flight path can change the best way everywhere: plan the rest of the trip again from here
     if WritPath_RerouteNow then C_Timer.After(0.5, function() WritPath_RerouteNow("new flight path") end) end
