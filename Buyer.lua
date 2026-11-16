@@ -144,6 +144,7 @@ local function Render()
       local each = p.qty > 1 and (" (" .. Coins(p.unit) .. " each)") or ""
       status = ("Cheapest: %s%s|r for %d%s. The plan expected %s each."):format(Y, Coins(p.total), p.qty, each, unit)
       if p.qty > Need(it) then status = status .. W_ .. (" Only sold as a stack of %d: you need %d.|r"):format(p.qty, Need(it)) end
+      if p.stack then status = status .. GREY .. ("\nCheaper per unit: a stack of %d at %s each (%s).|r"):format(p.stack.qty, Coins(p.stack.unit), Coins(p.stack.total)) end
       main = (p.kind == "commodity" and "Get price: " or "Buy for ") .. Coins(p.total)
       alt = "Skip"
     elseif ph == "over" then
@@ -153,6 +154,7 @@ local function Render()
       else
         status = W_ .. ("Cheapest is %s each, more than %d%% over the %s the plan was built on."):format(Coins(p.unit), (CAP - 1) * 100, unit) .. "|r"
       end
+      if p.stack then status = status .. GREY .. ("\nCheaper per unit: a stack of %d at %s each (%s).|r"):format(p.stack.qty, Coins(p.stack.unit), Coins(p.stack.total)) end
       main, alt = "Skip", "Buy anyway: " .. Coins(p.total)
     elseif ph == "quote" then status, main = "Getting a firm price...", "Getting price..."
     elseif ph == "confirm" then
@@ -274,7 +276,7 @@ end
 
 -- items: the cheapest auction that doesn't give you more than you need, else the cheapest one in total
 local function ChooseItem(it, itemKey)
-  local need, fit, any = Need(it), nil, nil
+  local need, fit, any, perUnit = Need(it), nil, nil, nil
   for i = 1, C_AuctionHouse.GetNumItemSearchResults(itemKey) do
     local r = C_AuctionHouse.GetItemSearchResultInfo(itemKey, i)
     if r and r.buyoutAmount and r.buyoutAmount > 0 and not (r.containsOwnerItem or r.containsAccountItem) then
@@ -282,9 +284,13 @@ local function ChooseItem(it, itemKey)
       local l = { kind = "item", auctionID = r.auctionID, qty = q, total = r.buyoutAmount, unit = r.buyoutAmount / q }
       if q <= need and (not fit or l.unit < fit.unit) then fit = l end
       if not any or l.total < any.total then any = l end
+      if not perUnit or l.unit < perUnit.unit then perUnit = l end
     end
   end
-  return fit or any or false
+  local pick = fit or any
+  -- cheaper per unit in a stack bigger than you need: say so (it's what an auction house listing shows)
+  if pick and perUnit and perUnit ~= pick and perUnit.unit < pick.unit and perUnit.qty > need then pick.stack = perUnit end
+  return pick or false
 end
 
 -- classic auction house
@@ -370,6 +376,29 @@ local function Buy()
   Render()
 end
 
+-- Skipping a writ skips the item it asks for (only this writ's share, if another writ needs it too); skipping
+-- an item skips the writs that need it. A writ without its item, or an item without its writ, is money wasted.
+local function Skip(it)
+  it.skipped = true
+  local W = WritPath_Writs or {}
+  local list = List()
+  local w = W[it.id]
+  if w and w.req then   -- a writ: its item's share comes off the list
+    for _, o in ipairs(list) do
+      if o.id == w.req and not o.skipped then
+        o.total = math.max(0, (o.total or 1) - (w.n or 1))
+        if Need(o) == 0 then o.skipped = true end   -- nothing of it is needed any more
+      end
+    end
+  else                  -- an item: every writ on the list that needs it
+    for _, o in ipairs(list) do
+      local ow = W[o.id]
+      if ow and ow.req == it.id and not o.skipped and Need(o) > 0 then o.skipped = true end
+    end
+  end
+end
+WritPath_BuyerSkip = Skip   -- for tests
+
 local function Click()
   local ph = state.phase
   if ph == "ready" then Buy()
@@ -377,12 +406,12 @@ local function Click()
     state.phase, state.paid, state.since = "buying", state.quoteTotal, GetTime()
     C_AuctionHouse.ConfirmCommoditiesPurchase(state.pick.itemID, state.pick.qty)
     Render()
-  elseif ph == "over" or ph == "none" then state.it.skipped = true; Search()
+  elseif ph == "over" or ph == "none" then Skip(state.it); Search()
   elseif ph ~= "searching" and ph ~= "buying" and ph ~= "quote" then Search() end
 end
 local function AltClick()
   local ph = state.phase
-  if ph == "ready" then state.it.skipped = true; Search()
+  if ph == "ready" then Skip(state.it); Search()
   elseif ph == "over" then Buy()
   elseif ph == "confirm" then
     if C_AuctionHouse.CancelCommoditiesPurchase then C_AuctionHouse.CancelCommoditiesPurchase() end
@@ -394,7 +423,8 @@ end
 local ev = CreateFrame("Frame")
 for _, e in ipairs({ "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "UI_ERROR_MESSAGE", "CHAT_MSG_SYSTEM", "BAG_UPDATE_DELAYED" }) do ev:RegisterEvent(e) end
 if MODERN then
-  for _, e in ipairs({ "COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_PRICE_UPDATED",
+  for _, e in ipairs({ "COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_ADDED",
+                       "ITEM_SEARCH_RESULTS_ADDED", "COMMODITY_PRICE_UPDATED",
                        "COMMODITY_PRICE_UNAVAILABLE", "COMMODITY_PURCHASE_SUCCEEDED", "COMMODITY_PURCHASE_FAILED",
                        "AUCTION_HOUSE_PURCHASE_COMPLETED" }) do pcall(ev.RegisterEvent, ev, e) end
 else
@@ -434,10 +464,21 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     end
   elseif not (panel and panel:IsShown() and state.it) then
     return
-  elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+  elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" or event == "COMMODITY_SEARCH_RESULTS_ADDED" then
+    -- the game sends results in pages: only choose once every listing is in (the cheapest may be on a later page)
+    local ours = (waiting and state.it and state.it.id == a1) or aheadWaiting == a1
+    if ours and C_AuctionHouse.HasFullCommoditySearchResults and not C_AuctionHouse.HasFullCommoditySearchResults(a1) then
+      C_AuctionHouse.RequestMoreCommoditySearchResults(a1); return
+    end
     Answer(a1, function(it) return ChooseCommodity(it, a1) end)
-  elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
-    if a1 and a1.itemID then Answer(a1.itemID, function(it) return ChooseItem(it, a1) end) end
+  elseif event == "ITEM_SEARCH_RESULTS_UPDATED" or event == "ITEM_SEARCH_RESULTS_ADDED" then
+    if a1 and a1.itemID then
+      local ours = (waiting and state.it and state.it.id == a1.itemID) or aheadWaiting == a1.itemID
+      if ours and C_AuctionHouse.HasFullItemSearchResults and not C_AuctionHouse.HasFullItemSearchResults(a1) then
+        C_AuctionHouse.RequestMoreItemSearchResults(a1); return
+      end
+      Answer(a1.itemID, function(it) return ChooseItem(it, a1) end)
+    end
   elseif event == "AUCTION_ITEM_LIST_UPDATE" then
     if waiting then
       for i = 1, (GetNumAuctionItems("list")) or 0 do   -- wait until every seller's name has loaded
