@@ -58,7 +58,14 @@ local function SessionTotals()
       if not e.paid then unpaid = unpaid + 1 end
     end
   end
-  return got, s.cost or 0, got - (s.cost or 0), unpaid
+  -- once you've bought something, the cost is what you really paid, plus the planned price of anything
+  -- still on the shopping list; before that, it's the plan's estimate
+  local cost, rem = s.cost or 0, 0
+  if s.spent then
+    rem = WritPath_ShopRemaining and WritPath_ShopRemaining() or 0
+    cost = s.spent + rem
+  end
+  return got, cost, got - cost, unpaid, s.spent and (s.cost or 0) or nil, rem
 end
 
 ---------------------------------------------------------------- footer under the guide window
@@ -77,12 +84,16 @@ ftext:SetPoint("TOPLEFT", 8, -6); ftext:SetPoint("RIGHT", footer, "RIGHT", -8, 0
 WritPath_FooterText = ftext   -- Nav.lua gives it the EllesmereUI font
 
 local function Update()
-  local got, cost, net, unpaid = SessionTotals()
+  local got, cost, net, unpaid, planned, rem = SessionTotals()
   if not got then
     ftext:SetText("|cFFAAAAAANo plan running. Start one from the planner to track its cost and pouches here.|r")
   else
-    ftext:SetText(("|TInterface/MONEYFRAME/UI-GoldIcon:0|t This plan: cost %s |cFFAAAAAA·|r pouches %s |cFFAAAAAA·|r net %s%s"):format(
-      Coins(cost), Coins(got), Coins(net, true),
+    local extra = ""
+    if planned then
+      extra = (" |cFFAAAAAA(planned %s%s)|r"):format(Coins(planned), (rem or 0) > 0 and (", ~" .. Coins(rem) .. " still to buy") or "")
+    end
+    ftext:SetText(("|TInterface/MONEYFRAME/UI-GoldIcon:0|t This plan: cost %s%s |cFFAAAAAA·|r pouches %s |cFFAAAAAA·|r net %s%s"):format(
+      Coins(cost), extra, Coins(got), Coins(net, true),
       unpaid > 0 and ("\n|cFFFCDC00" .. unpaid .. (unpaid == 1 and " pouch" or " pouches") .. " not opened yet|r") or ""))
   end
   ftext:SetWidth(math.max(100, (footer:GetWidth() or 300) - 16))
@@ -91,6 +102,7 @@ end
 footer:SetScript("OnSizeChanged", function() Update() end)
 
 WritPath_SessionTotals = SessionTotals   -- for the test harness
+WritPath_MoneyUpdate = function() Update() end   -- the buyer calls this after each purchase
 
 -- Start route opens a session with the plan's cost; clearing the plan closes it
 function WritPath_StartMoneySession(cost, rep)

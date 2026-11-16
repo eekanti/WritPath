@@ -39,7 +39,8 @@ Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-1
 ## Ships recorded by WritPath players (WritPathData.lua)
 
 Trips taken in game with WritPath's recorder and shipped as a starting point (2026-11-15): the Riverglades boat
-between Powderfuse Port and Steamwheedle Port. Nothing in this file is copied from another addon.
+both ways (Powderfuse Port <-> Steamwheedle Port), road crossings (Barrens <-> Thousand Needles, Mulgore <->
+Thunder Bluff, Undercity -> Tirisfal) and three flight times. Nothing in this file is copied from another addon.
 
 ## Roads, ships and flight times (WritPathLearned)
 

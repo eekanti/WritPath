@@ -12,10 +12,13 @@ local POUCH_GUESS = { Journeyman = 1200, Expert = 6700, Artisan = 7456 }   -- co
 local G, W_, Y = "|cFF00FF25", "|cFFFCDC00", "|cFF00BCD4"
 local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. msg) end
 
+-- how many you have: in your bags, plus what WritPath bought for you that's still in the mail
 local function Count(id)
   if not id then return 0 end
-  if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(id) or 0 end
-  return GetItemCount and GetItemCount(id) or 0
+  local n = 0
+  if C_Item and C_Item.GetItemCount then n = C_Item.GetItemCount(id) or 0
+  elseif GetItemCount then n = GetItemCount(id) or 0 end
+  return n + (WritPath_InMail and WritPath_InMail(id) or 0)
 end
 local function Done(q) return C_QuestLog.IsQuestFlaggedCompleted(q) end
 local function InLog(q) return C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetLogIndexForQuestID(q) ~= nil end
@@ -168,9 +171,15 @@ local function UsedToday()
 end
 
 ---------------------------------------------------------------- prices
+-- a price: what the auction house really asked in the last half hour (seen while buying: a stack you'd have
+-- to take whole counts in full), else Auctionator's last scan
+local SEEN_FOR = 30 * 60
 local function Price(item)
+  if not item then return nil end
+  local seen = WritPathNav and WritPathNav.seenPrice and WritPathNav.seenPrice[item]
+  if seen and time() - (seen.t or 0) < SEEN_FOR then return seen.u end
   local api = Auctionator and Auctionator.API and Auctionator.API.v1
-  if not (api and item) then return nil end
+  if not api then return nil end
   local ok, p = pcall(api.GetAuctionPriceByItemID, "WritPath", item)
   return ok and p or nil
 end
@@ -1129,11 +1138,59 @@ ev:SetScript("OnEvent", function(_, event, a1)
   end
 end)
 
--- for Money.lua: name, tier and planned cost of any writ quest
+-- for Money.lua at a turn-in: name, tier and cost of a writ quest. The cost is what you paid at the auction
+-- house for this writ and its items (each unit used once), else what the plan expected.
+local function TakePaid(id, n)
+  local p = WritPathNav and WritPathNav.paidFor and WritPathNav.paidFor[id]
+  if not (p and p.qty > 0) then return nil end
+  local take = math.min(n, p.qty)
+  local c = p.paid / p.qty * take
+  p.qty, p.paid = p.qty - take, p.paid - c
+  return c * n / take
+end
 function WritPath_WritByQuest(q)
   for id, w in pairs(DB) do
-    if w.q == q then return w.name, w.tier, WritPathNav and WritPathNav.plannedCost and WritPathNav.plannedCost[q] end
+    if w.q == q then
+      local planned = WritPathNav and WritPathNav.plannedCost and WritPathNav.plannedCost[q]
+      local writ, item = TakePaid(id, 1), w.req and TakePaid(w.req, w.n or 1)
+      local cost = (writ or item) and math.floor((writ or 0) + (item or 0) + 0.5) or planned
+      return w.name, w.tier, cost
+    end
   end
+end
+
+-- After buying: the route is rebuilt from the writs and items you actually have (bags and mail), so a writ
+-- that wasn't bought drops out, an item you're still missing shows up as a shopping step, and the shopping
+-- list keeps only what that route needs. Called when you close the auction house.
+function WritPath_ReplanFromBags()
+  if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
+  local before = {}
+  for _, st in ipairs(WritPathNav.route) do if st.writ then before[st.writ] = true end end
+  local plan = PlanOwned()
+  local after, short, dropped, added = {}, {}, {}, {}
+  for _, p in ipairs(plan.route) do
+    after[p.id] = true
+    if p.need and p.need > 0 then short[#short + 1] = p.w.name end
+  end
+  for id in pairs(before) do if not after[id] and DB[id] then dropped[#dropped + 1] = DB[id].name end end
+  for id in pairs(after) do if not before[id] then added[#added + 1] = DB[id].name end end
+  if #dropped == 0 and #added == 0 and #short == 0 then
+    Print("You have every writ and item the route needs.")
+    return
+  end
+  table.sort(dropped); table.sort(added); table.sort(short)
+  WritPath_SetRoute(Steps(plan), ("Writs: %d rep"):format(plan.rep), ("Planned writs handed in: |cFF00FF25%d rep|r"):format(plan.rep))
+  if WritPathMoney and WritPathMoney.session then WritPathMoney.session.rep = plan.rep end
+  local needed = {}
+  for _, e in ipairs(BuyList(plan)) do needed[e.id] = e end
+  if WritPath_PruneShopList then WritPath_PruneShopList(needed) end
+  if WritPath_MoneyUpdate then WritPath_MoneyUpdate() end
+  local msg = ("Route rebuilt from what you bought: %d writs, %d rep, ~%d min."):format(#plan.route, plan.rep, math.floor((plan.secs or 0) / 60 + 0.5))
+  if #dropped > 0 then msg = msg .. " Dropped (writ not bought): " .. table.concat(dropped, ", ") .. "." end
+  if #short > 0 then msg = msg .. " Still missing the item for: " .. table.concat(short, ", ") .. " (on the shopping list)." end
+  if #added > 0 then msg = msg .. " Added (writs you have): " .. table.concat(added, ", ") .. "." end
+  if plan.later and #plan.later > 0 then msg = msg .. " " .. #plan.later .. " writs wait for another day (same customer)." end
+  Print(msg)
 end
 
 -- exposed for the test harness

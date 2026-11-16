@@ -54,6 +54,9 @@ local function FlightTime(a, b)
   local t = WritPathLearned and WritPathLearned.flights or {}
   local mine = (t[a] and t[a][b]) or (t[b] and t[b][a])
   if mine then return mine end
+  for _, f in ipairs(WritPath_Data and WritPath_Data.flights or {}) do   -- recorded by WritPath players
+    if (f[1] == a and f[2] == b) or (f[1] == b and f[2] == a) then return f[3] end
+  end
   local r = RXP.flightTimes and RXP.flightTimes[UnitFactionGroup("player")] or {}
   return (r[a] and r[a][b]) or (r[b] and r[b][a])
 end
@@ -229,6 +232,15 @@ function T.Build()
   -- road crossings you've ridden: an exit on this side, an entry at the same spot on the far side, both ways
   for _, c in ipairs(L.crossings or {}) do
     -- an old record taken out at sea (map = a whole continent) isn't a road
+    local p = not (IsContinent(c.from) or IsContinent(c.to)) and T.Point(c.from, c.x, c.y)
+    if p then
+      local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })
+      local entry = Add({ zone = c.to, p = p, kind = "entry", peer = c.from })
+      Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
+    end
+  end
+  -- crossings WritPath players have ridden (WritPathData.lua), both ways
+  for _, c in ipairs(WritPath_Data and WritPath_Data.crossings or {}) do
     local p = not (IsContinent(c.from) or IsContinent(c.to)) and T.Point(c.from, c.x, c.y)
     if p then
       local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })

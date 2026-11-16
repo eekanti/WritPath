@@ -45,6 +45,15 @@ end
 local state = { phase = "idle" }   -- idle, searching, ready, over, none, quote, confirm, buying, unsure, done
 local function List() return WritPathNav and WritPathNav.shopList or {} end
 local function Have(it) return math.max(Count(it.id), (it.base or 0) + (it.bought or 0)) end
+
+-- bought here but not in your bags yet (auction house purchases often go to the mail): counts as yours
+function WritPath_InMail(id)
+  local n = 0
+  for _, it in ipairs(List()) do
+    if it.id == id then n = n + math.max(0, (it.base or 0) + (it.bought or 0) - Count(id)) end
+  end
+  return n
+end
 local function Need(it) return math.max(0, (it.total or 1) - Have(it)) end
 local function NextItem()
   for i, it in ipairs(List()) do if not it.skipped and Need(it) > 0 then return i, it end end
@@ -53,6 +62,26 @@ local function Progress()
   local done, total = 0, 0
   for _, it in ipairs(List()) do total = total + 1; if Need(it) == 0 then done = done + 1 end end
   return done, total
+end
+
+-- the planned price of what's still to buy (for the footer's cost)
+function WritPath_ShopRemaining()
+  local c = 0
+  for _, it in ipairs(List()) do c = c + Need(it) * (it.unit or 0) end
+  return c
+end
+
+-- the route was rebuilt from what you have: keep what's needed for it and everything you've bought (it may
+-- still be in the mail), drop the rest; anything newly needed is added
+function WritPath_PruneShopList(needed)   -- needed = { [item id] = { total =, unit =, name = } }
+  local keep, seen = {}, {}
+  for _, it in ipairs(List()) do
+    if needed[it.id] or (it.bought or 0) > 0 then keep[#keep + 1] = it; seen[it.id] = true end
+  end
+  for id, e in pairs(needed) do
+    if not seen[id] then keep[#keep + 1] = { id = id, name = e.name, total = e.total, unit = e.unit, base = Count(id), bought = 0 } end
+  end
+  WritPathNav.shopList = keep
 end
 
 ---------------------------------------------------------------- panel beside the auction house
@@ -114,10 +143,16 @@ local function Render()
     elseif ph == "ready" then
       local each = p.qty > 1 and (" (" .. Coins(p.unit) .. " each)") or ""
       status = ("Cheapest: %s%s|r for %d%s. The plan expected %s each."):format(Y, Coins(p.total), p.qty, each, unit)
+      if p.qty > Need(it) then status = status .. W_ .. (" Only sold as a stack of %d: you need %d.|r"):format(p.qty, Need(it)) end
       main = (p.kind == "commodity" and "Get price: " or "Buy for ") .. Coins(p.total)
       alt = "Skip"
     elseif ph == "over" then
-      status = W_ .. ("Cheapest is %s each, more than %d%% over the %s the plan was built on."):format(Coins(p.unit), (CAP - 1) * 100, unit) .. "|r"
+      if p.qty > Need(it) then
+        status = W_ .. ("Only sold as a stack of %d for %s (you need %d): more than %d%% over the %s the plan expected."):format(
+          p.qty, Coins(p.total), Need(it), (CAP - 1) * 100, Coins((it.unit or 0) * Need(it))) .. "|r"
+      else
+        status = W_ .. ("Cheapest is %s each, more than %d%% over the %s the plan was built on."):format(Coins(p.unit), (CAP - 1) * 100, unit) .. "|r"
+      end
       main, alt = "Skip", "Buy anyway: " .. Coins(p.total)
     elseif ph == "quote" then status, main = "Getting a firm price...", "Getting price..."
     elseif ph == "confirm" then
@@ -152,43 +187,79 @@ local function Render()
 end
 
 ---------------------------------------------------------------- searching (no click needed)
-local queued, waiting = false, false
+-- The item on the button is searched first; while you look at it, the next few on the list are searched
+-- too, so after each purchase the next one is usually ready at once.
+local queued, waiting = false, false   -- the item on the button: query to send / answer awaited
+local cache = {}                       -- [item id] = { pick = what to buy or false, t = when }
+local ahead = {}                       -- item ids being looked up in advance, in order
+local aheadWaiting = nil               -- the advance lookup awaiting its answer
+local FRESH, LOOKAHEAD = 45, 3          -- seconds an advance lookup stays good; how many items ahead
+
+local function Entry(id) for _, it in ipairs(List()) do if it.id == id and Need(it) > 0 and not it.skipped then return it end end end
+
+local Decide
 function Search()
   state.pick = nil
   state.i, state.it = NextItem()
   if not state.it then state.phase = "done"; Render(); return end
-  state.phase = "searching"; queued, waiting = true, false
-  Render()
+  local c = cache[state.it.id]
+  if c and GetTime() - c.t < FRESH then   -- looked up while you were busy with the one before
+    cache[state.it.id] = nil
+    Decide(c.pick or nil)
+  else
+    state.phase = "searching"; queued, waiting = true, false
+    Render()
+  end
 end
 WritPath_BuyerRefresh = function() if panel and panel:IsShown() then Search() end end
+
+-- the next few items without an answer yet
+local function PlanAhead()
+  ahead = {}
+  if not MODERN then return end
+  local started = false
+  for _, it in ipairs(List()) do
+    if it == state.it then started = true
+    elseif started and #ahead < LOOKAHEAD and not it.skipped and Need(it) > 0 and not (cache[it.id] and GetTime() - cache[it.id].t < FRESH) then
+      ahead[#ahead + 1] = it.id
+    end
+  end
+end
 
 local function Ready()
   if MODERN then return not C_AuctionHouse.IsThrottledMessageSystemReady or C_AuctionHouse.IsThrottledMessageSystemReady() end
   return CanSendAuctionQuery and CanSendAuctionQuery()
 end
-local function SendQuery()
-  local it = state.it
+local function SendQuery(id)
   if MODERN then
     -- one search: the game answers with commodity results or item results, whichever this item is
-    C_AuctionHouse.SendSearchQuery(C_AuctionHouse.MakeItemKey(it.id), { sortOrder = 0, reverseSort = false }, true)
+    C_AuctionHouse.SendSearchQuery(C_AuctionHouse.MakeItemKey(id), { sortOrder = 0, reverseSort = false }, true)
   else
     if SortAuctionSetSort then SortAuctionSetSort("list", "unitprice") end
-    QueryAuctionItems(ItemName(it.id) or it.name, nil, nil, 0, nil, nil, false, true, nil)
+    QueryAuctionItems(ItemName(id) or state.it.name, nil, nil, 0, nil, nil, false, true, nil)
   end
 end
 
-local function Decide(pick)
+-- over the cap: judged on what you'd pay for what you need, so a stack bigger than you need counts in full
+local function Over(it, pick)
+  if not (it.unit and it.unit > 0) then return false end
+  local need = math.max(1, Need(it))
+  return pick.total > it.unit * math.min(pick.qty, need) * CAP + 0.5 or (pick.qty > need and pick.total > it.unit * need * CAP + 0.5)
+end
+
+function Decide(pick)
   state.pick = pick
   local it = state.it
   if not pick then state.phase = "none"
-  elseif it.unit and it.unit > 0 and pick.unit > it.unit * CAP then state.phase = "over"
+  elseif Over(it, pick) then state.phase = "over"
   else state.phase = "ready" end
+  PlanAhead()
   Render()
 end
 
 -- commodities: the cheapest units first, as many as you need (or all there are)
-local function ChooseCommodity(itemID)
-  local need, got, total, top = Need(state.it), 0, 0, 0
+local function ChooseCommodity(it, itemID)
+  local need, got, total, top = Need(it), 0, 0, 0
   for i = 1, C_AuctionHouse.GetNumCommoditySearchResults(itemID) do
     local r = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, i)
     local mine = r and (r.containsOwnerItem or (r.owners and r.owners[1] == "player"))
@@ -197,13 +268,13 @@ local function ChooseCommodity(itemID)
       got, total, top = got + take, total + take * r.unitPrice, r.unitPrice
     end
   end
-  if got == 0 then return Decide(nil) end
-  Decide({ kind = "commodity", itemID = itemID, qty = got, total = total, unit = total / got, top = top })
+  if got == 0 then return false end
+  return { kind = "commodity", itemID = itemID, qty = got, total = total, unit = total / got, top = top }
 end
 
--- items: the cheapest auction that doesn't give you more than you need, else the cheapest one
-local function ChooseItem(itemKey)
-  local need, fit, any = Need(state.it), nil, nil
+-- items: the cheapest auction that doesn't give you more than you need, else the cheapest one in total
+local function ChooseItem(it, itemKey)
+  local need, fit, any = Need(it), nil, nil
   for i = 1, C_AuctionHouse.GetNumItemSearchResults(itemKey) do
     local r = C_AuctionHouse.GetItemSearchResultInfo(itemKey, i)
     if r and r.buyoutAmount and r.buyoutAmount > 0 and not (r.containsOwnerItem or r.containsAccountItem) then
@@ -213,7 +284,7 @@ local function ChooseItem(itemKey)
       if not any or l.total < any.total then any = l end
     end
   end
-  Decide(fit or any)
+  return fit or any or false
 end
 
 -- classic auction house
@@ -232,19 +303,60 @@ local function ChooseClassic()
   Decide(fit or any)
 end
 
+-- an answer came in: for the item on the button, or one looked up in advance
+local function Answer(id, choose)
+  if waiting and state.it and state.it.id == id then
+    waiting = false
+    Decide(choose(state.it) or nil)
+  elseif aheadWaiting == id then
+    aheadWaiting = nil
+    local it = Entry(id)
+    if it then cache[id] = { pick = choose(it), t = GetTime() } end
+  end
+end
+
 ---------------------------------------------------------------- buying (inside a click)
-local function Bought(qty)
-  local it = state.it
+local boughtThisVisit = false
+local pending = {}   -- [auctionID] = { it, qty, paid }: item buyouts waiting for the game to confirm them
+
+-- what you paid: for the footer (this plan's real cost), the turn-in log, and better prices next time
+local function NotePaid(id, qty, paid)
+  WritPathNav.paidFor = WritPathNav.paidFor or {}
+  local p = WritPathNav.paidFor[id] or { qty = 0, paid = 0 }
+  p.qty, p.paid, p.t = p.qty + qty, p.paid + paid, time()
+  WritPathNav.paidFor[id] = p
+  local s = WritPathMoney and WritPathMoney.session
+  if s then s.spent = (s.spent or 0) + paid end
+  if WritPath_MoneyUpdate then WritPath_MoneyUpdate() end
+end
+
+local function Credit(it, qty, paid)
   it.bought = (it.bought or 0) + qty
-  Print(("Bought %s%s for %s."):format(ItemName(it.id) or it.name or "item", qty > 1 and (" x" .. qty) or "", Coins(state.paid or 0)))
+  boughtThisVisit = true
+  NotePaid(it.id, qty, paid or 0)
+  Print(("Bought %s%s for %s."):format(ItemName(it.id) or it.name or "item", qty > 1 and (" x" .. qty) or "", Coins(paid or 0)))
+end
+
+local function Bought(qty)
+  Credit(state.it, qty, state.paid)
   Search()
+end
+
+-- real prices seen at the auction house (what you'd pay per unit you need) feed the next plan
+local function NoteSeen(it, pick)
+  if not (pick and pick.qty and pick.qty > 0) then return end
+  WritPathNav.seenPrice = WritPathNav.seenPrice or {}
+  local need = math.max(1, math.min(Need(it), pick.qty))
+  WritPathNav.seenPrice[it.id] = { u = math.floor(pick.total / need + 0.5), t = time() }
 end
 
 local function Buy()
   local p = state.pick
   state.since = GetTime()
+  NoteSeen(state.it, p)
   if p.kind == "item" then
     state.phase, state.paid = "buying", p.total
+    pending[p.auctionID] = { it = state.it, qty = p.qty, paid = p.total }
     C_AuctionHouse.PlaceBid(p.auctionID, p.total)
   elseif p.kind == "commodity" then
     state.phase = "quote"
@@ -301,19 +413,30 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     local fresh = WritPathNav.shopAt and time() - WritPathNav.shopAt < 3 * 3600
     if not routeOn and not fresh then WritPathNav.shopList = nil end
     for _, it in ipairs(List()) do it.skipped = nil end
+    cache, ahead, aheadWaiting, boughtThisVisit = {}, {}, nil, false
     -- only when the planner left you something to buy; an empty or finished list stays out of the way
     if not NextItem() then panel:Hide(); return end
     panel:Show()
     Search()
   elseif event == "AUCTION_HOUSE_CLOSED" then
-    queued, waiting = false, false
+    queued, waiting, aheadWaiting, ahead = false, false, nil, {}
     if panel then panel:Hide() end
+    -- done buying: if what you got isn't what was planned, the route is rebuilt from what you have
+    if boughtThisVisit and WritPath_ReplanFromBags then boughtThisVisit = false; C_Timer.After(1, WritPath_ReplanFromBags) end
+  elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
+    -- a buyout went through: credit the item that auction was for, even if the panel has moved on
+    local p = pending[a1]
+    if p then
+      pending[a1] = nil
+      if state.phase == "buying" and state.pick and state.pick.auctionID == a1 then Bought(p.qty)
+      else Credit(p.it, p.qty, p.paid); if state.phase == "unsure" then Search() end end
+    end
   elseif not (panel and panel:IsShown() and state.it) then
     return
   elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
-    if waiting and a1 == state.it.id then waiting = false; ChooseCommodity(a1) end
+    Answer(a1, function(it) return ChooseCommodity(it, a1) end)
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
-    if waiting and a1 and a1.itemID == state.it.id then waiting = false; ChooseItem(a1) end
+    if a1 and a1.itemID then Answer(a1.itemID, function(it) return ChooseItem(it, a1) end) end
   elseif event == "AUCTION_ITEM_LIST_UPDATE" then
     if waiting then
       for i = 1, (GetNumAuctionItems("list")) or 0 do   -- wait until every seller's name has loaded
@@ -334,28 +457,38 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
   elseif event == "COMMODITY_PRICE_UNAVAILABLE" or event == "COMMODITY_PURCHASE_FAILED" then
     if state.phase == "quote" or state.phase == "confirm" or state.phase == "buying" then Search() end
   elseif event == "COMMODITY_PURCHASE_SUCCEEDED" then
-    if state.phase == "buying" then Bought(state.pick.qty) end
-  elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
-    if state.phase == "buying" and state.pick.kind == "item" then Bought(state.pick.qty) end
+    if state.phase == "buying" and state.pick.kind == "commodity" then Bought(state.pick.qty) end
   elseif event == "CHAT_MSG_SYSTEM" then
-    -- "You won an auction for X": a buyout went through (any auction house)
-    if state.phase == "buying" and state.pick.kind ~= "commodity" and type(a1) == "string" and a1:match(WON) then Bought(state.pick.qty) end
+    -- classic auction house only: "You won an auction for X", and only for the item on the button
+    if not MODERN and state.phase == "buying" and state.pick.kind == "classic" and type(a1) == "string" then
+      local name = a1:match(WON)
+      if name and name == (ItemName(state.it.id) or state.it.name) then Bought(state.pick.qty) end
+    end
   elseif event == "BAG_UPDATE_DELAYED" then
     if state.phase == "buying" and state.pick.kind == "classic" and Count(state.it.id) > (state.countBefore or 0) then Bought(state.pick.qty) end
   elseif event == "UI_ERROR_MESSAGE" then
-    if state.phase == "buying" or state.phase == "quote" then Search() end   -- sold to someone else, or not enough gold
+    -- sold to someone else, or not enough gold: forget that auction and look again
+    if state.phase == "buying" or state.phase == "quote" then
+      if state.pick and state.pick.auctionID then pending[state.pick.auctionID] = nil end
+      Search()
+    end
   end
 end)
 
--- queries go out as soon as the auction house allows one; a purchase that's never confirmed stops and asks
+-- queries go out as soon as the auction house allows one (the item on the button first, then the ones
+-- ahead); a purchase that's never confirmed stops and asks
 ev:SetScript("OnUpdate", function()
   if queued and state.it and Ready() then
     queued, waiting = false, true
-    SendQuery()
+    SendQuery(state.it.id)
+  elseif MODERN and not queued and not waiting and not aheadWaiting and #ahead > 0 and Ready()
+         and state.phase ~= "buying" and state.phase ~= "quote" and state.phase ~= "confirm" then
+    aheadWaiting = table.remove(ahead, 1)
+    SendQuery(aheadWaiting)
   end
   if (state.phase == "buying" or state.phase == "quote") and GetTime() - (state.since or 0) > 8 then
     state.phase = "unsure"; Render()
   end
 end)
 
-WritPath_BuyerInternals = { State = state, Click = Click, AltClick = AltClick, Search = Search }
+WritPath_BuyerInternals = { State = state, Click = Click, AltClick = AltClick, Search = Search, Cache = function() return cache end }
