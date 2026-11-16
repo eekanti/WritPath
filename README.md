@@ -73,10 +73,10 @@ from where you stand, with the customer, the zone and the travel time. Click **S
    Each card shows the cost, the time, the rep and the net gold (coin pouches minus what you spend).
    Your own writs whose items you have are always used; ones that still need an item compete on price.
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
-4. **Include customers known by zone only** lets WritPath use customers whose exact spot isn't known yet (it
-   learns the spot when you accept the writ). Leave it off for the most reliable routes.
-5. If the target can't be reached today, the plan says how close you can get and why.
-6. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
+   Customers known only by their zone are included too: when you accept their writ, its map pin gives the exact
+   spot before you travel.
+4. If the target can't be reached today, the plan says how close you can get and why.
+5. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
    (**Send to Auctionator** also makes a "WritPath" shopping list in Auctionator, if you'd rather buy there.)
 
 ### Buy: the Writ shopping list at the auction house

@@ -65,7 +65,10 @@ local function Build()
   scanBtn:SetSize(84, 22); scanBtn:SetPoint("TOPRIGHT", -8, -10); scanBtn:SetText("Scan")
   scanBtn:SetScript("OnClick", function() S.Start() end)
   scanBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Scan writ prices")
+    -- beside the panel, not above it: the panel sits at the top of the screen, where a tooltip above it gets pushed
+    -- back down over the button
+    GameTooltip:SetOwner(self, "ANCHOR_NONE"); GameTooltip:ClearAllPoints()
+    GameTooltip:SetPoint("TOPRIGHT", panel, "TOPLEFT", -4, 0); GameTooltip:SetText("Scan writ prices")
     GameTooltip:AddLine("Reads the auction house and keeps the prices of writs and the items they ask for. A detailed scan (every listing, stacks too) when the game allows one, every 15 minutes; otherwise a quick summary scan (lowest price per item).", 1, 1, 1, true)
     GameTooltip:Show()
   end)

@@ -838,19 +838,10 @@ local buyRow = CreateFrame("Frame", nil, f); buyRow:SetSize(INNER, 24)
 local repL = Text(buyRow); repL:SetPoint("LEFT", 0, 0); repL:SetText("Rep target"); repL:SetWordWrap(false)
 local repBox = CreateFrame("EditBox", nil, buyRow, "InputBoxTemplate"); repBox:SetSize(54, 20); repBox:SetAutoFocus(false)
 repBox:SetNumeric(true); repBox:SetText("1000"); repBox:SetPoint("LEFT", repL, "RIGHT", 10, 0)
-local zoneChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); zoneChk:SetSize(22, 22)
-zoneChk:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
-local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("RIGHT", 0, 0)
-local zoneL = Text(buyRow); zoneL:SetPoint("LEFT", zoneChk, "RIGHT", 2, 0)
-zoneL:SetText("Zone-only too"); zoneL:SetWordWrap(false)
-zoneL:SetPoint("RIGHT", planBtn, "LEFT", -8, 0); zoneL:SetText("Include customers known by zone only")
-local function Tip(frame, title, text)
-  frame:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(title); GameTooltip:AddLine(text, 1, 1, 1, true); GameTooltip:Show()
-  end)
-  frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
-end
-Tip(zoneChk, "Zone-only customers", "Also use customers whose exact spot isn't known yet; the writ's map pin shows it once you accept it.")
+local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
+-- customers known only by their zone are always included: accepting the writ shows its map pin, and WritPath
+-- reads the exact spot from it before you travel
+local ZONE_ONLY = true
 buyRow:Hide()
 
 -- the two answers for a rep target, side by side; click one to see its writs
@@ -911,7 +902,6 @@ local function ApplySkin(S)
   S.CloseButton(closeX)
   for _, btn in ipairs(buttons) do S.Button(btn); if S.StateButtonLabel then S.StateButtonLabel(btn) end end
   S.EditBox(repBox, { padInput = true })
-  S.Checkbox(zoneChk)
   for _, c in pairs(cards) do S.Panel(c, { inset = true }) end
   if Bar() and S.ScrollBar then S.ScrollBar(Bar()) end
   for _, fs in ipairs(fonts) do S.Font(fs) end
@@ -1055,7 +1045,7 @@ end
 local WhyNone
 -- why nothing could be planned, counted by reason ("120 no AH price · 30 customer unknown")
 function WhyNone()
-  local _, skipped = Candidates(WritPathNav.plan and WritPathNav.plan.zoneOnly)
+  local _, skipped = Candidates(ZONE_ONLY)
   local counts, order = {}, {}
   for _, sk in ipairs(skipped) do
     local k = sk.why:gsub(" %(.*%)", ""):gsub("no AH price for .*", "no AH price for an item it asks for")
@@ -1225,7 +1215,7 @@ local function DoPlan()
     summary:SetText(W_ .. "No prices yet: open the auction house and press \"WritPath: scan writs\" (or install Auctionator).|r"); return
   end
   local target = tonumber(repBox:GetText()) or 1000
-  local zoneOnly = zoneChk:GetChecked() and true or false
+  local zoneOnly = ZONE_ONLY
   WritPathNav.plan = { target = target, zoneOnly = zoneOnly }
   plans = PlanBoth(target, zoneOnly)   -- Fastest weighs the flight-path hub plan by itself
   Warm(plans.cheap); Warm(plans.fast)
@@ -1295,7 +1285,7 @@ function WritPath_ClearAll()
   WritPathNav.plan, WritPathNav.planChoice = nil, nil
   EmptyAuctionatorList()
   current, plans, choice = nil, nil, nil
-  repBox:SetText(""); zoneChk:SetChecked(false)
+  repBox:SetText("")
   cards.cheap:Hide(); cards.fast:Hide()
   Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -64)
   summary:SetText(GREY .. "Cleared. Pick My writs or Buy writs to plan again.|r"); note:SetText("")
@@ -1336,7 +1326,7 @@ clearBtn:SetScript("OnClick", WritPath_AskClear)
 
 function WritPath_OpenPlanner(mode)
   local o = WritPathNav.plan
-  if o then repBox:SetText(o.target); zoneChk:SetChecked(o.zoneOnly) end
+  if o then repBox:SetText(o.target) end
   FitWidth(mineBtn); FitWidth(buyBtn); FitWidth(planBtn)
   f:Show()
   if (mode or WritPathNav.planMode) == "buy" then DoPlan() else DoMine() end
@@ -1354,7 +1344,7 @@ end
 
 -- for /writs why: what the planner can't use and why
 function WritPath_WhyNot()
-  local _, skipped = Candidates(WritPathNav.plan and WritPathNav.plan.zoneOnly)
+  local _, skipped = Candidates(ZONE_ONLY)
   local counts = {}
   for _, s in ipairs(skipped) do local k = s.why:gsub(" %(.*%)", ""); counts[k] = (counts[k] or 0) + 1 end
   for k, n in pairs(counts) do Print(("%d writs: %s"):format(n, k)) end
