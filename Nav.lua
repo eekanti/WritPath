@@ -430,6 +430,8 @@ SlashCmdList.WRITPATH = function(msg)
   elseif msg == "plan" or msg == "mine" then WritPath_OpenPlanner("mine")
   elseif msg == "buy" then WritPath_OpenPlanner("buy")
   elseif msg == "why" then WritPath_WhyNot()
+  elseif msg == "travel" then
+    for _, l in ipairs(WritPath_Travel and WritPath_Travel.Report and WritPath_Travel.Report() or {}) do Print(l) end
   elseif msg == "clear" then
     if WritPath_ClearAll then WritPath_ClearAll() else WritPath_SetRoute(nil); Print("Route cleared.") end
   elseif msg == "next" then WritPathNav.manual[cur] = true; Refresh(true)

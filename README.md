@@ -41,7 +41,8 @@ Roads, boats and flight times you use are learned as you travel.
 ## Use
 
 Click the minimap button (right-click for the planner), or the map / coin icons on the guide window.
-Slash commands: `/writs plan`, `/writs buy`, `/writs money`, `/writs clear`.
+Slash commands: `/writs plan`, `/writs buy`, `/writs money`, `/writs clear`, `/writs travel` (what WritPath knows
+about flight paths, roads and ships).
 
 ## License
 

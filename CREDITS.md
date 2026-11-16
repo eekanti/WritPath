@@ -14,6 +14,8 @@ https://creativecommons.org/licenses/by-nc-sa/4.0/).
   under 400 yards apart).
 - Boat and zeppelin trips the guides take (the dock from each "Take the boat/zeppelin" step, the landing from the
   dock the trip back leaves from). Added 2026-11-15.
+- Where every flight point is (RXPGuides/DB/forever/db.lua `taxiPos`), used to place the flight paths you know
+  when the game can't. Added 2026-11-16.
 - RestedXP's recorded flight times between flight points.
 
 RXPData.lua is adapted material and is shared under the same CC BY-NC-SA 4.0 license: credit RestedXP,

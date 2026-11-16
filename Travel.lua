@@ -189,6 +189,28 @@ local function Known()
   return known, own
 end
 
+-- a spot in game world coordinates (x, y as the game's own API gives them) on a continent instance (0 = Eastern
+-- Kingdoms, 1 = Kalimdor) -> the zone it is in, zone percent
+local function PlaceWorld(inst, wx, wy)
+  local v = CreateVector2D(wx, wy)
+  for _, cont in ipairs(inst == 0 and { 1415, 1463 } or { 1414, 1464 }) do
+    local ok, _, cpos = pcall(C_Map.GetMapPosFromWorldPos, inst, v, cont)
+    if ok and cpos then
+      local cx, cy = cpos:GetXY()
+      if cx >= 0 and cx <= 1 and cy >= 0 and cy <= 1 then
+        local zone = ZoneAt(cont, cx, cy)
+        if zone and not IsContinent(zone) then
+          local ok2, _, zpos = pcall(C_Map.GetMapPosFromWorldPos, inst, v, zone)
+          if ok2 and zpos then
+            local zx, zy = zpos:GetXY()
+            return zone, math.floor(zx * 1000 + 0.5) / 10, math.floor(zy * 1000 + 0.5) / 10
+          end
+        end
+      end
+    end
+  end
+end
+
 -- fill in positions for known flight paths that don't have one yet
 local function LocateFlightPaths()
   WritPathLearned.fp = WritPathLearned.fp or {}
@@ -220,6 +242,21 @@ local function LocateFlightPaths()
       end
     end
   end
+  -- RestedXP's list of where every flight point is (game world coordinates, by taxi node id): places any you
+  -- know that the game couldn't
+  if Missing() then
+    for id in pairs(known) do
+      if not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) then
+        for inst, list in pairs(RXP.taxiPos or {}) do
+          local t = list[id]
+          if t then
+            local zone, x, y = PlaceWorld(inst, t[1], t[2])
+            if zone then Set(id, type(known[id]) == "string" and known[id] or nil, zone, x, y) end
+          end
+        end
+      end
+    end
+  end
   -- the flight masters' own spots (WritPathData.lua): a known point near one is put exactly on it, and one the
   -- game couldn't place goes to the flight master of the zone its name ends in ("Kargath, Badlands")
   local FM = WritPath_Data and WritPath_Data.flightMasters or {}
@@ -244,6 +281,28 @@ local function LocateFlightPaths()
   end
 end
 T.LocateFlightPaths = LocateFlightPaths
+
+-- /writs travel: what WritPath knows about getting around, in a few chat lines
+function T.Report()
+  LocateFlightPaths()
+  local known = Known()
+  local placed, lost = {}, {}
+  for id, name in pairs(known) do
+    local f = WritPathLearned.fp[id]
+    local label = (f and f.name) or (type(name) == "string" and name) or ("node " .. id)
+    if f and f.map and not IsContinent(f.map) then placed[#placed + 1] = label else lost[#lost + 1] = label end
+  end
+  table.sort(placed); table.sort(lost)
+  local L = WritPathLearned or {}
+  local D = WritPath_Data or {}
+  local lines = {
+    ("Flight paths you know: %d placed on the map%s."):format(#placed, #lost > 0 and (", " .. #lost .. " not placed: " .. table.concat(lost, ", ")) or ""),
+    ("Road crossings: %d learned, %d from RestedXP, %d shipped. Ships: %d learned, %d from RestedXP, %d shipped."):format(
+      #(L.crossings or {}), #(RXP.rxpExits or {}), #(D.crossings or {}), #(L.transports or {}), #(RXP.rxpShips or {}), #(D.transports or {})),
+  }
+  if not next(known) then lines[#lines + 1] = "Open any flight master's map once per continent so WritPath learns which flight paths you know." end
+  return lines
+end
 
 -- at a flight master: record every flight path on the map you can fly to (the way RestedXP does it: the
 -- nodes for the zone you're standing in)
