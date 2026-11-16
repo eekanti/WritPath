@@ -108,6 +108,10 @@ the current step when that one is done.
 - **Fly** steps finish when you take the flight.
 - **Road crossings and docks** finish once you're within 200 yards. If you take another road and reach a later
   one first, the guide catches up.
+- **Hearthstone / teleport** steps: routes use your Hearthstone (to where it's bound), a shaman's Astral Recall, a
+  mage's city teleports (with Runes of Teleportation) and a druid's Teleport: Moonglade on the legs where they save
+  the most time, as their cooldowns allow. WritPath learns your hearth's spot when you set it at an innkeeper or
+  land from it; until then it uses your bind town's flight point.
 - **Customer** steps finish only when you hand the writ in. Talk to the customer and WritPath hands it in for you
   (`/writs accept` turns that off).
 - **Learn the flight path** steps appear for any zone the route takes you to where you don't have its flight

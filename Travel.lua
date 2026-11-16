@@ -854,15 +854,113 @@ local function Poll()
   REC.last = p
 end
 
+
+---------------------------------------------------------------- hearthstone and teleports
+-- What takes you somewhere in one cast: the hearthstone (and a shaman's Astral Recall) to where it's bound, a
+-- mage's city teleports (with a Rune of Teleportation), a druid's Teleport: Moonglade. The planner puts each on the
+-- legs where it saves the most time, as its cooldown allows.
+local HEARTH, RUNE, RECALL, MOONGLADE = 6948, 17031, 556, 18960
+local MAGE = { [3567] = "Orgrimmar", [3563] = "Undercity", [3566] = "Thunder Bluff",
+               [3561] = "Stormwind", [3562] = "Ironforge", [3565] = "Darnassus" }
+local function ItemCount(id)
+  return (C_Item and C_Item.GetItemCount and C_Item.GetItemCount(id)) or (GetItemCount and GetItemCount(id)) or 0
+end
+local function KnowsSpell(id) return (IsPlayerSpell and IsPlayerSpell(id)) or (IsSpellKnown and IsSpellKnown(id)) or false end
+local function Left(start, dur)
+  if not start or start == 0 or not dur or dur <= 1.5 then return 0 end   -- 1.5: just the global cooldown
+  return math.max(0, start + dur - GetTime())
+end
+local function SpellLeft(id)
+  if C_Spell and C_Spell.GetSpellCooldown then
+    local c = C_Spell.GetSpellCooldown(id)
+    if type(c) == "table" then return Left(c.startTime, c.duration), c.duration end
+  end
+  if GetSpellCooldown then local s, d = GetSpellCooldown(id); return Left(s, d), d end
+  return 0
+end
+local function ItemLeft(id)
+  local f = (C_Container and C_Container.GetItemCooldown) or GetItemCooldown
+  if f then local s, d = f(id); return Left(s, d), d end
+  return 0
+end
+-- cooldowns as the game shows them while they run (talents and gear change them), else the usual ones
+local function Cooldown(key, seen, default)
+  WritPathChar = WritPathChar or {}
+  WritPathChar.cd = WritPathChar.cd or {}
+  if seen and seen > 60 then WritPathChar.cd[key] = seen end
+  return WritPathChar.cd[key] or default
+end
+-- a town's flight point stands in for a spot not recorded yet (the inn is rarely far from it)
+local function TownSpot(name)
+  if not name then return nil end
+  for id, n in pairs(WritPath_Data and WritPath_Data.flightNodes or {}) do
+    if OurFaction(id) and n[5] and n[5]:match("^([^,]+)") == name then return T.Point(n[1], n[2], n[3]) end
+  end
+end
+-- where the hearthstone takes you: recorded when you set it or land, else the bind town's flight point
+function T.HearthSpot()
+  local name = GetBindLocation and GetBindLocation()
+  local h = WritPathChar and WritPathChar.hearth
+  if h and h.map and (not name or h.name == name) then return T.Point(h.map, h.x, h.y), h.name end
+  local p = TownSpot(name)
+  if p then return p, name, true end
+end
+function T.SaveHearth()
+  local p = T.PlayerPoint()
+  local name = GetBindLocation and GetBindLocation()
+  if p and not p.sea and name then
+    WritPathChar = WritPathChar or {}
+    WritPathChar.hearth = { name = name, map = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10, t = time() }
+  end
+end
+function T.Teleports()
+  local list = {}
+  local hs, hsName = T.HearthSpot()
+  if hs and ItemCount(HEARTH) > 0 then
+    local left, d = ItemLeft(HEARTH)
+    list[#list + 1] = { key = "hearth", text = "Use your Hearthstone", dest = hs, destName = hsName, ready = left,
+                        cd = Cooldown("hearth", d, 3600), cast = 25 }
+  end
+  if hs and KnowsSpell(RECALL) then
+    local left, d = SpellLeft(RECALL)
+    list[#list + 1] = { key = "recall", text = "Cast Astral Recall", dest = hs, destName = hsName, ready = left,
+                        cd = Cooldown("recall", d, 900), cast = 25 }
+  end
+  local runes = ItemCount(RUNE)
+  if runes > 0 then
+    for spell, town in pairs(MAGE) do
+      local p = KnowsSpell(spell) and TownSpot(town)
+      if p then list[#list + 1] = { key = "mage" .. spell, text = "Cast Teleport: " .. town, dest = p, destName = town,
+                                    ready = 0, cd = 0, cast = 25, rune = true, runes = runes } end
+    end
+  end
+  if KnowsSpell(MOONGLADE) then
+    local m, x, y = FlightSpot(UnitFactionGroup("player") == "Horde" and 69 or 49)
+    local p = m and T.Point(m, x, y)
+    if p then list[#list + 1] = { key = "moonglade", text = "Cast Teleport: Moonglade", dest = p, destName = "Moonglade",
+                                  ready = (SpellLeft(MOONGLADE)), cd = 0, cast = 20 } end
+  end
+  return list
+end
+
+local HOME = ERR_DEATHBIND_SUCCESS_S and ERR_DEATHBIND_SUCCESS_S:gsub("%%s", "(.+)") or "(.+) is now your home%."
 local rec = CreateFrame("Frame")
 rec:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 rec:RegisterEvent("PLAYER_ENTERING_WORLD")
+rec:RegisterEvent("CHAT_MSG_SYSTEM")
 rec:SetScript("OnEvent", function(_, event, unit, _, spellID)
   if event == "PLAYER_ENTERING_WORLD" then return end
+  if event == "CHAT_MSG_SYSTEM" then
+    -- "X is now your home.": you're standing at the innkeeper
+    if type(unit) == "string" and unit:match(HOME) then C_Timer.After(0.5, T.SaveHearth) end
+    return
+  end
   if unit ~= "player" then return end
   local name = spellID and ((C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)) or (GetSpellInfo and GetSpellInfo(spellID)))
   if name and (name:find("Hearthstone") or name:find("Teleport") or name:find("Portal") or name:find("Astral Recall")) then
     REC.teleport = GetTime()   -- what follows isn't a road or a ship
+    -- landed from a hearthstone: that's where it's bound
+    if name:find("Hearthstone") or name:find("Astral Recall") then C_Timer.After(8, T.SaveHearth) end
   end
 end)
 local acc = 0

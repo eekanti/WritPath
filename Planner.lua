@@ -281,6 +281,54 @@ local function PathSecs(start, route)
   return t
 end
 
+-- Hearthstone, Astral Recall, mage teleports, Teleport: Moonglade: each goes on the legs where it saves the most
+-- (at least 90 s), when it's off cooldown by then, a cooldown apart, one per leg, as many as you have runes.
+-- Returns { [leg index] = { tp =, save = } } and the seconds saved.
+local TELE_MIN = 90
+local function PlanTeleports(start, route)
+  local list = Travel.Teleports and Travel.Teleports() or {}
+  if #list == 0 or #route == 0 then return nil, 0 end
+  local legs, t, prev = {}, 0, start
+  for i, p in ipairs(route) do
+    local s = (prev and p.pos) and Secs(prev, p.pos) or 0
+    legs[i] = { t = t, secs = s, to = p.pos }
+    t = t + s + 20; prev = p.pos
+  end
+  local cands = {}
+  for i, L in ipairs(legs) do
+    if L.to and L.secs > TELE_MIN then
+      for _, tp in ipairs(list) do
+        local save = L.secs - (tp.cast + Secs(tp.dest, L.to))
+        if save >= TELE_MIN then cands[#cands + 1] = { i = i, tp = tp, save = save } end
+      end
+    end
+  end
+  table.sort(cands, function(a, b) if a.save ~= b.save then return a.save > b.save end return a.i < b.i end)
+  local used, times, runes, total = {}, {}, nil, 0
+  for _, c in ipairs(cands) do
+    local tp, L = c.tp, legs[c.i]
+    -- time saved by any teleport makes later legs start sooner: allow for all of it (a little cautious)
+    local slack = total + c.save
+    local ok = not used[c.i] and L.t - slack >= (tp.ready or 0)
+    for _, u in ipairs(ok and times[tp.key] or {}) do if math.abs(u - L.t) - slack < (tp.cd or 0) then ok = false end end
+    if ok and tp.rune then runes = runes or tp.runes or 0; ok = runes > 0 end
+    if ok then
+      used[c.i] = { tp = tp, save = c.save }
+      times[tp.key] = times[tp.key] or {}; table.insert(times[tp.key], L.t)
+      if tp.rune then runes = runes - 1 end
+      total = total + c.save
+    end
+  end
+  if total == 0 then return nil, 0 end
+  return used, total
+end
+local function ApplyTeleports(plan)
+  local used, saved = PlanTeleports(plan.start, plan.route)
+  plan.tele = used
+  if saved > 0 then plan.secs = math.max(0, (plan.secs or 0) - saved) end
+  return plan
+end
+
 local function InsertAt(start, route, pos)
   local best, at
   for i = 1, #route + 1 do
@@ -458,8 +506,8 @@ local function PlanOwned(only, skipQuest, planned, ready)   -- only: just these 
   local route = BestOrder(start, stops)
   local rep, cost, pouches = 0, 0, 0
   for _, p in ipairs(route) do rep, cost, pouches = rep + p.rep, cost + p.cost, pouches + PouchAverage(p.w.tier) end
-  return { route = route, rep = rep, cost = cost, secs = PathSecs(start, route), pouches = pouches, target = rep,
-           start = start, later = later, unknown = unknown, owned = #owned, mine = true }
+  return ApplyTeleports({ route = route, rep = rep, cost = cost, secs = PathSecs(start, route), pouches = pouches, target = rep,
+           start = start, later = later, unknown = unknown, owned = #owned, mine = true })
 end
 
 -- what to buy for a rep target: your own writs first (already paid for, they count toward the target),
@@ -609,9 +657,9 @@ local function Finish(start, owned, set, target, mine, mode)
       later[#later + 1] = { id = p.id, w = p.w, why = ("its item costs %s: not needed for this target"):format(Coins(p.cost)) }
     end
   end
-  return { route = route, rep = rep, cost = cost, secs = PathSecs(start, route), pouches = pouches, target = target,
+  return ApplyTeleports({ route = route, rep = rep, cost = cost, secs = PathSecs(start, route), pouches = pouches, target = target,
            start = start, later = later, unknown = mine.unknown, bought = bought, ownedUsed = ownedUsed, mode = mode,
-           set = set }
+           set = set })
 end
 
 local PlanBothInner
@@ -773,8 +821,15 @@ local function Steps(plan)
   steps[1] = { lines = first, done = { ready = { quests = quests, items = items } } }
 
   local prev = plan.start
-  for _, p in ipairs(plan.route) do
-    if prev and p.pos then TravelSteps(steps, prev, p.pos, suggested) end
+  for ri, p in ipairs(plan.route) do
+    local tl = plan.tele and plan.tele[ri]
+    if tl and p.pos then
+      local tp = tl.tp
+      steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
+                              GREY_, math.floor(tl.save / 60 + 0.5)) },
+                            done = { arrive = { tp.dest.map } }, teleport = tp.key }
+      TravelSteps(steps, tp.dest, p.pos, suggested)
+    elseif prev and p.pos then TravelSteps(steps, prev, p.pos, suggested) end
     local zone, lines = MapName(p.c.map), {}
     lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
     lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
@@ -1115,9 +1170,11 @@ local function Show(plan, top)
   local y = 0
   local entries, prev = {}, plan.start
   for i, p in ipairs(plan.route) do
-    local leg = (prev and p.pos) and Minutes(Secs(prev, p.pos)) or nil
+    local tl = plan.tele and plan.tele[i]
+    local leg = (prev and p.pos) and Minutes(Secs(prev, p.pos) - (tl and tl.save or 0)) or nil
     prev = p.pos or prev
     local flags = (p.need > 0 and ("  " .. W_ .. "needs item|r") or "") .. (p.c.exact and "" or ("  " .. W_ .. "spot not exact|r"))
+      .. (tl and ("  " .. G .. (tl.tp.text:gsub("^Use your ", ""):gsub("^Cast ", "")) .. "|r") or "")
     local left = ("%d. %s %s\n%s%s · %s%s|r%s"):format(i, TIER[p.w.tier] or "", p.w.name, GREY, p.c.npc or "writ customer",
       MapName(p.c.map), leg and (" · ~" .. leg .. " min") or "", flags)
     local right = plan.mine and (p.need > 0 and (Y .. Coins(p.cost) .. "|r") or "") or (p.have and (GREY .. "yours|r") or (Y .. Coins(p.cost) .. "|r"))
