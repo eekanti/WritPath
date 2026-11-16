@@ -23,10 +23,20 @@ through it; add `#buy` to the address to start on the Buy writs plan).
 
 ## Install
 
-Copy the `WritPath` folder into `World of Warcraft/_forever_/Interface/AddOns/` (the `mockups` folder is only
-for this page; the game ignores it).
+1. On GitHub, click **Code > Download ZIP** and unzip it.
+2. The folder inside is called `WritPath-main`: **rename it to `WritPath`** (WoW only loads an addon whose folder
+   matches its `.toc` name).
+3. Put it in `World of Warcraft/_forever_/Interface/AddOns/`, so you have `AddOns/WritPath/WritPath.toc`.
+   (The `mockups` folder is only for this page; the game ignores it.)
 
-Optional: **Auctionator** (prices; needed for "Buy writs"), **EllesmereUI** (window style).
+Everything WritPath needs is in this folder. Optional addons it uses when you have them:
+
+- **Auctionator**: needed for prices, so for "Buy writs" and the auction house buying panel. Do a full scan in
+  Auctionator first. "My writs" (ordering writs you already have) works without it.
+- **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
+
+First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
+Roads, boats and flight times you use are learned as you travel.
 
 ## Use
 
