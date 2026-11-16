@@ -98,3 +98,83 @@ local function Run()
 end
 
 WritPath_Scan = Run   -- /writs scan (Nav.lua owns the slash command)
+
+---------------------------------------------------------------- a newer WritPath is out
+-- WritPath users tell each other which version they have: hidden addon messages to your guild, your group and
+-- your online friends, at login and when your group changes. Someone with a newer version means there's an
+-- update: you're told (once a session, and again at each login until you have it) to run the updater.
+local PREFIX = "WritPath"
+local GetMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+local MINE = (GetMeta and GetMeta("WritPath", "Version")) or "0"
+local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
+local function Newer(a, b)   -- is version a newer than version b?
+  local x, y = Parts(a), Parts(b)
+  for i = 1, math.max(#x, #y) do
+    local p, q = x[i] or 0, y[i] or 0
+    if p ~= q then return p > q end
+  end
+  return false
+end
+local told = {}
+local function Notice(v)
+  if told[v] then return end
+  told[v] = true
+  Print(("|cFFFFD100WritPath %s is out (you have %s). Double-click \"Update WritPath\" on your desktop, then /reload.|r"):format(v, MINE))
+  Print("|cFFAAAAAANo shortcut yet? Run \"Setup Updater.bat\" in Interface/AddOns/WritPath/tools once.|r")
+  if RaidNotice_AddMessage and RaidWarningFrame and ChatTypeInfo and ChatTypeInfo.RAID_WARNING then
+    RaidNotice_AddMessage(RaidWarningFrame, "WritPath " .. v .. " is out: run Update WritPath, then /reload", ChatTypeInfo.RAID_WARNING)
+  end
+  if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then PlaySound(SOUNDKIT.RAID_WARNING) end
+end
+local function Seen(v)
+  if not (v and Newer(v, MINE)) then return end
+  WritPathNav = WritPathNav or {}
+  if not WritPathNav.latest or Newer(v, WritPathNav.latest) then WritPathNav.latest = v end
+  Notice(WritPathNav.latest)
+end
+local function Send(dist, target)
+  if C_ChatInfo and C_ChatInfo.SendAddonMessage then pcall(C_ChatInfo.SendAddonMessage, PREFIX, "V:" .. MINE, dist, target) end
+end
+local function ToGroup()
+  if IsInRaid and IsInRaid() then Send("RAID") elseif IsInGroup and IsInGroup() then Send("PARTY") end
+end
+local function Announce()
+  if IsInGuild and IsInGuild() then Send("GUILD") end
+  ToGroup()
+  if C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetFriendInfoByIndex then
+    for i = 1, C_FriendList.GetNumFriends() do
+      local f = C_FriendList.GetFriendInfoByIndex(i)
+      if f and f.connected and f.name then Send("WHISPER", f.name) end
+    end
+  end
+end
+local replied, lastGroup = {}, 0
+local ver = CreateFrame("Frame")
+ver:RegisterEvent("PLAYER_LOGIN")
+ver:RegisterEvent("CHAT_MSG_ADDON")
+ver:RegisterEvent("GROUP_ROSTER_UPDATE")
+ver:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
+  if event == "PLAYER_LOGIN" then
+    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end
+    C_Timer.After(15, Announce)
+    -- heard about a newer version before and still don't have it
+    if WritPathNav and WritPathNav.latest and Newer(WritPathNav.latest, MINE) then
+      local v = WritPathNav.latest
+      C_Timer.After(8, function() Notice(v) end)
+    end
+  elseif event == "GROUP_ROSTER_UPDATE" then
+    if GetTime() - lastGroup > 60 then lastGroup = GetTime(); C_Timer.After(5, ToGroup) end
+  elseif event == "CHAT_MSG_ADDON" and prefix == PREFIX and type(msg) == "string" then
+    local v = msg:match("^V:(.+)$")
+    if not v then return end
+    local who = Ambiguate and Ambiguate(sender or "", "none") or sender
+    if who == UnitName("player") then return end
+    Seen(v)
+    -- they're behind: tell them (once a minute at most per player)
+    if Newer(MINE, v) and who and (not replied[who] or GetTime() - replied[who] > 60) then
+      replied[who] = GetTime()
+      Send("WHISPER", who)
+    end
+  end
+end)
+WritPath_Version = { Mine = MINE, Newer = Newer }   -- for tests

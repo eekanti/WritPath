@@ -38,6 +38,17 @@ Everything WritPath needs is in this folder. Optional addons it uses when you ha
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
 Roads, boats and flight times you use are learned as you travel.
 
+### Staying up to date
+
+1. Once: open `Interface\AddOns\WritPath	ools` and double-click **Setup Updater.bat**. It puts an
+   **Update WritPath** shortcut on your desktop and checks for a new version each time you log in to Windows.
+   No administrator rights needed; your settings and learned data are never touched.
+2. In game, WritPath tells you when a newer version is out (it hears it from friends, guild or group members who
+   already have it): double-click **Update WritPath**, then `/reload` (restart the game if new files were added).
+
+To remove the updater: delete the two shortcuts (desktop, and "WritPath updater" in your Startup folder) and
+`%LOCALAPPDATA%\WritPath`.
+
 ## How to use
 
 ### Before you start
