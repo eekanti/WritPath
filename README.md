@@ -96,7 +96,7 @@ while a plan has something left to buy).
 - Purchases that go to your mailbox count as yours straight away.
 - **When you close the auction house**, the route is rebuilt from what you actually bought.
 
-Then right-click each writ in your bags to accept it.
+Then right-click each writ in your bags: WritPath accepts it for you (`/writs accept` turns that off).
 
 ### Follow the guide
 
@@ -146,6 +146,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | `/writs buy` | Planner on Buy writs |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs money` | Every turn-in's cost and pouch, in chat |
+| `/writs accept` | Turn off (or back on) accepting writs for you when you open them |
 | `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
 | `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |
 | `/writs leg` | Why the way to the next customer looks the way it does (times, route, nearest flight points and docks); also saved for a `/reload` |

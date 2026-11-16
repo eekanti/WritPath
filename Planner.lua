@@ -1359,12 +1359,20 @@ end
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("QUEST_ACCEPTED")
+ev:RegisterEvent("QUEST_DETAIL")        -- a writ opened from your bags: accept it for you
 ev:RegisterEvent("QUEST_COMPLETE")      -- the reward window: you're at the customer
 ev:RegisterEvent("QUEST_PROGRESS")
 ev:RegisterEvent("QUEST_TURNED_IN")
 ev:RegisterEvent("TAXIMAP_OPENED")
 ev:SetScript("OnEvent", function(_, event, a1)
   if event == "QUEST_COMPLETE" or event == "QUEST_PROGRESS" then NoteTurnin(); return end
+  if event == "QUEST_DETAIL" then
+    -- only Craftsman's Writs, never other quests; /writs accept turns this off and on
+    if WritPathNav and WritPathNav.noAutoAccept then return end
+    local q = GetQuestID and GetQuestID()
+    if q and q > 0 and WritPath_IsWritQuest(q) and AcceptQuest then AcceptQuest() end
+    return
+  end
   if event == "QUEST_TURNED_IN" then
     LearnTurnin(a1)
     RunTurnin(a1)
@@ -1397,6 +1405,12 @@ local function TakePaid(id, n)
   p.qty, p.paid = p.qty - take, p.paid - c
   return c * n / take
 end
+local writQuests
+function WritPath_IsWritQuest(q)
+  if not writQuests then writQuests = {}; for _, w in pairs(DB) do if w.q then writQuests[w.q] = true end end end
+  return writQuests[q] or false
+end
+
 function WritPath_WritByQuest(q)
   for id, w in pairs(DB) do
     if w.q == q then

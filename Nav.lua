@@ -517,6 +517,9 @@ SlashCmdList.WRITPATH = function(msg)
   elseif msg == "plan" or msg == "mine" then WritPath_OpenPlanner("mine")
   elseif msg == "buy" then WritPath_OpenPlanner("buy")
   elseif msg == "why" then WritPath_WhyNot()
+  elseif msg == "accept" then
+    WritPathNav.noAutoAccept = not WritPathNav.noAutoAccept or nil
+    Print(WritPathNav.noAutoAccept and "Writs no longer accepted for you." or "Writs are accepted for you when you open them.")
   elseif msg == "leg" then
     -- why the way to the next customer looks the way it does; also saved for a /reload so it can be read later
     local T = WritPath_Travel
