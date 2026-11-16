@@ -569,7 +569,16 @@ local function PlanBoth(target, zoneOnly, quick)
   local ok, res = pcall(PlanBothInner, target, zoneOnly)
   quickOnly = false
   if not ok then error(res, 0) end
-  if quick then res.cheap.quick, res.fast.quick = true, true end
+  if quick then res.cheap.quick, res.fast.quick = true, true; return res end
+  -- Fastest also weighs the hub plan (customers next to your flight paths: fly in, hand in, fly out) and
+  -- takes it when it reaches the target in less time
+  quickOnly = true
+  local ok2, hub = pcall(PlanBothInner, target, zoneOnly)
+  quickOnly = false
+  if ok2 and hub and hub.fast and hub.fast.rep >= target and hub.fast.secs < res.fast.secs then
+    hub.fast.hubs = true
+    res.fast = hub.fast
+  end
   return res
 end
 function PlanBothInner(target, zoneOnly)
@@ -855,7 +864,78 @@ end
 
 ---------------------------------------------------------------- filling the window
 local current, plans, choice
-local function Minutes(secs) return math.floor((secs or 0) / 60 + 0.5) end
+---------------------------------------------------------------- runs: the planner's estimate against your real time
+-- Start route opens a run with the estimate; closing the auction house marks the end of buying; each hand-in on
+-- the route is timed; the last one closes the run and says how it went. WritPathNav.runs keeps the last 20.
+-- After 3 finished runs the planner's minutes are scaled to your pace (the median of your last 5).
+local function FmtMin(secs)
+  local m = math.floor((secs or 0) / 60 + 0.5)
+  if m >= 60 then return ("%d h %02d m"):format(math.floor(m / 60), m % 60) end
+  return m .. " m"
+end
+function WritPath_Pace()
+  local r = {}
+  for i = #(WritPathNav and WritPathNav.runs or {}), 1, -1 do
+    local run = WritPathNav.runs[i]
+    if run.travel and run.est and run.est > 0 and (run.done or 0) >= 3 then r[#r + 1] = run.travel / run.est end
+    if #r == 5 then break end
+  end
+  if #r < 3 then return 1, #r end
+  table.sort(r)
+  local med = r[math.floor((#r + 1) / 2)]
+  return math.max(0.5, math.min(3, med)), #r
+end
+local function Minutes(secs) return math.floor((secs or 0) * (WritPath_Pace()) / 60 + 0.5) end
+
+local function CloseRun(reason)
+  local run = WritPathNav and WritPathNav.run
+  if not run then return end
+  WritPathNav.run = nil
+  if (run.done or 0) == 0 then return end   -- nothing handed in: not a run worth keeping
+  run.travel = (run.last or run.start) - (run.boughtAt or run.start)
+  run.total = (run.last or run.start) - run.start
+  WritPathNav.runs = WritPathNav.runs or {}
+  table.insert(WritPathNav.runs, run)
+  while #WritPathNav.runs > 20 do table.remove(WritPathNav.runs, 1) end
+  Print(("Run done%s: %d writs, %d rep in %s of travel%s; the planner said %s."):format(reason and (" (" .. reason .. ")") or "",
+    run.done, run.rep or 0, FmtMin(run.travel), run.boughtAt and (" (+" .. FmtMin(run.boughtAt - run.start) .. " buying)") or "", FmtMin(run.est)))
+end
+WritPath_CloseRun = CloseRun
+
+local function StartRun(plan)
+  CloseRun("a new route started")
+  WritPathNav.run = { start = time(), est = plan.secs or 0, writs = #plan.route, rep = 0, done = 0,
+                      quick = plan.quick or nil, mode = plan.mine and "mine" or (WritPathNav.planChoice or "cheap"), ids = {} }
+  for _, p in ipairs(plan.route) do WritPathNav.run.ids[p.w.q] = REP[p.w.tier] or 0 end
+end
+-- buying ends when you close the auction house
+function WritPath_RunBought()
+  local run = WritPathNav and WritPathNav.run
+  if run and (run.done or 0) == 0 then run.boughtAt = time() end
+end
+local function RunTurnin(q)
+  local run = WritPathNav and WritPathNav.run
+  if not (run and run.ids and run.ids[q]) then return end
+  run.done = (run.done or 0) + 1
+  run.rep = (run.rep or 0) + run.ids[q]
+  run.last = time()
+  run.ids[q] = nil
+  if not next(run.ids) then CloseRun() end
+end
+
+function WritPath_RunReport()
+  local runs = WritPathNav and WritPathNav.runs or {}
+  if #runs == 0 then Print("No finished runs yet: start a route from the planner and hand its writs in."); return end
+  for i = math.max(1, #runs - 9), #runs do
+    local r = runs[i]
+    Print(("%s  %d writs, %d rep%s: travel %s (planner %s, x%.2f)%s"):format(date("%m-%d %H:%M", r.start), r.done or 0, r.rep or 0,
+      r.quick and " (Quick)" or "", FmtMin(r.travel), FmtMin(r.est), (r.est or 0) > 0 and r.travel / r.est or 0,
+      r.boughtAt and (", buying " .. FmtMin(r.boughtAt - r.start)) or ""))
+  end
+  local pace, n = WritPath_Pace()
+  Print(n >= 3 and ("Planner times are scaled x%.2f to your pace (median of your last %d runs)."):format(pace, n)
+                or ("Planner times use the plain estimate until %d more runs are finished."):format(3 - n))
+end
 
 -- what still has to be bought for a plan: writs you don't have, items you're short of
 local function ShoppingFor(plan)
@@ -984,6 +1064,7 @@ local function Show(plan, top)
   local roads, ships = Travel.Learned()
   note:SetText((plan.mine and "Shortest order from where you stand, one writ per customer per day. "
     or "Prices from your last Auctionator scan; times are estimates. ")
+    .. (select(2, WritPath_Pace()) >= 3 and ("Times are scaled to your pace (x%.2f). "):format((WritPath_Pace())) or "")
     .. ("WritPath knows %d road crossings and %d ships from your travels; more as you ride. "):format(roads, ships)
     .. (fps == 0 and "No flight paths known yet: open any flight master's map once on each continent."
      or (own >= fps and (fps .. " flight paths known.")
@@ -1018,8 +1099,9 @@ local function CardText(key, plan, other)
     for _, p in ipairs(plan.route) do if not ids[p.id] then same = false end end
   end
   local net = plan.pouches - plan.cost
+  local tag = same and (GREY .. "  same writs as the other|r") or ((plan.hubs or plan.quick) and (GREY .. "  by flight paths|r") or "")
   return ("%s%s|r%s\n%s · ~%d min · %d rep\nnet %s%s|r"):format(G, key == "cheap" and "Cheapest" or "Fastest",
-    same and (GREY .. "  same writs as the other|r") or "", Coins(plan.cost), Minutes(plan.secs), plan.rep,
+    tag, Coins(plan.cost), Minutes(plan.secs), plan.rep,
     net >= 0 and G or "|cFFFF5722", Coins(net))
 end
 
@@ -1109,6 +1191,7 @@ goBtn:SetScript("OnClick", function()
                     ("Planned writs handed in: |cFF00FF25%d rep|r"):format(current.rep))
   if WritPath_StartMoneySession then WritPath_StartMoneySession(current.cost, current.rep) end
   if WritPath_SetShopList then WritPath_SetShopList(BuyList(current)) end
+  StartRun(current)
   f:Hide()
   Print(("Route set: %d writs, %d rep, ~%d min."):format(#current.route, current.rep, Minutes(current.secs))
         .. (current.later and #current.later > 0 and (" " .. #current.later .. " wait for tomorrow.") or ""))
@@ -1124,6 +1207,7 @@ local function EmptyAuctionatorList()
   for i = #items, 1, -1 do pcall(api.DeleteShoppingListItem, "WritPath", "WritPath", items[i]) end
 end
 function WritPath_ClearAll()
+  CloseRun("cleared")
   if WritPath_SetRoute then WritPath_SetRoute(nil) end
   if WritPath_StartMoneySession then WritPath_StartMoneySession(nil) end
   if WritPath_SetShopList then WritPath_SetShopList(nil) end
@@ -1208,6 +1292,7 @@ ev:SetScript("OnEvent", function(_, event, a1)
   if event == "QUEST_COMPLETE" or event == "QUEST_PROGRESS" then NoteTurnin(); return end
   if event == "QUEST_TURNED_IN" then
     LearnTurnin(a1)
+    RunTurnin(a1)
     local q = a1
     C_Timer.After(1.5, function() if WritPath_RerouteFromHere then WritPath_RerouteFromHere(q) end end)
     return
@@ -1318,6 +1403,13 @@ function WritPath_ReplanFromBags()
   table.sort(dropped); table.sort(added); table.sort(short)
   WritPath_SetRoute(Steps(plan), ("Writs: %d rep"):format(plan.rep), ("Planned writs handed in: |cFF00FF25%d rep|r"):format(plan.rep))
   if WritPathMoney and WritPathMoney.session then WritPathMoney.session.rep = plan.rep end
+  -- the run times the writs that are actually on the route now
+  local run = WritPathNav.run
+  if run and run.ids then
+    local onRoute = {}
+    for _, p in ipairs(plan.route) do onRoute[p.w.q] = REP[p.w.tier] or 0 end
+    run.ids, run.est = onRoute, plan.secs or run.est
+  end
   local needed = {}
   for _, e in ipairs(BuyList(plan)) do needed[e.id] = e end
   if WritPath_PruneShopList then WritPath_PruneShopList(needed) end
@@ -1332,3 +1424,5 @@ end
 
 -- exposed for the test harness
 WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, SendToAuctionator = SendToAuctionator, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn }
+
+WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests

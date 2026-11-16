@@ -65,7 +65,9 @@ from where you stand, with the customer, the zone and the travel time. Click **S
 1. Pick **Buy writs**, type a **Rep target** (for example 1000) and press **Plan**.
 2. Two plans appear:
    - **Cheapest**: the least gold that reaches the target.
-   - **Fastest**: the shortest trip that reaches the target (it may cost more). It's never slower than Cheapest.
+   - **Fastest**: the shortest trip that reaches the target (it may cost more). It's never slower than Cheapest,
+     and it also weighs the hub plan (customers next to your flight paths) and takes it when that's quicker
+     (the card then says "by flight paths").
    Each card shows the cost, the time, the rep and the net gold (coin pouches minus what you spend).
    Your own writs are always used first.
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
@@ -118,6 +120,9 @@ The footer under the guide shows the running plan's money: **cost** (what you ac
 plus anything still to buy; the planned cost is shown next to it), **pouches** from turn-ins so far, and **net**.
 The bag icon prints every turn-in's cost and pouch in chat.
 
+Every route is timed: when its last writ is in, chat compares your real travel time (and buying time) with
+the planner's estimate. After three finished runs, the planner's minutes are scaled to your pace.
+
 **Clear** (the button in the planner, or the red X in the guide header) clears the route, the plan and its shopping
 list after asking. What WritPath has learned stays.
 
@@ -138,6 +143,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | `/writs` | Show or hide the guide window |
 | `/writs plan` (or `/writs mine`) | Planner on My writs |
 | `/writs buy` | Planner on Buy writs |
+| `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs money` | Every turn-in's cost and pouch, in chat |
 | `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
 | `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |

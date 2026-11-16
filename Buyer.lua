@@ -420,6 +420,7 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     Search()
   elseif event == "AUCTION_HOUSE_CLOSED" then
     queued, waiting, aheadWaiting, ahead = false, false, nil, {}
+    if boughtThisVisit and WritPath_RunBought then WritPath_RunBought() end
     if panel then panel:Hide() end
     -- done buying: if what you got isn't what was planned, the route is rebuilt from what you have
     if boughtThisVisit and WritPath_ReplanFromBags then boughtThisVisit = false; C_Timer.After(1, WritPath_ReplanFromBags) end

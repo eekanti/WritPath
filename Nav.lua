@@ -490,6 +490,7 @@ SlashCmdList.WRITPATH = function(msg)
   local cur = WritPathNav.step or 1
   if msg == "scan" then WritPath_Scan()
   elseif msg == "money" then WritPath_MoneyReport()
+  elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "plan" or msg == "mine" then WritPath_OpenPlanner("mine")
   elseif msg == "buy" then WritPath_OpenPlanner("buy")
   elseif msg == "why" then WritPath_WhyNot()
