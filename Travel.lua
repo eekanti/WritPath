@@ -365,9 +365,24 @@ function T.RecordFlightPaths()
 end
 
 ---------------------------------------------------------------- the graph
-local nodes, byZone, cache
+local nodes, byZone, cache, roads
 
-function T.Reset() nodes, byZone, cache = nil, nil, nil end
+function T.Reset() nodes, byZone, cache, roads = nil, nil, nil, nil end
+
+-- riding straight from one zone into another is only allowed when WritPath knows no roads for one of them:
+-- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
+-- border runs into the mountains between Feralas and Un'Goro, Duskwood and Stranglethorn, ...)
+local loose = false   -- set while looking for any way at all, when the known roads don't connect two places
+local function Direct(za, zb)
+  if za == zb or loose then return true end
+  return not (roads and roads[za] and roads[zb])
+end
+-- leaving the start, or reaching the end, by a straight ride: within that zone, or anywhere when WritPath knows
+-- no roads there (so a roadless zone in between can't be used as a way round the rule)
+local function Open(home, other)
+  if home == other or loose then return true end
+  return not (roads and roads[home])
+end
 function T.Nodes() if not nodes then T.Build() end; return nodes end   -- for tests and debugging
 
 local function Add(n)
@@ -378,7 +393,7 @@ end
 local function Edge(a, b, cost, kind) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind } end
 
 function T.Build()
-  nodes, byZone, cache = {}, {}, {}
+  nodes, byZone, cache, roads = {}, {}, {}, {}
   local L = WritPathLearned or {}
   -- road crossings you've ridden: an exit on this side, an entry at the same spot on the far side, both ways
   for _, c in ipairs(L.crossings or {}) do
@@ -464,6 +479,8 @@ function T.Build()
       end
     end
   end
+  -- which zones have known roads (a crossing on either side)
+  for _, n in ipairs(nodes) do if n.kind == "exit" or n.kind == "entry" then roads[n.zone] = true end end
   -- riding between any two places in the same zone
   for _, list in pairs(byZone) do
     for _, a in ipairs(list) do
@@ -476,13 +493,13 @@ end
 
 -- shortest times from a place to every node (cached per place)
 local function From(src)
-  local key = src.map .. ":" .. src.x .. ":" .. src.y
+  local key = src.map .. ":" .. src.x .. ":" .. src.y .. (loose and ":loose" or "")
   if cache[key] then return cache[key] end
   local dist, prev, done = {}, {}, {}
   -- start: ride to any known place on this continent; straight across a zone you haven't learned roads for
   -- costs a bit more, because the straight line may run into hills
   for _, n in ipairs(nodes) do
-    if n.p.inst == src.inst then dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and 1 or UNKNOWN) end
+    if n.p.inst == src.inst and Open(src.map, n.zone) then dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and 1 or UNKNOWN) end
   end
   while true do
     local u, best
@@ -499,21 +516,32 @@ local function From(src)
 end
 
 -- seconds from a to b, and the last node before riding to b (nil when riding straight there)
+local Time
 function T.Time(a, b)
+  local best, via, r = Time(a, b)
+  if not best and a and b and a.inst == b.inst then
+    -- the known roads don't connect these two: the old way (straight across, a bit slower) is all there is
+    loose = true
+    best, via, r = Time(a, b)
+    loose = false
+  end
+  if not best then return 900 end   -- another continent and no ship learned yet: a rough guess
+  return best, via, r
+end
+function Time(a, b)
   if not (a and b) then return 600 end
   if not nodes then T.Build() end
   -- straight there, or over the known roads, ships and flights and then straight to the stop
-  local best = (a.inst == b.inst) and Dist(a, b) / RIDE * (a.map == b.map and 1 or UNKNOWN) or nil
+  local best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and 1 or UNKNOWN) or nil
   local via
   local r = From(a)
   for _, n in ipairs(nodes) do
     local d = r.dist[n.i]
-    if d and n.p.inst == b.inst then
+    if d and n.p.inst == b.inst and Open(b.map, n.zone) then
       d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and 1 or UNKNOWN)
       if not best or d < best then best, via = d, n end
     end
   end
-  if not best then return 900 end   -- another continent and no ship learned yet: a rough guess
   return best, via, r
 end
 
