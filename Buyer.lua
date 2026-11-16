@@ -45,6 +45,7 @@ function WritPath_SetShopList(list)
   elseif WritPath_BuyerRefresh then WritPath_BuyerRefresh() end
 end
 
+local noAuto = false   -- confirming by itself didn't work once: always show the Confirm button
 local state = { phase = "idle" }   -- idle, searching, ready, over, none, quote, confirm, buying, unsure, done
 local function List() return WritPathNav and WritPathNav.shopList or {} end
 local function Have(it) return math.max(Count(it.id), (it.base or 0) + (it.bought or 0)) end
@@ -363,6 +364,11 @@ function Decide(pick)
   state.pick = pick
   if state.it then seen[state.it.id] = pick or false end
   local it = state.it
+  if not pick and it then
+    -- not on the auction house: it and its writ (or item) leave the plan, and the list moves on
+    Skip(it, "none on the auction house")
+    Search(); return
+  end
   if not pick then state.phase = "none"
   elseif Over(it, pick) then state.phase = "over"
   else state.phase = "ready" end
@@ -428,6 +434,7 @@ local function Answer(id, choose)
       local pk = choose(it)
       cache[id] = { pick = pk, t = GetTime() }
       seen[id] = pk or false
+      if not pk then Skip(it, "none on the auction house") end
       Render()
     end
   end
@@ -491,12 +498,14 @@ end
 
 -- Skipping a writ skips the item it asks for (only this writ's share, if another writ needs it too); skipping
 -- an item skips the writs that need it. A writ without its item, or an item without its writ, is money wasted.
-function Skip(it)
+function Skip(it, why)
   it.skipped = true
   local W = WritPath_Writs or {}
   local list = List()
   local w = W[it.id]
+  local drop = {}       -- the writs that leave the plan
   if w and w.req then   -- a writ: its item's share comes off the list
+    drop[1] = it.id
     for _, o in ipairs(list) do
       if o.id == w.req and not o.skipped then
         o.total = math.max(0, (o.total or 1) - (w.n or 1))
@@ -506,9 +515,14 @@ function Skip(it)
   else                  -- an item: every writ on the list that needs it
     for _, o in ipairs(list) do
       local ow = W[o.id]
-      if ow and ow.req == it.id and not o.skipped and Need(o) > 0 then o.skipped = true end
+      if ow and ow.req == it.id and not o.skipped and Need(o) > 0 then o.skipped = true; drop[#drop + 1] = o.id end
+    end
+    -- and writs you already have that wait for this item
+    for id in pairs(WritPathNav and WritPathNav.planIds or {}) do
+      if W[id] and W[id].req == it.id then drop[#drop + 1] = id end
     end
   end
+  if WritPath_DropFromPlan then WritPath_DropFromPlan(drop, why) end
 end
 WritPath_BuyerSkip = Skip   -- for tests
 
@@ -615,12 +629,30 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
         -- the firm price jumped over the cap: say so before anything is bought
         Print(("%s went up to %s each, over the cap."):format(ItemName(it.id) or it.name, Coins(a1)))
       end
-      state.phase = "confirm"; Render()
+      local overCap = it.unit and it.unit > 0 and a1 > it.unit * CAP
+      if not overCap and not noAuto and a1 <= state.pick.unit * 1.0001 then
+        -- the price is what the search showed: buy it with no second click. The game asks for a click to
+        -- start a purchase, not to confirm one; if confirming doesn't go through, the Confirm button is back.
+        state.phase, state.paid, state.since, state.auto = "buying", a2, GetTime(), true
+        C_AuctionHouse.ConfirmCommoditiesPurchase(state.pick.itemID, state.pick.qty)
+        local pick = state.pick
+        C_Timer.After(3, function()
+          if state.auto and state.phase == "buying" and state.pick == pick then
+            noAuto, state.auto = true, false
+            state.phase = "confirm"; Render()
+          end
+        end)
+        Render()
+      else
+        state.phase = "confirm"; Render()
+      end
     end
   elseif event == "COMMODITY_PRICE_UNAVAILABLE" or event == "COMMODITY_PURCHASE_FAILED" then
     if state.phase == "quote" or state.phase == "confirm" or state.phase == "buying" then Search() end
   elseif event == "COMMODITY_PURCHASE_SUCCEEDED" then
-    if state.phase == "buying" and state.pick.kind == "commodity" then Bought(state.pick.qty) end
+    if (state.phase == "buying" or state.phase == "confirm") and state.pick and state.pick.kind == "commodity" then
+      state.auto = false; Bought(state.pick.qty)
+    end
   elseif event == "CHAT_MSG_SYSTEM" then
     -- classic auction house only: "You won an auction for X", and only for the item on the button
     if not MODERN and state.phase == "buying" and state.pick.kind == "classic" and type(a1) == "string" then

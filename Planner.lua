@@ -406,13 +406,14 @@ local function BestOrder(start, stops, quick)
 end
 
 -- writs in your bags or quest log; one per customer today, the rest wait for tomorrow
-local function PlanOwned(only, skipQuest)   -- only: just these writ ids; skipQuest: a quest just handed in
+local function PlanOwned(only, skipQuest, planned)   -- only: just these writ ids; skipQuest: a quest just handed in;
+                                                     -- planned: the "only" writs count even if not bought yet
   Travel.Reset(); ResetMemo()
   local used = UsedToday()
   local stops, later, unknown, byCustomer = {}, {}, {}, {}
   local owned = {}
   for id, w in pairs(DB) do
-    if (Count(id) > 0 or InLog(w.q)) and not Done(w.q) and w.q ~= skipQuest and (not only or only[id]) then owned[#owned + 1] = id end
+    if (planned or Count(id) > 0 or InLog(w.q)) and not Done(w.q) and w.q ~= skipQuest and (not only or only[id]) then owned[#owned + 1] = id end
   end
   table.sort(owned, function(a, b)    -- higher rep first, so a shared customer gets the better writ today
     local ra, rb = REP[DB[a].tier] or 0, REP[DB[b].tier] or 0
@@ -430,9 +431,9 @@ local function PlanOwned(only, skipQuest)   -- only: just these writ ids; skipQu
     elseif not QuickOK(c) then
       later[#later + 1] = { id = id, w = w, why = "not next to a flight path you have (Quick)" }
     else
-      local cost, have, need = Cost(id)
+      local cost, _, need = Cost(id)
       local stop = { id = id, w = w, rep = REP[w.tier] or 0, c = c, pos = Pos(c.map, c.x, c.y),
-                     cost = cost or 0, have = true, need = need or math.max(0, (w.n or 1) - Count(w.req)) }
+                     cost = cost or 0, have = Count(id) > 0 or InLog(w.q), need = need or math.max(0, (w.n or 1) - Count(w.req)) }
       byCustomer[c.key] = stop
       stops[#stops + 1] = stop
     end
@@ -1257,6 +1258,9 @@ goBtn:SetScript("OnClick", function()
   if not current or #current.route == 0 then return end
   WritPathNav.plannedCost = WritPathNav.plannedCost or {}
   for _, p in ipairs(current.route) do WritPathNav.plannedCost[p.w.q] = p.cost end
+  -- the writs of this plan, so the route can be rebuilt without one that can't be bought
+  WritPathNav.planIds, WritPathNav.dropped = {}, {}
+  for _, p in ipairs(current.route) do WritPathNav.planIds[p.id] = true end
   WritPath_SetRoute(Steps(current), ("Writs: %d rep"):format(current.rep),
                     ("Planned writs handed in: |cFF00FF25%d rep|r"):format(current.rep))
   if WritPath_StartMoneySession then WritPath_StartMoneySession(current.cost, current.rep) end
@@ -1283,6 +1287,7 @@ function WritPath_ClearAll()
   if WritPath_SetShopList then WritPath_SetShopList(nil) end
   WritPathNav.shopAt, WritPathNav.plannedCost = nil, {}
   WritPathNav.plan, WritPathNav.planChoice = nil, nil
+  WritPathNav.planIds, WritPathNav.dropped = nil, nil
   EmptyAuctionatorList()
   current, plans, choice = nil, nil, nil
   repBox:SetText("")
@@ -1458,7 +1463,11 @@ function WritPath_ReplanFromBags()
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
   local before = {}
   for _, st in ipairs(WritPathNav.route) do if st.writ then before[st.writ] = true end end
-  local plan = PlanOwned()
+  -- writs dropped from the plan (nothing to buy for them) stay out, even if you have them
+  local gone = WritPathNav.dropped or {}
+  local only
+  if next(gone) then only = {}; for id in pairs(DB) do if not gone[id] then only[id] = true end end end
+  local plan = PlanOwned(only)
   local after, short, dropped, added = {}, {}, {}, {}
   for _, p in ipairs(plan.route) do
     after[p.id] = true
@@ -1490,6 +1499,43 @@ function WritPath_ReplanFromBags()
   if #added > 0 then msg = msg .. " Added (writs you have): " .. table.concat(added, ", ") .. "." end
   if plan.later and #plan.later > 0 then msg = msg .. " " .. #plan.later .. " writs wait for another day (same customer)." end
   Print(msg)
+end
+
+-- A writ, or the item it asks for, isn't on the auction house (or was skipped at the shopping list): the
+-- route is rebuilt without that writ, and the plan's cost, rep and time follow.
+function WritPath_DropFromPlan(ids, why)
+  local ids0 = WritPathNav and WritPathNav.planIds
+  if not (ids0 and WritPathNav.route and #WritPathNav.route > 0) then return end
+  WritPathNav.dropped = WritPathNav.dropped or {}
+  local names, saved = {}, 0
+  for _, id in ipairs(ids or {}) do
+    if ids0[id] and not WritPathNav.dropped[id] then
+      WritPathNav.dropped[id] = true
+      names[#names + 1] = DB[id] and DB[id].name or tostring(id)
+      local q = DB[id] and DB[id].q
+      saved = saved + (q and WritPathNav.plannedCost and WritPathNav.plannedCost[q] or 0)
+    end
+  end
+  if #names == 0 then return end
+  local keep = {}
+  for id in pairs(ids0) do if not WritPathNav.dropped[id] then keep[id] = true end end
+  local plan = PlanOwned(keep, nil, true)
+  WritPath_SetRoute(Steps(plan), ("Writs: %d rep"):format(plan.rep), ("Planned writs handed in: |cFF00FF25%d rep|r"):format(plan.rep))
+  local s = WritPathMoney and WritPathMoney.session
+  if s then s.rep = plan.rep; s.cost = math.max(0, (s.cost or 0) - saved) end
+  local run = WritPathNav.run
+  if run and run.ids then
+    local onRoute = {}
+    for _, p in ipairs(plan.route) do onRoute[p.w.q] = REP[p.w.tier] or 0 end
+    run.ids, run.est = onRoute, plan.secs or run.est
+  end
+  local needed = {}
+  for _, e in ipairs(BuyList(plan)) do needed[e.id] = e end
+  if WritPath_PruneShopList then WritPath_PruneShopList(needed) end
+  if WritPath_MoneyUpdate then WritPath_MoneyUpdate() end
+  table.sort(names)
+  Print(("Dropped from the plan (%s): %s. Route now %d writs, %d rep, ~%d min."):format(why or "skipped",
+    table.concat(names, ", "), #plan.route, plan.rep, Minutes(plan.secs or 0)))
 end
 
 -- exposed for the test harness

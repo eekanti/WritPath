@@ -86,9 +86,11 @@ while a plan has something left to buy).
 
 - Every writ and item has a row with what it costs on the auction house right now (looked up as soon as you open
   it), and the top line shows the total left to buy, what you've bought and the plan's estimate.
-- **Buy** walks down the list: one click for writs and gear, **Get price** then **Confirm** for potions and other
-  stackable goods (the game needs two clicks for those). Click a row to buy that one next.
-- The **x** on a row skips it, and its writ or item with it.
+- **Buy** walks down the list, one click each. For potions and other stackable goods the game first gives a firm
+  price; when it matches what the list showed, WritPath confirms it for you. A higher price asks first (**Confirm**).
+  Click a row to buy that one next.
+- The **x** on a row skips it, and its writ or item with it. Anything not on the auction house is skipped by itself.
+  Either way the route is rebuilt at once without that writ, and the plan's cost, rep and time follow.
 - More than 25% over the plan's price stops and asks first, and an item only sold as a whole stack bigger than you
   need says so.
 - Purchases that go to your mailbox count as yours straight away.
