@@ -421,15 +421,28 @@ function T.Reset() nodes, byZone, cache, roads = nil, nil, nil, nil end
 -- riding straight from one zone into another is only allowed when WritPath knows no roads for one of them:
 -- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
 -- border runs into the mountains between Feralas and Un'Goro, Duskwood and Stranglethorn, ...)
+local function ZoneName(m) local i = MapInfo(m); return i and i.name or "?" end
+local function NoRoad(a, b)
+  for _, r in ipairs(WritPath_Data and WritPath_Data.noRoad or {}) do
+    if (r[1] == a and r[2] == b) or (r[1] == b and r[2] == a) then return true end
+  end
+  return false
+end
+T.NoRoad = NoRoad
+
 local loose = false   -- set while looking for any way at all, when the known roads don't connect two places
 local function Direct(za, zb)
-  if za == zb or loose then return true end
+  if za == zb then return true end
+  if NoRoad(za, zb) then return false end   -- not even when looking for any way at all
+  if loose then return true end
   return not (roads and roads[za] and roads[zb])
 end
 -- leaving the start, or reaching the end, by a straight ride: within that zone, or anywhere when WritPath knows
 -- no roads there (so a roadless zone in between can't be used as a way round the rule)
 local function Open(home, other)
-  if home == other or loose then return true end
+  if home == other then return true end
+  if NoRoad(home, other) then return false end
+  if loose then return true end
   return not (roads and roads[home])
 end
 function T.Nodes() if not nodes then T.Build() end; return nodes end   -- for tests and debugging
@@ -439,15 +452,16 @@ local function Add(n)
   byZone[n.zone] = byZone[n.zone] or {}; table.insert(byZone[n.zone], n)
   return n
 end
-local function Edge(a, b, cost, kind) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind } end
+local function Edge(a, b, cost, kind, legs) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind, legs = legs } end
 
 function T.Build()
   nodes, byZone, cache, roads = {}, {}, {}, {}
   local L = WritPathLearned or {}
   -- road crossings you've ridden: an exit on this side, an entry at the same spot on the far side, both ways
   for _, c in ipairs(L.crossings or {}) do
-    -- an old record taken out at sea (map = a whole continent) isn't a road
-    local p = not (IsContinent(c.from) or IsContinent(c.to)) and T.Point(c.from, c.x, c.y)
+    -- an old record taken out at sea (map = a whole continent) isn't a road; an imported one where Forever has
+    -- no road isn't either (one you rode yourself has no src, and stays)
+    local p = not (IsContinent(c.from) or IsContinent(c.to)) and not (c.src and NoRoad(c.from, c.to)) and T.Point(c.from, c.x, c.y)
     if p then
       local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })
       local entry = Add({ zone = c.to, p = p, kind = "entry", peer = c.from })
@@ -456,16 +470,46 @@ function T.Build()
   end
   -- crossings WritPath players have ridden (WritPathData.lua), both ways
   for _, c in ipairs(WritPath_Data and WritPath_Data.crossings or {}) do
-    local p = not (IsContinent(c.from) or IsContinent(c.to)) and T.Point(c.from, c.x, c.y)
+    local p = not (IsContinent(c.from) or IsContinent(c.to)) and not NoRoad(c.from, c.to) and T.Point(c.from, c.x, c.y)
     if p then
       local exit = Add({ zone = c.from, p = p, kind = "exit", peer = c.to })
       local entry = Add({ zone = c.to, p = p, kind = "entry", peer = c.from })
       Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
     end
   end
+  -- mountain paths (WritPathData.lua): the first waypoint to the crossing, both ways, with a guide step for
+  -- every waypoint so the arrow follows the path
+  for _, c in ipairs(WritPath_Data and WritPath_Data.paths or {}) do
+    local pts = {}
+    for _, v in ipairs(c.via or {}) do pts[#pts + 1] = T.Point(c.from, v[1], v[2]) end
+    local cross = T.Point(c.from, c.x, c.y)
+    local ok = cross ~= nil
+    for i = 1, #(c.via or {}) do if not pts[i] then ok = false end end
+    if ok then
+      local all = {}; for _, q in ipairs(pts) do all[#all + 1] = q end; all[#all + 1] = cross
+      local len = 0; for i = 2, #all do len = len + Dist(all[i - 1], all[i]) end
+      local cost = CROSS + len / RIDE
+      local into, back = ZoneName(c.to), ZoneName(c.from)
+      local function Way(q, i, n) return { at = q, into = c.from, text = ("{goto} Follow the path through the mountains (%d of %d): |cFF00FF25%.1f, %.1f|r"):format(i, n, q.x, q.y) } end
+      -- there: the waypoints, then over the border
+      local there = {}
+      for i = 2, #pts do there[#there + 1] = Way(pts[i], i, #pts) end
+      there[#there + 1] = { at = cross, into = c.to, cross = true, text = "{goto} Ride into |cFF00FF25" .. into .. "|r" }
+      local a = Add({ zone = c.from, p = all[1], kind = "exit", peer = c.to, path = true })
+      local b = Add({ zone = c.to, p = cross, kind = "entry", peer = c.from, path = true })
+      Edge(a, b, cost, "cross", there)
+      -- back: over the border, then the waypoints the other way round
+      local backLegs = { { at = cross, into = c.from, cross = true, text = "{goto} Ride into |cFF00FF25" .. back .. "|r" } }
+      for i = #pts, 1, -1 do backLegs[#backLegs + 1] = Way(pts[i], #pts - i + 1, #pts) end
+      local a2 = Add({ zone = c.to, p = cross, kind = "exit", peer = c.from, path = true })
+      local b2 = Add({ zone = c.from, p = all[1], kind = "entry", peer = c.to, path = true })
+      Edge(a2, b2, cost, "cross", backLegs)
+    end
+  end
   -- crossings RestedXP's leveling guides use (world coordinates, placed on the zone you leave), both ways
   for _, c in ipairs(RXP.exits or {}) do
-    local zx, zy = WorldToZone(c[1], c[3], c[4], c[5])
+    local zx, zy
+    if not NoRoad(c[1], c[2]) then zx, zy = WorldToZone(c[1], c[3], c[4], c[5]) end
     local p = zx and T.Point(c[1], zx, zy)
     if p then
       local exit = Add({ zone = c[1], p = p, kind = "exit", peer = c[2] })
@@ -604,7 +648,6 @@ function Time(a, b)
   return best, via, r
 end
 
-local function ZoneName(m) local i = MapInfo(m); return i and i.name or "?" end
 
 -- zeppelins and boats by where they leave from and where they land: { kind, where to board, where it lands }
 local SHIP_NAMES = {
@@ -649,7 +692,13 @@ function T.Legs(a, b)
   end
   for _, c in ipairs(chain) do
     local k = c.e.kind
-    if k == "cross" then
+    if k == "cross" and c.e.legs then   -- a mountain path: start of the path, its waypoints, the border
+      if not c.e.legs[1].cross then
+        legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.from.zone,
+                            text = ("{goto} Go to the path through the mountains: |cFF00FF25%.1f, %.1f|r"):format(c.from.p.x, c.from.p.y) }
+      end
+      for _, l in ipairs(c.e.legs) do legs[#legs + 1] = { kind = "cross", at = l.at, into = l.into, text = l.text } end
+    elseif k == "cross" then
       legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.to.zone,
                           text = "{goto} Ride into |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
     elseif k == "sail" then

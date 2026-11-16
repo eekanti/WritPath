@@ -285,20 +285,14 @@ end
 -- (at least 90 s), when it's off cooldown by then, a cooldown apart, one per leg, as many as you have runes.
 -- Returns { [leg index] = { tp =, save = } } and the seconds saved.
 local TELE_MIN = 90
-local function PlanTeleports(start, route)
-  local list = Travel.Teleports and Travel.Teleports() or {}
-  if #list == 0 or #route == 0 then return nil, 0 end
-  local legs, t, prev = {}, 0, start
-  for i, p in ipairs(route) do
-    local s = (prev and p.pos) and Secs(prev, p.pos) or 0
-    legs[i] = { t = t, secs = s, to = p.pos }
-    t = t + s + 20; prev = p.pos
-  end
+-- legs[i] = { t = start time, secs = travel time }; via(k, i) = seconds for leg i using teleport k
+local function AssignTeleports(legs, list, via)
   local cands = {}
   for i, L in ipairs(legs) do
-    if L.to and L.secs > TELE_MIN then
-      for _, tp in ipairs(list) do
-        local save = L.secs - (tp.cast + Secs(tp.dest, L.to))
+    if L.secs > TELE_MIN then
+      for k, tp in ipairs(list) do
+        local v = via(k, i)
+        local save = v and (L.secs - v) or 0
         if save >= TELE_MIN then cands[#cands + 1] = { i = i, tp = tp, save = save } end
       end
     end
@@ -309,7 +303,7 @@ local function PlanTeleports(start, route)
     local tp, L = c.tp, legs[c.i]
     -- time saved by any teleport makes later legs start sooner: allow for all of it (a little cautious)
     local slack = total + c.save
-    local ok = not used[c.i] and L.t - slack >= (tp.ready or 0)
+    local ok = not used[c.i] and ((tp.ready or 0) <= 0 or L.t - slack >= tp.ready)
     for _, u in ipairs(ok and times[tp.key] or {}) do if math.abs(u - L.t) - slack < (tp.cd or 0) then ok = false end end
     if ok and tp.rune then runes = runes or tp.runes or 0; ok = runes > 0 end
     if ok then
@@ -321,6 +315,19 @@ local function PlanTeleports(start, route)
   end
   if total == 0 then return nil, 0 end
   return used, total
+end
+local function PlanTeleports(start, route)
+  local list = Travel.Teleports and Travel.Teleports() or {}
+  if #list == 0 or #route == 0 then return nil, 0 end
+  local legs, t, prev = {}, 0, start
+  for i, p in ipairs(route) do
+    local s = (prev and p.pos) and Secs(prev, p.pos) or 0
+    legs[i] = { t = t, secs = s, to = p.pos }
+    t = t + s + 20; prev = p.pos
+  end
+  return AssignTeleports(legs, list, function(k, i)
+    return legs[i].to and (list[k].cast + Secs(list[k].dest, legs[i].to)) or nil
+  end)
 end
 local function ApplyTeleports(plan)
   local used, saved = PlanTeleports(plan.start, plan.route)
@@ -460,6 +467,42 @@ local function BestOrder(start, stops, quick)
     end
     DFS(1, 1, 0)
     order = bestOrder
+  end
+  -- with a hearthstone or teleport ready, the best order can change: go to the far-off stop, then hearth
+  -- back. Move stops and reverse stretches while the time with teleports gets shorter.
+  local tps = not quick and Travel.Teleports and Travel.Teleports() or {}
+  if #tps > 0 then
+    local D = {}
+    for k, tp in ipairs(tps) do D[k] = {}; for j = 2, n + 1 do D[k][j] = tp.cast + Secs(tp.dest, pts[j]) end end
+    local function Score(o)
+      local legs, t, p = {}, 0, 1
+      for idx, j in ipairs(o) do legs[idx] = { t = t, secs = T[p][j], j = j }; t = t + T[p][j] + 20; p = j end
+      local _, saved = AssignTeleports(legs, tps, function(k, i) return D[k][legs[i].j] end)
+      return t - saved
+    end
+    local best, passes, better = Score(order), 0, true
+    while better and passes < 20 do
+      better, passes = false, passes + 1
+      for i = 1, n do
+        for k = 1, n do
+          if i ~= k then
+            local o = { unpack(order) }
+            table.insert(o, k, table.remove(o, i))
+            local sc = Score(o)
+            if sc < best - 0.5 then order, best, better = o, sc, true end
+          end
+        end
+      end
+      for i = 1, n - 1 do
+        for j = i + 1, n do
+          local o = { unpack(order) }
+          local a, b = i, j
+          while a < b do o[a], o[b] = o[b], o[a]; a, b = a + 1, b - 1 end
+          local sc = Score(o)
+          if sc < best - 0.5 then order, best, better = o, sc, true end
+        end
+      end
+    end
   end
   local out = {}
   for k, j in ipairs(order) do out[k] = stops[j - 1] end

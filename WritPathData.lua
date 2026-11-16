@@ -15,6 +15,16 @@ WritPath_Data = {
     { from = 1454, x = 59.4, y = 37.0, to = 1418, tx = 48.2, ty = 8.6 },
     { from = 1418, x = 48.2, y = 8.6, to = 1454, tx = 59.4, ty = 37.0 },
   },
+  -- zone pairs with no road between them on Forever (later versions of the game added one): imported or guide
+  -- data that says otherwise is ignored, unless you ride across yourself
+  noRoad = {
+    { 1433, 1435 },   -- Redridge Mountains / Swamp of Sorrows: only the mountain path below (2026-11-16)
+  },
+  -- paths that wind through mountains: waypoints on the "from" zone's map, in order, then the crossing
+  paths = {
+    -- Redridge Mountains -> Swamp of Sorrows (player, 2026-11-16): 77.1, 33.5, then 64.6, 24.2, then over at 94.3, 59.4
+    { from = 1433, to = 1435, via = { { 77.1, 33.5 }, { 64.6, 24.2 } }, x = 94.3, y = 59.4 },
+  },
   -- road crossings ridden: { from zone, to zone, x, y } (the spot on the zone you leave)
   crossings = {
     { from = 1413, to = 1441, x = 47.7, y = 95.4 },   -- The Barrens -> Thousand Needles
