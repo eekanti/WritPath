@@ -166,6 +166,6 @@ WritPath_Data = {
     [77] = { 1413, 44.5, 59.1, "H", "Camp Taurajo, The Barrens" },   -- Omusa Thunderhorn
     [79] = { 1449, 45.2, 5.8, "AH", "Marshal's Refuge, Un'Goro Crater" },   -- Gryfe
     [80] = { 1413, 63.1, 37.2, "AH", "Ratchet, The Barrens" },   -- Bragok
-    [3203] = { 2548, 57.9, 44.8, "H", "Rog'mar, Riverglades" },   -- Grakna (Forever)
+    [3203] = { 2548, 59.6, 45.1, "H", "Rog'mar, Riverglades" },   -- Grakna (Forever); spot from the player 2026-11-16 (57.9, 44.8 was the innkeeper)
   },
 }
