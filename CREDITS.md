@@ -32,6 +32,8 @@ Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-1
 - **QuestieDB** (GPL-3.0, https://github.com/Questie/Questie): which NPC takes each writ quest and where that
   NPC stands, read from its WoW Forever data on 2026-11-15 (customers marked `src = "questie"`). Only these facts
   were used; no QuestieDB code or files are included.
+- **QuestieDB** again for where each flight master stands (WritPathData.lua, `flightMasters`), used to place
+  the flight points you know when the game can't (2026-11-16).
 - **Bind on Forever** (https://bindonforever.com/), quest pages built from a newer QuestieDB build, for a few
   writs the installed QuestieDB didn't have yet.
 - Your own game: map pins of writs you accepted (WritPathLearned).

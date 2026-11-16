@@ -43,8 +43,15 @@ function T.Point(map, x, y)
     local wx, wy, inst = hbd:GetWorldCoordinatesFromZone(x / 100, y / 100, map)
     if wx then return { map = map, x = x, y = y, inst = inst, wx = wx, wy = wy } end
   end
+  -- a map HereBeDragons doesn't know (Forever's continent maps, new zones): the game's own API, turned into
+  -- HereBeDragons' axes when the library is in use (its world x/y are the game's y/x), so every point on the
+  -- route map is measured the same way
   local ok, cont, v = pcall(C_Map.GetWorldPosFromMapPos, map, CreateVector2D(x / 100, y / 100))
-  if ok and v then local a, b = v:GetXY(); return { map = map, x = x, y = y, inst = cont, wx = a, wy = b } end
+  if ok and v then
+    local a, b = v:GetXY()
+    if hbd then a, b = b, a end
+    return { map = map, x = x, y = y, inst = cont, wx = a, wy = b }
+  end
 end
 
 -- seconds for a flight between two flight points (either direction): what it took you, else RestedXP's time
@@ -101,6 +108,25 @@ local function ContinentOf(m)
   return (info and info.mapType == contType) and m or nil
 end
 
+-- the zone under a spot on a continent map (0-1). The game's own lookup first; when that gives back the
+-- continent itself (it does on Forever's continent maps), the smallest zone whose outline holds the spot.
+local function ZoneAt(cont, cx, cy)
+  local here = C_Map.GetMapInfoAtPosition and C_Map.GetMapInfoAtPosition(cont, cx, cy)
+  local z = here and ZoneOf(here.mapID)
+  if z and not IsContinent(z) then return z end
+  if not (C_Map.GetMapChildrenInfo and C_Map.GetMapRectOnMap) then return nil end
+  local best, area
+  local ok, kids = pcall(C_Map.GetMapChildrenInfo, cont, Enum and Enum.UIMapType and Enum.UIMapType.Zone or 3, false)
+  for _, k in ipairs(ok and kids or {}) do
+    local ok2, l, r, t, b = pcall(C_Map.GetMapRectOnMap, k.mapID, cont)
+    if ok2 and l and cx >= l and cx <= r and cy >= t and cy <= b then
+      local a = (r - l) * (b - t)
+      if not area or a < area then best, area = k.mapID, a end
+    end
+  end
+  return best
+end
+
 -- a point given in one map's coordinates (0-1, may lie outside that map) -> the zone it is in, zone percent
 local function PlaceByGame(srcMap, px, py)
   local ok, inst, world = pcall(C_Map.GetWorldPosFromMapPos, srcMap, CreateVector2D(px, py))
@@ -108,8 +134,7 @@ local function PlaceByGame(srcMap, px, py)
   local cont = ContinentOf(srcMap); if not cont then return nil end
   local _, cpos = C_Map.GetMapPosFromWorldPos(inst, world, cont)
   if not cpos then return nil end
-  local here = C_Map.GetMapInfoAtPosition and C_Map.GetMapInfoAtPosition(cont, cpos:GetXY())
-  local zone = here and ZoneOf(here.mapID)
+  local zone = ZoneAt(cont, cpos:GetXY())
   if not zone then return nil end
   local _, zpos = C_Map.GetMapPosFromWorldPos(inst, world, zone)
   if not zpos then return nil end
@@ -119,16 +144,16 @@ end
 
 local function Place(srcMap, px, py)
   local hbd = HBD(); if not hbd then return PlaceByGame(srcMap, px, py) end
+  -- any map HereBeDragons doesn't know (Forever's continent maps 1463/1464, new zones): the game's own API
   local wx, wy, inst = hbd:GetWorldCoordinatesFromZone(px, py, srcMap)
-  if not wx then return nil end
+  if not wx then return PlaceByGame(srcMap, px, py) end
   local cont = ContinentOf(srcMap); if not cont then return nil end
   local cx, cy = hbd:GetZoneCoordinatesFromWorld(wx, wy, cont, true)
-  if not cx then return nil end
-  local here = C_Map.GetMapInfoAtPosition and C_Map.GetMapInfoAtPosition(cont, cx, cy)
-  local zone = here and ZoneOf(here.mapID)
+  if not cx then return PlaceByGame(srcMap, px, py) end
+  local zone = ZoneAt(cont, cx, cy)
   if not zone then return nil end
   local zx, zy = hbd:GetZoneCoordinatesFromWorld(wx, wy, zone, true)
-  if not zx then return nil end
+  if not zx then return PlaceByGame(srcMap, px, py) end
   return zone, math.floor(zx * 1000 + 0.5) / 10, math.floor(zy * 1000 + 0.5) / 10
 end
 
@@ -166,19 +191,55 @@ end
 
 -- fill in positions for known flight paths that don't have one yet
 local function LocateFlightPaths()
-  if not (C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap) then return end
   WritPathLearned.fp = WritPathLearned.fp or {}
-  local known, missing = Known(), false
-  for id in pairs(known) do if not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) then missing = true end end
-  if not missing then return end
-  for _, cont in ipairs({ 1414, 1415 }) do
-    local ok, list = pcall(C_TaxiMap.GetTaxiNodesForMap, cont)
-    for _, n in ipairs(ok and list or {}) do
-      local id = n.nodeID
-      if id and known[id] and not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) and n.position then
-        local zone, x, y = Place(cont, n.position:GetXY())
-        if zone then WritPathLearned.fp[id] = { name = n.name or (type(known[id]) == "string" and known[id]) or nil, map = zone, x = x, y = y, src = "map" } end
+  -- repair: a flight point saved on a whole continent map instead of its zone (older versions did this on
+  -- Forever) is moved onto its zone, or forgotten so the world map places it again below
+  for _, f in pairs(WritPathLearned.fp) do
+    if type(f) == "table" and f.map and IsContinent(f.map) then
+      local z, x, y
+      if f.x and f.y then z, x, y = Place(f.map, f.x / 100, f.y / 100) end
+      if z and not IsContinent(z) then f.map, f.x, f.y = z, x, y else f.map, f.x, f.y = nil, nil, nil end
+    end
+  end
+  local known = Known()
+  local function Set(id, name, zone, x, y)   -- keeps what's already known about it (whether it's yours)
+    local f = WritPathLearned.fp[id]
+    if f then f.map, f.x, f.y = zone, x, y; f.name = f.name or name
+    else WritPathLearned.fp[id] = { name = name, map = zone, x = x, y = y, src = "map" } end
+  end
+  local function Missing() for id in pairs(known) do if not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) then return true end end end
+  if Missing() and C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap then
+    for _, cont in ipairs({ 1414, 1415, 1463, 1464 }) do   -- the classic continent maps, and Forever's
+      local ok, list = pcall(C_TaxiMap.GetTaxiNodesForMap, cont)
+      for _, n in ipairs(ok and list or {}) do
+        local id = n.nodeID
+        if id and known[id] and not (WritPathLearned.fp[id] and WritPathLearned.fp[id].map) and n.position then
+          local zone, x, y = Place(cont, n.position:GetXY())
+          if zone and not IsContinent(zone) then Set(id, n.name or (type(known[id]) == "string" and known[id]) or nil, zone, x, y) end
+        end
       end
+    end
+  end
+  -- the flight masters' own spots (WritPathData.lua): a known point near one is put exactly on it, and one the
+  -- game couldn't place goes to the flight master of the zone its name ends in ("Kargath, Badlands")
+  local FM = WritPath_Data and WritPath_Data.flightMasters or {}
+  local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
+  local function Ours(m) return m[4] == mine or m[4] == "AH" end
+  for id in pairs(known) do
+    local f = WritPathLearned.fp[id]
+    if f and f.map then
+      for _, m in ipairs(FM) do
+        if m[1] == f.map and Ours(m) and math.abs(m[2] - f.x) < 4 and math.abs(m[3] - f.y) < 4 then f.x, f.y = m[2], m[3]; break end
+      end
+    else
+      local name = (f and f.name) or (type(known[id]) == "string" and known[id]) or nil
+      local zoneName = name and name:match(",%s*([^,]+)$")
+      local hit, count = nil, 0
+      for _, m in ipairs(FM) do
+        local info = zoneName and Ours(m) and MapInfo(m[1])
+        if info and info.name and info.name:sub(1, #zoneName) == zoneName then hit, count = m, count + 1 end
+      end
+      if hit and count == 1 then Set(id, name, hit[1], hit[2], hit[3]) end
     end
   end
 end
@@ -200,6 +261,7 @@ function T.RecordFlightPaths()
     if n.nodeID then
       local zone, x, y
       if n.position then zone, x, y = Place(m, n.position:GetXY()) end
+      if zone and IsContinent(zone) then zone, x, y = nil, nil, nil end   -- never a whole continent: keep the old spot
       local old = WritPathLearned.fp[n.nodeID]
       local knows = n.state ~= S.Unreachable
       if knows and not (old and old.own) then added = added + 1 end
