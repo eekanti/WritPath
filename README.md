@@ -79,20 +79,20 @@ from where you stand, with the customer, the zone and the travel time. Click **S
 6. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
    (**Send to Auctionator** also makes a "WritPath" shopping list in Auctionator, if you'd rather buy there.)
 
-### Buy: the Writ shopping panel at the auction house
+### Buy: the Writ shopping list at the auction house
 
-Open the auction house and a **Writ shopping** panel opens beside it with the plan's list (it only opens while a
-plan has something left to buy).
+Open the auction house and the **Writ shopping** list opens beside it with everything the plan needs (it only opens
+while a plan has something left to buy).
 
-- It shows the cheapest offer for the next item. Click **Buy** for gear and writs (one click), or **Get price**
-  then **Confirm** for potions and other stackable goods (the game needs two clicks for those).
-- **Skip** leaves an item for later.
-- If the price is more than 25% over what the plan expected, it stops and asks first. That includes an item only
-  sold as a whole stack bigger than you need ("Only sold as a stack of 6: you need 1").
-- While you look at one item, the next few are already being looked up, so the next one is usually ready at once.
+- Every writ and item has a row with what it costs on the auction house right now (looked up as soon as you open
+  it), and the top line shows the total left to buy, what you've bought and the plan's estimate.
+- **Buy** walks down the list: one click for writs and gear, **Get price** then **Confirm** for potions and other
+  stackable goods (the game needs two clicks for those). Click a row to buy that one next.
+- The **x** on a row skips it, and its writ or item with it.
+- More than 25% over the plan's price stops and asks first, and an item only sold as a whole stack bigger than you
+  need says so.
 - Purchases that go to your mailbox count as yours straight away.
-- **When you close the auction house**, the route is rebuilt from what you actually bought: writs you didn't
-  get drop out, missing items become a shopping step, and chat says what changed.
+- **When you close the auction house**, the route is rebuilt from what you actually bought.
 
 Then right-click each writ in your bags to accept it.
 

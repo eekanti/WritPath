@@ -94,9 +94,13 @@ local function Text(parent, template, width)
   return fs
 end
 local function AHFrame() return AuctionHouseFrame or AuctionFrame end
+local ROWS, ROW_H = 10, 20
+local rows, listTop, totalsText, scrollOff = {}, nil, nil, 0
+local seen = {}          -- [item id] = the best offer found this visit (or false: none on the auction house)
+local JumpTo             -- make a row's item the next one to buy
 local function Build()
   if panel then return end
-  local W = 250
+  local W = 320
   panel = CreateFrame("Frame", "WritPathBuyer", UIParent, "BackdropTemplate")
   panel:SetWidth(W); panel:SetFrameStrata("HIGH"); panel:SetClampedToScreen(true)
   panel:SetMovable(true); panel:EnableMouse(true); panel:RegisterForDrag("LeftButton")
@@ -104,6 +108,31 @@ local function Build()
   title = Text(panel, "GameFontNormal", W - 40); title:SetPoint("TOPLEFT", 10, -9)
   closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton"); closeBtn:SetSize(20, 20); closeBtn:SetPoint("TOPRIGHT", -3, -3)
   closeBtn:SetScript("OnClick", function() panel:Hide() end)
+  totalsText = Text(panel, "GameFontHighlightSmall", W - 20); totalsText:SetPoint("TOPLEFT", 10, -28)
+  -- the list: one row per writ or item, with what it costs on the auction house right now
+  listTop = CreateFrame("Frame", nil, panel); listTop:SetSize(W - 16, ROWS * ROW_H)
+  listTop:EnableMouseWheel(true)
+  listTop:SetScript("OnMouseWheel", function(_, d)
+    scrollOff = math.max(0, math.min(scrollOff - d, math.max(0, #List() - ROWS))); if WritPath_BuyerRender then WritPath_BuyerRender() end
+  end)
+  for i = 1, ROWS do
+    local r = CreateFrame("Button", nil, listTop); r:SetSize(W - 16, ROW_H)
+    r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
+    r.hl = r:CreateTexture(nil, "BACKGROUND"); r.hl:SetAllPoints(); r.hl:SetColorTexture(1, 1, 1, 0.08); r.hl:Hide()
+    r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(16, 16); r.icon:SetPoint("LEFT", 2, 0)
+    r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.icon, "RIGHT", 4, 0)
+    r.name:SetWidth(W - 16 - 22 - 96 - 18); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
+    r.price = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.price:SetPoint("RIGHT", -20, 0)
+    r.price:SetWidth(96); r.price:SetJustifyH("RIGHT")
+    fonts[#fonts + 1] = r.name; fonts[#fonts + 1] = r.price
+    r.skip = CreateFrame("Button", nil, r); r.skip:SetSize(14, 14); r.skip:SetPoint("RIGHT", -2, 0)
+    r.skip:SetNormalTexture("Interface/Buttons/UI-StopButton"); r.skip:SetHighlightTexture("Interface/Buttons/UI-StopButton", "ADD")
+    r.skip:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Skip"); GameTooltip:AddLine("Skips this and its writ or item.", 1, 1, 1, true); GameTooltip:Show() end)
+    r.skip:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    r:SetScript("OnEnter", function(self) self.hl:Show() end); r:SetScript("OnLeave", function(self) self.hl:Hide() end)
+    r:SetScript("OnClick", function(self) if self.it and JumpTo then JumpTo(self.it) end end)
+    rows[i] = r
+  end
   itemText = Text(panel, "GameFontHighlight", W - 20)
   statusText = Text(panel, "GameFontHighlightSmall", W - 20)
   mainBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"); mainBtn:SetHeight(26); btns[#btns + 1] = mainBtn
@@ -126,10 +155,57 @@ if EllesmereUI and EllesmereUI.RegisterSkin then EllesmereUI.RegisterSkin("WritP
 
 local Search
 
+local Skip
+local function RowPrice(it)
+  if it.skipped then return GREY .. "skipped|r" end
+  if Need(it) == 0 then return G .. "bought|r" end
+  local pk = seen[it.id]
+  if pk == false then return W_ .. "none listed|r" end
+  if not pk then return GREY .. "..." .. "|r" end
+  local over = it.unit and it.unit > 0 and pk.total > it.unit * math.min(pk.qty, Need(it)) * CAP + 0.5
+  return (over and W_ or Y) .. Coins(pk.total) .. "|r"
+end
+-- what's left to buy at what the auction house asks now (the plan's price where nothing was found yet)
+local function Totals()
+  local left, plan, paid, unknown = 0, 0, 0, 0
+  for _, it in ipairs(List()) do
+    plan = plan + (it.unit or 0) * (it.total or 1)
+    paid = paid + (it.paid or 0)
+    if not it.skipped and Need(it) > 0 then
+      local pk = seen[it.id]
+      if pk then left = left + pk.total else left = left + (it.unit or 0) * Need(it); unknown = unknown + 1 end
+    end
+  end
+  return left, plan, paid, unknown
+end
+
 local function Render()
   if not panel then return end
   local done, total = Progress()
   title:SetText(("Writ shopping  %s%d / %d|r"):format(GREY, done, total))
+  local left, plan, paid, unknown = Totals()
+  totalsText:SetText(("Left to buy: %s%s|r%s  %s· bought %s · plan %s|r"):format(Y, Coins(left), unknown > 0 and (GREY .. " (" .. unknown .. " not looked up yet)|r") or "",
+    GREY, Coins(paid), Coins(plan)))
+  local list = List()
+  scrollOff = math.max(0, math.min(scrollOff, math.max(0, #list - ROWS)))
+  listTop:ClearAllPoints(); listTop:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -30 - totalsText:GetStringHeight() - 4)
+  local shown = math.min(ROWS, #list)
+  for i = 1, ROWS do
+    local r, it = rows[i], list[i + scrollOff]
+    r.it = it
+    if it then
+      r:Show()
+      r.icon:SetTexture((C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(it.id)) or (GetItemIcon and GetItemIcon(it.id)) or 134400)
+      local n = ItemName(it.id) or it.name or "?"
+      n = n:gsub("^Craftsman's Writ: ", "Writ: ")
+      r.name:SetText((it == state.it and "|cFFFFD100> |r" or "") .. n .. (Need(it) > 1 and (" x" .. Need(it)) or ""))
+      r.name:SetAlpha((it.skipped or Need(it) == 0) and 0.5 or 1)
+      r.price:SetText(RowPrice(it))
+      if it.skipped or Need(it) == 0 then r.skip:Hide() else r.skip:Show() end
+      r.skip:SetScript("OnClick", function() Skip(it); if it == state.it then Search() else Render() end end)
+    else r:Hide() end
+  end
+  listTop:SetHeight(math.max(1, shown) * ROW_H)
   local it, p = state.it, state.pick
   local main, alt, status
   local unit = it and it.unit and it.unit > 0 and Coins(it.unit) or "?"
@@ -169,8 +245,9 @@ local function Render()
     else status, main = "Ready.", "Find it" end
   end
   statusText:SetText(status or "")
-  itemText:ClearAllPoints(); itemText:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -32)
-  local y = -32 - itemText:GetStringHeight() - 6
+  local y = -30 - totalsText:GetStringHeight() - 4 - math.max(1, shown) * ROW_H - 8
+  itemText:ClearAllPoints(); itemText:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, y)
+  y = y - itemText:GetStringHeight() - 6
   statusText:ClearAllPoints(); statusText:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, y)
   y = y - statusText:GetStringHeight() - 10
   if main then
@@ -188,6 +265,9 @@ local function Render()
   panel:SetHeight(-y + 8)
 end
 
+WritPath_BuyerRender = function() Render() end
+WritPath_BuyerJump = function(it) if JumpTo then JumpTo(it) end end   -- rows call this; tests too
+
 ---------------------------------------------------------------- searching (no click needed)
 -- The item on the button is searched first; while you look at it, the next few on the list are searched
 -- too, so after each purchase the next one is usually ready at once.
@@ -195,14 +275,14 @@ local queued, waiting = false, false   -- the item on the button: query to send 
 local cache = {}                       -- [item id] = { pick = what to buy or false, t = when }
 local ahead = {}                       -- item ids being looked up in advance, in order
 local aheadWaiting = nil               -- the advance lookup awaiting its answer
-local FRESH, LOOKAHEAD = 45, 3          -- seconds an advance lookup stays good; how many items ahead
+local FRESH, LOOKAHEAD = 45, 200        -- seconds an advance lookup stays good; how many items ahead (all of them)
 
 local function Entry(id) for _, it in ipairs(List()) do if it.id == id and Need(it) > 0 and not it.skipped then return it end end end
 
 local Decide
-function Search()
+function Search(target)
   state.pick = nil
-  state.i, state.it = NextItem()
+  if target then state.it = target else state.i, state.it = NextItem() end
   if not state.it then state.phase = "done"; Render(); return end
   local c = cache[state.it.id]
   if c and GetTime() - c.t < FRESH then   -- looked up while you were busy with the one before
@@ -219,13 +299,22 @@ WritPath_BuyerRefresh = function() if panel and panel:IsShown() then Search() en
 local function PlanAhead()
   ahead = {}
   if not MODERN then return end
-  local started = false
+  -- everything on the list not looked up yet (so the list's total fills in), the items after this one first
+  local after, before, started = {}, {}, false
   for _, it in ipairs(List()) do
     if it == state.it then started = true
-    elseif started and #ahead < LOOKAHEAD and not it.skipped and Need(it) > 0 and not (cache[it.id] and GetTime() - cache[it.id].t < FRESH) then
-      ahead[#ahead + 1] = it.id
+    elseif not it.skipped and Need(it) > 0 and not (cache[it.id] and GetTime() - cache[it.id].t < FRESH) and seen[it.id] == nil then
+      if started then after[#after + 1] = it.id else before[#before + 1] = it.id end
     end
   end
+  for _, id in ipairs(after) do if #ahead < LOOKAHEAD then ahead[#ahead + 1] = id end end
+  for _, id in ipairs(before) do if #ahead < LOOKAHEAD then ahead[#ahead + 1] = id end end
+end
+function JumpTo(it)
+  local ph = state.phase
+  if ph == "searching" or ph == "buying" or ph == "quote" or ph == "confirm" then return end
+  if it.skipped or Need(it) == 0 then return end
+  Search(it)
 end
 
 local function Ready()
@@ -251,6 +340,7 @@ end
 
 function Decide(pick)
   state.pick = pick
+  if state.it then seen[state.it.id] = pick or false end
   local it = state.it
   if not pick then state.phase = "none"
   elseif Over(it, pick) then state.phase = "over"
@@ -317,7 +407,12 @@ local function Answer(id, choose)
   elseif aheadWaiting == id then
     aheadWaiting = nil
     local it = Entry(id)
-    if it then cache[id] = { pick = choose(it), t = GetTime() } end
+    if it then
+      local pk = choose(it)
+      cache[id] = { pick = pk, t = GetTime() }
+      seen[id] = pk or false
+      Render()
+    end
   end
 end
 
@@ -338,6 +433,7 @@ end
 
 local function Credit(it, qty, paid)
   it.bought = (it.bought or 0) + qty
+  it.paid = (it.paid or 0) + (paid or 0)
   boughtThisVisit = true
   NotePaid(it.id, qty, paid or 0)
   Print(("Bought %s%s for %s."):format(ItemName(it.id) or it.name or "item", qty > 1 and (" x" .. qty) or "", Coins(paid or 0)))
@@ -378,7 +474,7 @@ end
 
 -- Skipping a writ skips the item it asks for (only this writ's share, if another writ needs it too); skipping
 -- an item skips the writs that need it. A writ without its item, or an item without its writ, is money wasted.
-local function Skip(it)
+function Skip(it)
   it.skipped = true
   local W = WritPath_Writs or {}
   local list = List()
@@ -443,7 +539,7 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     local fresh = WritPathNav.shopAt and time() - WritPathNav.shopAt < 3 * 3600
     if not routeOn and not fresh then WritPathNav.shopList = nil end
     for _, it in ipairs(List()) do it.skipped = nil end
-    cache, ahead, aheadWaiting, boughtThisVisit = {}, {}, nil, false
+    cache, ahead, aheadWaiting, boughtThisVisit, seen, scrollOff = {}, {}, nil, false, {}, 0
     -- only when the planner left you something to buy; an empty or finished list stays out of the way
     if not NextItem() then panel:Hide(); return end
     panel:Show()
