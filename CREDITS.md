@@ -46,6 +46,12 @@ Trips taken in game with WritPath's recorder and shipped as a starting point (20
 both ways (Powderfuse Port <-> Steamwheedle Port), the Thunder Bluff - Undercity and Orgrimmar - Badlands zeppelins, road crossings (Barrens <-> Thousand Needles, Mulgore <->
 Thunder Bluff, Undercity -> Tirisfal) and three flight times. Nothing in this file is copied from another addon.
 
+## Flight points (WritPathData.lua, `flightNodes`)
+
+Every flight point by taxi node id, with its zone and exact spot: ids, names and factions from RestedXP's node
+list, spots from QuestieDB's flight masters, and city flight masters plus a few QuestieDB lacks filled in by hand
+(2026-11-16). Flight points never move, so WritPath always takes their spot from this table.
+
 ## Roads, ships and flight times (WritPathLearned)
 
 Learned in your own game as you travel: zone crossings you ride through, ships you take, and how long

@@ -182,12 +182,23 @@ local function Known()
   for id, f in pairs(fp) do
     if f.own == true or (f.own == nil and f.src ~= "map") then known[id] = f.name or true; own = own + 1 end
   end
+  -- RestedXP keeps its own list of the flight paths this character knows: every one on it counts too (a
+  -- flight path is never unlearned, so either source saying "yours" is enough)
   for id, name in pairs(RXPCData and RXPCData.flightPaths or {}) do
-    local cont = ContinentOfFP(fp[id])
-    if not known[id] and not (cont and seen[cont]) then known[id] = name end
+    if not known[id] then known[id] = name end
   end
   return known, own
 end
+
+-- where a flight point is. Flight points never move: the fixed table (WritPathData.lua) always wins; only a
+-- point it doesn't list (a new one) uses the spot WritPath worked out in game.
+local function FlightSpot(id)
+  local n = WritPath_Data and WritPath_Data.flightNodes and WritPath_Data.flightNodes[id]
+  if n then return n[1], n[2], n[3], n[5] end
+  local f = WritPathLearned and WritPathLearned.fp and WritPathLearned.fp[id]
+  if type(f) == "table" and f.map and f.x and not IsContinent(f.map) then return f.map, f.x, f.y, f.name end
+end
+T.FlightSpot = FlightSpot
 
 -- a spot in game world coordinates (x, y as the game's own API gives them) on a continent instance (0 = Eastern
 -- Kingdoms, 1 = Kalimdor) -> the zone it is in, zone percent
@@ -289,8 +300,9 @@ function T.Report()
   local placed, lost = {}, {}
   for id, name in pairs(known) do
     local f = WritPathLearned.fp[id]
-    local label = (f and f.name) or (type(name) == "string" and name) or ("node " .. id)
-    if f and f.map and not IsContinent(f.map) then placed[#placed + 1] = label else lost[#lost + 1] = label end
+    local map, _, _, fixedName = FlightSpot(id)
+    local label = fixedName or (f and f.name) or (type(name) == "string" and name) or ("node " .. id)
+    if map then placed[#placed + 1] = label else lost[#lost + 1] = label end
   end
   table.sort(placed); table.sort(lost)
   local L = WritPathLearned or {}
@@ -306,29 +318,45 @@ end
 
 -- at a flight master: record every flight path on the map you can fly to (the way RestedXP does it: the
 -- nodes for the zone you're standing in)
+-- Both ways the game offers are read, and a flight path is only ever added, never taken away: you can't
+-- unlearn one, and the newer API has been seen to under-report on Forever (it listed only two of your Kalimdor
+-- flight paths), so trusting its "unreachable" used to drop paths you have.
 function T.RecordFlightPaths()
-  if not (C_TaxiMap and C_TaxiMap.GetAllTaxiNodes) then return end
-  local m = (GetTaxiMapID and GetTaxiMapID()) or C_Map.GetBestMapForUnit("player")
-  if not m then return end
-  local ok, list = pcall(C_TaxiMap.GetAllTaxiNodes, m)
-  if not (ok and list) then return end
-  local S = Enum and Enum.FlightPathState or { Current = 0, Reachable = 1, Unreachable = 2 }
   WritPathLearned.fp = WritPathLearned.fp or {}
   WritPathLearned.fpSeen = WritPathLearned.fpSeen or {}
   local added = 0
-  for _, n in ipairs(list) do
-    if n.nodeID then
-      local zone, x, y
-      if n.position then zone, x, y = Place(m, n.position:GetXY()) end
-      if zone and IsContinent(zone) then zone, x, y = nil, nil, nil end   -- never a whole continent: keep the old spot
-      local old = WritPathLearned.fp[n.nodeID]
-      local knows = n.state ~= S.Unreachable
-      if knows and not (old and old.own) then added = added + 1 end
-      WritPathLearned.fp[n.nodeID] = { name = n.name, map = zone or (old and old.map), x = x or (old and old.x),
-                                       y = y or (old and old.y), own = knows }
+  local function Mark(id, name, zone, x, y)
+    local f = WritPathLearned.fp[id] or {}
+    if not f.own then added = added + 1 end
+    f.own, f.name = true, f.name or name
+    if zone and not IsContinent(zone) and not f.map then f.map, f.x, f.y = zone, x, y end
+    WritPathLearned.fp[id] = f
+  end
+  local m = (GetTaxiMapID and GetTaxiMapID()) or C_Map.GetBestMapForUnit("player")
+  -- the newer API: node ids, positions and a state
+  if m and C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
+    local ok, list = pcall(C_TaxiMap.GetAllTaxiNodes, m)
+    local S = Enum and Enum.FlightPathState or { Current = 0, Reachable = 1, Unreachable = 2 }
+    for _, n in ipairs(ok and list or {}) do
+      if n.nodeID and n.state ~= S.Unreachable then
+        local zone, x, y
+        if n.position then zone, x, y = Place(m, n.position:GetXY()) end
+        Mark(n.nodeID, n.name, zone, x, y)
+      end
     end
   end
-  local cont = ContinentOf(ZoneOf(m) or m)
+  -- the classic API: every point on the open flight map by name, and whether you can fly there
+  if NumTaxiNodes and TaxiNodeName and TaxiNodeGetType then
+    local byName = {}
+    for id, n in pairs(WritPath_Data and WritPath_Data.flightNodes or {}) do byName[(n[5] or ""):lower()] = id end
+    for id, f in pairs(WritPathLearned.fp) do if type(f) == "table" and f.name then byName[f.name:lower()] = byName[f.name:lower()] or id end end
+    for i = 1, NumTaxiNodes() or 0 do
+      local name, kind = TaxiNodeName(i), TaxiNodeGetType(i)
+      local id = name and byName[name:lower()]
+      if id and (kind == "CURRENT" or kind == "REACHABLE") then Mark(id, name) end
+    end
+  end
+  local cont = m and ContinentOf(ZoneOf(m) or m)
   if cont then WritPathLearned.fpSeen[cont] = time() end
   T.Reset()
   return added
@@ -420,9 +448,10 @@ function T.Build()
   local fps = {}
   LocateFlightPaths()
   local known = Known()
-  for id, f in pairs(WritPathLearned and WritPathLearned.fp or {}) do
-    local p = known[id] and f.map and T.Point(f.map, f.x, f.y)
-    if p then fps[#fps + 1] = Add({ zone = f.map, p = p, kind = "fp", name = f.name, fpid = id }) end
+  for id in pairs(known) do
+    local map, x, y, name = FlightSpot(id)
+    local p = map and T.Point(map, x, y)
+    if p then fps[#fps + 1] = Add({ zone = map, p = p, kind = "fp", name = name, fpid = id }) end
   end
   for _, a in ipairs(fps) do
     for _, b in ipairs(fps) do
@@ -616,9 +645,10 @@ local function NearestFP(p)
   if not p then return nil end
   local best, bd
   local known = Known()
-  for id, f in pairs(WritPathLearned and WritPathLearned.fp or {}) do
-    if known[id] and f.map then
-      local q = T.Point(f.map, f.x, f.y)
+  for id in pairs(known) do
+    local map, x, y = FlightSpot(id)
+    if map then
+      local q = T.Point(map, x, y)
       if q and q.inst == p.inst then
         local d = Dist(q, p)
         if d < NEAR_FP and (not bd or d < bd) then best, bd = id, d end
