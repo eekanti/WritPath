@@ -671,7 +671,7 @@ local function Steps(plan)
       fpStep = { at = { fp.map, fp.x, fp.y, "Flight master" },
                  lines = { "{fp} Learn the flight path at " .. G .. town .. "|r while you're here",
                            GREY_ .. "Talk to the flight master. Not needed? /writs next skips it.|r" },
-                 done = { taxiMap = true } }
+                 done = { taxiMap = true }, fpid = fp.id }
     end
     local fpPoint = fpStep and Travel.Point(fp.map, fp.x, fp.y)
     local before = fpPoint and prev and p.pos and prev.inst == fpPoint.inst

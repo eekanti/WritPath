@@ -438,7 +438,38 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("QUEST_TURNED_IN")
 ev:RegisterEvent("TAXIMAP_OPENED")
-ev:SetScript("OnEvent", function(_, event)
+ev:RegisterEvent("UI_INFO_MESSAGE")
+ev:RegisterEvent("CHAT_MSG_SYSTEM")
+-- the game's "New flight path discovered!" (learning one doesn't open the flight map)
+local NEW_FP = ERR_NEWTAXIPATH or "New flight path discovered!"
+local function LearnedFlightPath(...)
+  for i = 1, select("#", ...) do
+    local a = select(i, ...)
+    if type(a) == "string" and (a == NEW_FP or a:find(NEW_FP, 1, true)) then return true end
+  end
+end
+ev:SetScript("OnEvent", function(_, event, ...)
+  if event == "UI_INFO_MESSAGE" or event == "CHAT_MSG_SYSTEM" then
+    if not (WritPathNav and LearnedFlightPath(...)) then return end
+    -- the flight path you were sent to learn (or the one you're standing at): it's yours now
+    local function Own(id)
+      if not id then return end
+      WritPathLearned = WritPathLearned or {}
+      WritPathLearned.fp = WritPathLearned.fp or {}
+      local f = WritPathLearned.fp[id] or {}
+      f.own = true; WritPathLearned.fp[id] = f
+      if WritPath_Travel then WritPath_Travel.Reset() end
+    end
+    local near = FlightHint()
+    Own(near and near.id)
+    local s = ROUTE[WritPathNav.step]
+    if s and s.done and s.done.taxiMap then
+      Own(s.fpid)
+      WritPathNav.manual[WritPathNav.step] = true
+    end
+    Refresh(true)
+    return
+  end
   if event == "TAXIMAP_OPENED" then   -- talking to a flight master completes a "learn the flight path" step
     local s = WritPathNav and ROUTE[WritPathNav.step]
     if s and s.done.taxiMap then WritPathNav.manual[WritPathNav.step] = true; Refresh(true) end
