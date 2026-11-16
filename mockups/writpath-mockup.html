@@ -1,0 +1,403 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WritPath Mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&family=Marcellus&display=swap">
+<style>
+/* Layout: a dark in-game scene with the planner (left, EllesmereUI style), the arrow (centre), the guide window
+   (right, RestedXP style with the EllesmereUI font) and the minimap button; stacks on narrow screens.
+   One dark look on purpose: it shows the game. */
+:root {
+  color-scheme: dark;
+  --scene: #10131c; --scene-2: #1b2130;
+  /* EllesmereUI defaults */
+  --eui-bg: #120f0c;          /* house panel fill (0.069, 0.058, 0.047) */
+  --eui-bar: #0b0907;         /* dark title strip */
+  --eui-inset: #0d0b09;
+  --eui-btn: #1d1915;
+  --eui-line: #000000;
+  --accent: #0cd29d;          /* default accent (12, 210, 157) */
+  /* RestedXP "RXP Blue" for the guide */
+  --rxp-bg: rgb(12 12 27 / .97); --rxp-step: rgb(18 18 40); --rxp-cur: rgb(54 62 109); --rxp-edge: #5d6690;
+  --gold: #ffd100; --text: #f2f2f2; --grey: #aaaaaa;
+  --green: #00ff25; --cyan: #00bcd4; --warn: #fcdc00; --red: #ff5722;
+  --ui: "Barlow Semi Condensed", "Expressway", "Arial Narrow", Arial, sans-serif;
+  --display: "Marcellus", Georgia, serif;
+}
+body { background: var(--scene); color: var(--text); font-family: var(--ui); font-size: 13.5px; }
+.page { padding-block: 24px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  max-width: 1200px; margin: 0 auto; display: grid; gap: 18px; }
+.intro h1 { font-family: var(--display); font-weight: 400; color: var(--gold); font-size: 26px; margin: 0 0 4px; text-wrap: balance; }
+.intro p { margin: 0; color: var(--grey); max-width: 72ch; line-height: 1.5; }
+.scene { position: relative; border-radius: 6px; padding: 18px; min-height: 660px; border: 1px solid #222a3c;
+  background: radial-gradient(120% 90% at 70% 20%, var(--scene-2), var(--scene));
+  display: grid; grid-template-columns: minmax(0, 470px) 1fr minmax(0, 310px); gap: 18px; align-items: start; }
+.scene-label { position: absolute; left: 14px; bottom: 10px; color: #5b6478; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.g { color: var(--green); } .c { color: var(--cyan); } .w { color: var(--warn); } .r { color: var(--red); } .grey { color: var(--grey); }
+button { font: inherit; }
+[hidden] { display: none !important; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- planner: EllesmereUI look ---------- */
+.planner { grid-column: 1; grid-row: 1 / span 2; width: 100%; max-width: 470px; background: var(--eui-bg);
+  border: 1px solid var(--eui-line); box-shadow: 0 8px 24px rgb(0 0 0 / .55); }
+.ptop { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 6px 0 12px; background: var(--eui-bar); }
+.ptop h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: .02em; }
+.eclose { width: 22px; height: 22px; background: none; border: 0; color: #bdbdbd; cursor: pointer; font-size: 15px; line-height: 1; }
+.eclose:hover { color: #fff; }
+.ebtn { background: var(--eui-btn); color: #fff; border: 1px solid var(--eui-line); padding: 3px 12px; height: 24px; cursor: pointer; font-weight: 500; }
+.ebtn:hover { background: #2a251f; }
+.ebtn[disabled] { color: #7a7a7a; cursor: default; background: var(--eui-btn); }
+.tabs { display: flex; gap: 4px; padding: 8px 10px 0; }
+.tab { position: relative; }
+.tab.on::after { content: ""; position: absolute; left: 2px; right: 2px; bottom: -3px; height: 2px; background: var(--accent); }
+.buyrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 12px 0; }
+.buyrow input[type=number] { width: 60px; height: 22px; background: var(--eui-inset); color: #fff; border: 1px solid var(--eui-line); padding: 0 6px; font: inherit; }
+.echeck { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex: 1; min-width: 190px; }
+.echeck input { appearance: none; width: 14px; height: 14px; background: var(--eui-inset); border: 1px solid #000; display: grid; place-items: center; margin: 0; }
+.echeck input:checked::after { content: ""; width: 8px; height: 8px; background: var(--accent); }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px 0; }
+.card { position: relative; text-align: left; color: var(--text); background: var(--eui-inset); border: 1px solid var(--eui-line); padding: 7px 8px 9px; cursor: pointer; line-height: 1.4; }
+.card.sel::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: 2px; background: var(--accent); }
+.card b { color: var(--green); font-weight: 600; }
+.rows { display: grid; gap: 6px; padding: 10px 12px 0; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; line-height: 1.35; }
+.row .l { min-width: 0; overflow-wrap: anywhere; }
+.row .sub { color: var(--grey); }
+.row .rt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tier { font-weight: 600; } .tier.E { color: #0070dd; } .tier.J { color: #1eff00; }
+.summary { padding: 10px 12px 0; line-height: 1.4; }
+.note { padding: 6px 12px 0; color: #7f7f7f; line-height: 1.4; font-size: 12.5px; }
+.pfoot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 10px 12px 12px; }
+.pfoot .left { margin-right: auto; }
+.age { margin-left: auto; align-self: center; color: var(--grey); font-size: 12px; }
+.empty { padding: 8px; line-height: 1.35; color: var(--text); background: var(--rxp-step); }
+.icon.clear { background: linear-gradient(#c82a2a, #6e0909); color: #fff; font-size: 11px; line-height: 13px; text-align: center; }
+
+/* ---------- auction house panel and confirm window (EllesmereUI look) ---------- */
+.shop { grid-column: 1; width: 100%; max-width: 250px; background: var(--eui-bg); border: 1px solid var(--eui-line); box-shadow: 0 8px 24px rgb(0 0 0 / .55); padding: 9px 10px 10px; display: grid; gap: 6px; line-height: 1.35; }
+.shop h3 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--gold); display: flex; justify-content: space-between; }
+.shop .ebtn { width: 100%; }
+.confirm { position: absolute; inset: 0; display: none; place-items: center; background: rgb(0 0 0 / .45); z-index: 10; border-radius: 6px; }
+.confirm.on { display: grid; }
+.confirm .box { width: min(300px, calc(100% - 32px)); background: var(--eui-bg); border: 1px solid var(--eui-line); padding: 14px 12px; text-align: center; line-height: 1.4; box-shadow: 0 8px 24px rgb(0 0 0 / .6); }
+.confirm .btns { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.confirm .ebtn { width: 110px; }
+.toast { padding: 0 12px 12px; color: var(--accent); min-height: 0; }
+
+/* ---------- guide: RestedXP look, EllesmereUI font ---------- */
+.guide { grid-column: 3; justify-self: end; width: 310px; max-width: 100%; background: var(--rxp-bg); border: 2px solid var(--rxp-edge); border-radius: 3px; box-shadow: 0 6px 20px rgb(0 0 0 / .5); }
+.ghead { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 4px 0 6px; border-bottom: 2px solid var(--rxp-edge); background: linear-gradient(90deg, #2a3260, #141938); }
+.logo { width: 18px; height: 18px; border-radius: 50%; flex: none; background: radial-gradient(circle at 40% 40%, #d33, #6a0000); border: 1px solid #c8a14a; }
+.gtitle { color: var(--gold); font-size: 13.5px; font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.1; }
+.icon { position: relative; width: 16px; height: 16px; border-radius: 2px; border: 1px solid #6b6b6b; padding: 0; cursor: pointer; flex: none; }
+.icon.map { background: linear-gradient(135deg, #c9a86a, #7b5c2b); } .icon.coin { background: radial-gradient(circle at 40% 40%, #ffe27a, #a8790c); } .icon.bag { background: linear-gradient(135deg, #8a5a3c, #3f2717); }
+.tip { display: none; position: absolute; z-index: 6; width: 200px; padding: 6px 8px; text-align: left; line-height: 1.35;
+  background: var(--eui-bg); border: 1px solid #000; color: var(--text); font-size: 12px; font-weight: 400; }
+.tip b { display: block; font-size: 13px; }
+.icon .tip { bottom: 22px; right: -8px; }
+.icon:hover .tip, .icon:focus-visible .tip { display: block; }
+.count { font-size: 12px; padding: 0 4px; font-variant-numeric: tabular-nums; }
+.xr { width: 18px; height: 18px; padding: 0; border-radius: 3px; border: 1px solid #c8a14a; background: linear-gradient(#b51c1c, #6e0909); color: var(--gold); font-size: 11px; line-height: 14px; cursor: pointer; }
+.steps { display: grid; gap: 2px; padding: 4px 2px 4px 4px; }
+.step { display: grid; grid-template-columns: 18px minmax(0, 1fr) 18px; gap: 4px; padding: 6px; background: var(--rxp-step); color: rgb(242 242 242 / .72); }
+.step.cur { background: var(--rxp-cur); color: var(--text); }
+.step .n { color: var(--gold); font-size: 12px; }
+.step .lines { display: grid; gap: 3px; line-height: 1.25; min-width: 0; overflow-wrap: anywhere; }
+.check { width: 16px; height: 16px; border: 1px solid #8a8fb0; border-radius: 50%; background: #0c0c1b; cursor: pointer; padding: 0; }
+.check.done { background: radial-gradient(circle, var(--green) 0 35%, #0c0c1b 40%); }
+.ic { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 3px; }
+.ic.fly { background: linear-gradient(#e9d27a, #9b7a1c); } .ic.turnin { background: radial-gradient(circle, #59b8ff, #1c4d8a); border-radius: 50%; }
+.ic.goto { background: radial-gradient(circle, #fff 0 25%, #e3b512 30%); border-radius: 50%; } .ic.buy { background: linear-gradient(#cfa65b, #6b4a17); }
+.money { padding: 5px 8px 6px; border-top: 2px solid var(--rxp-edge); background: var(--rxp-step); font-size: 12.5px; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* ---------- arrow, minimap, chat ---------- */
+.arrow-wrap { grid-column: 2; justify-self: center; display: grid; justify-items: center; gap: 6px; margin-top: 10px; }
+.arrow { width: 54px; height: 54px; transition: transform .6s; }
+@media (prefers-reduced-motion: reduce) { .arrow { transition: none; } }
+.arrow-text { font-size: 12.5px; text-align: center; text-shadow: 0 0 3px #000, 0 0 2px #000; line-height: 1.3; }
+.minimap { position: absolute; top: 14px; right: 14px; width: 110px; height: 110px; border-radius: 50%; display: none;
+  background: radial-gradient(circle at 45% 45%, #3c5a3a, #1d2c1d 70%); border: 4px solid #6b5a3a; }
+.mm-btn { position: absolute; left: -6px; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; border: 3px solid #c8a14a; background: linear-gradient(135deg, #e8dcc0, #9c8a62); cursor: pointer; padding: 0; }
+.minimap .tip { right: 100%; top: 70px; margin-right: 6px; }
+.mm-btn:hover + .tip, .mm-btn:focus-visible + .tip { display: block; }
+.chat { grid-column: 1 / -1; align-self: end; font-size: 13px; line-height: 1.45; color: #ffd890; max-width: 64ch; text-shadow: 0 0 3px #000; }
+.chat .tag { color: #33ff99; }
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; color: var(--grey); line-height: 1.45; }
+.legend b { color: var(--gold); font-family: var(--display); font-weight: 400; font-size: 14px; display: block; margin-bottom: 2px; }
+
+@media (min-width: 1021px) { .minimap { display: block; } .guide { margin-top: 120px; } }
+@media (max-width: 1020px) {
+  .scene { grid-template-columns: minmax(0, 1fr); }
+  .planner, .arrow-wrap, .guide, .chat { grid-column: 1; grid-row: auto; justify-self: center; }
+}
+</style>
+
+<div class="page">
+  <header class="intro">
+    <h1>WritPath, out of game</h1>
+    <p>A clickable mockup of WritPath 0.7.3 for WoW: Forever. The planner and the auction house panel use EllesmereUI's look when you have it (here its default teal accent and a stand-in for its Expressway font); the guide uses a RestedXP-style look. Writs, costs and times are example data, not live prices.</p>
+  </header>
+
+  <section class="scene" aria-label="Mockup of the in-game interface">
+    <div class="planner" id="planner" role="dialog" aria-label="Writ Planner">
+      <div class="ptop"><h2>Writ Planner</h2><button class="eclose" type="button" id="pclose" aria-label="Close planner">✕</button></div>
+      <div class="tabs">
+        <button class="ebtn tab on" type="button" id="tab-mine">My writs</button>
+        <button class="ebtn tab" type="button" id="tab-buy">Buy writs</button>
+        <span class="age" id="age">Last full AH scan: 4 h ago</span>
+      </div>
+      <div class="buyrow" id="buyrow" hidden>
+        <label for="rep">Rep target</label><input id="rep" type="number" value="1000" min="75" step="25">
+        <label class="echeck"><input id="zoneonly" type="checkbox"> Include customers known by zone only</label>
+        <button class="ebtn" type="button" id="plan">Plan</button>
+      </div>
+      <div class="cards" id="cards" hidden>
+        <button class="card sel" type="button" id="card-cheap"></button>
+        <button class="card" type="button" id="card-fast"></button>
+      </div>
+      <div class="rows" id="rows"></div>
+      <div class="summary" id="summary"></div>
+      <div class="note" id="note"></div>
+      <div class="pfoot">
+        <button class="ebtn left" type="button" id="clearBtn">Clear</button>
+        <button class="ebtn" type="button" id="shop">Send to Auctionator</button>
+        <button class="ebtn" type="button" id="go">Start route</button>
+      </div>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+
+    <div class="arrow-wrap" aria-label="Navigation arrow">
+      <svg class="arrow" id="arrow" viewBox="0 0 54 54" aria-hidden="true">
+        <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset="1" stop-color="#d48a00"/></linearGradient></defs>
+        <path d="M27 3 L47 45 L27 35 L7 45 Z" fill="url(#ag)" stroke="#3a2600" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <div class="arrow-text" id="arrowText"></div>
+    </div>
+
+    <div class="guide" aria-label="WritPath guide">
+      <div class="ghead">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="gtitle" id="gtitle"></span>
+        <button class="icon clear" type="button" aria-label="Clear" id="gclear">✕<span class="tip"><b>Clear</b>Clear the route, the planner and its shopping list (asks first).</span></button>
+        <button class="icon map" type="button" aria-label="My writs" data-open="mine"><span class="tip"><b>My writs</b>The writs you have, in the shortest order.</span></button>
+        <button class="icon coin" type="button" aria-label="Buy writs" data-open="buy"><span class="tip"><b>Buy writs</b>Cheapest and fastest writs to reach a rep target, from your Auctionator prices.</span></button>
+        <button class="icon bag" type="button" aria-label="Writ money" id="moneyBtn"><span class="tip"><b>Writ money</b>Every turn-in: what it cost and what its pouch paid (in chat).</span></button>
+        <span class="count" id="gcount"></span>
+        <button class="xr" type="button" id="gclose" aria-label="Hide guide">✕</button>
+      </div>
+      <div class="steps" id="steps"></div>
+      <div class="money" id="money"></div>
+    </div>
+
+    <div class="minimap">
+      <button class="mm-btn" type="button" id="mmBtn" aria-label="WritPath minimap button"></button>
+      <div class="tip"><b>WritPath</b>Left-click: show or hide the guide<br>Right-click: writ planner<br><span class="grey">Drag: move this button</span></div>
+    </div>
+
+    <div class="shop" aria-label="Writ shopping panel at the auction house">
+      <h3>Writ shopping <span class="grey" id="shopCount">0 / 9</span></h3>
+      <div id="shopItem">Craftsman's Writ: Draught of Water Breathing</div>
+      <div class="grey" id="shopStatus">Cheapest: <span class="w">48s 53c</span> for 1. The plan expected 48s 53c each.</div>
+      <button class="ebtn" type="button" id="shopBuy">Buy for 48s 53c</button>
+      <button class="ebtn" type="button" id="shopSkip">Skip</button>
+    </div>
+
+    <div class="chat" id="chat" aria-live="polite"></div>
+    <div class="confirm" id="confirm" role="dialog" aria-label="Clear WritPath">
+      <div class="box">Clear the WritPath route, the planner and its shopping list?<br><br><span class="grey">What WritPath has learned about customers and roads stays.</span>
+        <div class="btns"><button class="ebtn" type="button" id="yes">Yes</button><button class="ebtn" type="button" id="no">No</button></div>
+      </div>
+    </div>
+    <span class="scene-label">Mockup · example data</span>
+  </section>
+
+  <section class="legend" aria-label="What changed">
+    <div><b>Writ Planner</b>"My writs" orders the writs you have; "Buy writs" finds the cheapest and the fastest set for a rep target from your Auctionator prices, one writ per customer per day. The line top right says how old the prices are.</div>
+    <div><b>Guided route</b>A step list with an arrow: flight paths you know, zone crossings and boats, then each customer. Its footer shows the running plan's cost, pouches so far and net. Tick turn-in steps to watch it change.</div>
+    <div><b>Writ shopping</b>At the auction house, "Writ shopping" buys the plan's list one click at a time (the game needs a click per purchase), with a 25% price cap. It only opens while a plan has something to buy.</div>
+    <div><b>Clear</b>The Clear button in the planner and the red X in the guide header clear the route, the plan and its shopping list, after asking. What WritPath has learned stays.</div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const ic = (k) => `<span class="ic ${k}" aria-hidden="true"></span>`;
+  // your writs; costs and times are the simulation's example numbers
+  const MINE = {
+    route: [
+      ["E", "Frost Protection Potion", "Lotwil Veriatus · Badlands · ~6 min"],
+      ["E", "Fire Protection Potion", "Durganon · Searing Gorge · ~3 min"],
+      ["E", "Solid Sharpening Stone", "Master Smith Burninate · Searing Gorge · ~2 min"],
+    ],
+    later: [["Nature Protection Potion", "already handed in to this customer today (Goblin Land Mine)"]],
+    summary: `<span class="g">3 writs today, 375 rep</span> · ~14 min · pouches ~2g 01s`,
+  };
+  const BUY = {
+    cheap: { label: "Cheapest", cost: "5g 07s", min: 74, rep: 1025, net: "-14s", yours: 5, buy: 4, route: [
+      ["J", "Draught of Water Breathing", "Kixxle · Wetlands", "48s 53c"],
+      ["E", "Frost Protection Potion", "Lotwil Veriatus · Badlands", null],
+      ["E", "Fire Protection Potion", "Durganon · Searing Gorge", null],
+      ["E", "Solid Sharpening Stone", "Master Smith Burninate · Searing Gorge", null],
+      ["J", "Shadow Protection Potion", "Kzixx · Duskwood", null],
+      ["E", "Shadoweave Robe", "Eridan Bluewind · Felwood", "2g 18s", "needs item"],
+      ["E", "Quickdraw Quiver", "Narianna · Moonglade", "76s 49c"],
+      ["E", "Lesser Stoneshield Potion", "Mudcrush Durtfeet · Dustwallow Marsh", "87s 78c"],
+      ["E", "Wildvine Potion", "Spark Nilminer · Un'Goro Crater", "76s 00c"],
+    ] },
+    fast: { label: "Fastest", cost: "9g 01s", min: 47, rep: 1000, net: "-5g 06s", yours: 5, buy: 5, route: [
+      ["J", "Draught of Water Breathing", "Kixxle · Wetlands", "48s 53c"],
+      ["E", "Frost Protection Potion", "Lotwil Veriatus · Badlands", null],
+      ["E", "Fire Protection Potion", "Durganon · Searing Gorge", null],
+      ["E", "Solid Sharpening Stone", "Master Smith Burninate · Searing Gorge", null],
+      ["J", "Shadow Protection Potion", "Kzixx · Duskwood", null],
+      ["J", "Dark Leather Shoulders", "Narkk · Stranglethorn Vale", "67s 99c"],
+      ["J", "Green Iron Gauntlets", "\"Sea Wolf\" MacKinley · Stranglethorn Vale", "57s 95c"],
+      ["J", "Gnomish Universal Remote", "Scooty · Stranglethorn Vale", "69s 95c"],
+      ["E", "Shadoweave Robe", "Eridan Bluewind · Felwood", "2g 18s", "needs item"],
+      ["E", "Ornate Mithril Shoulders", "Taronn Redfeather · Felwood", "4g 38s"],
+    ] },
+  };
+  const ROUTES = {
+    mine: { title: "Writs: 375 rep", steps: [
+      [`${ic("buy")}You have every writ and item: right-click each writ to accept it`],
+      [`${ic("fly")}Fly from <span class="g">Hammerfall</span> to <span class="g">Kargath</span> (4 min)`],
+      [`${ic("goto")}Go to <span class="g">Lotwil Veriatus</span> in Badlands`, `${ic("turnin")}Hand in <span class="c">Frost Protection Potion</span>`],
+      [`${ic("goto")}Ride into <span class="g">Searing Gorge</span>`],
+      [`${ic("goto")}Go to <span class="g">Durganon</span> in Searing Gorge`, `${ic("turnin")}Hand in <span class="c">Fire Protection Potion</span>`],
+      [`${ic("goto")}Go to <span class="g">Master Smith Burninate</span> in Searing Gorge`, `${ic("turnin")}Hand in <span class="c">Solid Sharpening Stone</span>`],
+    ], arrows: ["", "Hammerfall flight master|212|-40", "Lotwil Veriatus|1,214|25", "To Searing Gorge|388|-110", "Durganon|402|150", "Master Smith Burninate|611|-5"] },
+    buy: { title: "Writs: 1025 rep", steps: [
+      [`${ic("buy")}At the auction house buy:`, `${ic("buy")}<span class="c">Craftsman's Writ: Draught of Water Breathing</span>`, `${ic("buy")}<span class="c">Draught of Water Breathing</span>`, `${ic("buy")}<span class="c">Shadoweave Robe</span>`, `<span class="w">and 6 more. Then right-click every writ to accept it</span>`],
+      [`${ic("goto")}Ride into <span class="g">Arathi Highlands</span>`],
+      [`${ic("goto")}Ride into <span class="g">Wetlands</span>`],
+      [`${ic("goto")}Go to <span class="g">Kixxle</span> in Wetlands`, `${ic("turnin")}Hand in <span class="c">Draught of Water Breathing</span>`],
+      [`${ic("goto")}Ride into <span class="g">Loch Modan</span>`],
+      [`${ic("goto")}Ride into <span class="g">Badlands</span>`],
+    ], arrows: ["", "To Arathi Highlands|495|95", "To Wetlands|880|-150", "Kixxle|260|20", "To Loch Modan|430|60", "To Badlands|710|-20"] },
+  };
+  let view = "mine", choice = "cheap", routeKey = "mine", done = new Set();
+  const chat = (m) => { $("chat").innerHTML = `<span class="tag">WritPath</span> ${m}`; };
+
+  function renderPlanner() {
+    const mine = view === "mine";
+    $("tab-mine").classList.toggle("on", mine); $("tab-buy").classList.toggle("on", !mine);
+    $("buyrow").hidden = mine; $("cards").hidden = mine;
+    let rows = [];
+    if (mine) {
+      MINE.route.forEach((r, i) => rows.push([`${i + 1}. <span class="tier ${r[0]}">${r[0]}</span> ${r[1]}<div class="sub">${r[2]}</div>`, ""]));
+      MINE.later.forEach((l) => rows.push([`<span class="w">Tomorrow:</span> ${l[0]}<div class="sub">${l[1]}</div>`, ""]));
+      $("summary").innerHTML = MINE.summary;
+      $("note").textContent = "Shortest order from where you stand, one writ per customer per day. 6 flight paths known.";
+      $("shop").disabled = true;
+    } else {
+      for (const k of ["cheap", "fast"]) {
+        const p = BUY[k];
+        $("card-" + k).innerHTML = `<b>${p.label}</b><br>${p.cost} · ~${p.min} min · ${p.rep} rep<br>net <span class="r">${p.net}</span>`;
+        $("card-" + k).classList.toggle("sel", k === choice);
+        $("card-" + k).setAttribute("aria-pressed", String(k === choice));
+      }
+      const p = BUY[choice];
+      p.route.forEach((r, i) => rows.push([`${i + 1}. <span class="tier ${r[0]}">${r[0]}</span> ${r[1]}<div class="sub">${r[2]}${r[4] ? ` · <span class="w">${r[4]}</span>` : ""}</div>`,
+        r[3] ? `<span class="c">${r[3]}</span>` : `<span class="grey">yours</span>`]));
+      MINE.later.forEach((l) => rows.push([`<span class="w">Tomorrow:</span> ${l[0]}<div class="sub">${l[1]}</div>`, ""]));
+      $("summary").innerHTML = `<span class="g">${p.rep} rep</span>: ${p.yours} yours + ${p.buy} to buy · cost ${p.cost} · ~${p.min} min · net <span class="r">${p.net}</span>`;
+      $("note").textContent = "Prices from your last Auctionator scan; times are estimates. 6 flight paths known.";
+      $("shop").disabled = false;
+    }
+    $("rows").innerHTML = rows.map((r) => `<div class="row"><div class="l">${r[0]}</div><div class="rt">${r[1]}</div></div>`).join("");
+    $("toast").textContent = "";
+  }
+  $("tab-mine").onclick = () => { view = "mine"; renderPlanner(); };
+  $("tab-buy").onclick = () => { view = "buy"; renderPlanner(); };
+  $("card-cheap").onclick = () => { choice = "cheap"; renderPlanner(); };
+  $("card-fast").onclick = () => { choice = "fast"; renderPlanner(); };
+  $("plan").onclick = () => { renderPlanner(); $("toast").textContent = `Planned both ways for ${$("rep").value} rep (example numbers).`; };
+  $("shop").onclick = () => {
+    const n = BUY[choice].route.reduce((s, r) => s + (r[3] ? (r[4] ? 1 : 2) : 0), 0);
+    $("toast").textContent = `Auctionator list "WritPath" ready: ${n} things to buy. Open Auctionator's Shopping tab at the auction house.`;
+    chat(`Auctionator list "WritPath" ready: ${n} things to buy.`);
+  };
+  // the footer covers only the plan you're running: its cost against its pouches so far
+  const SESSION = { mine: { cost: "0c", pouches: ["0c", "67s", "1g 34s", "2g 01s"], nets: ["0c", "+67s", "+1g 34s", "+2g 01s"] },
+                    buy: { cost: "5g 07s", pouches: ["0c", "0c", "0c", "12s"], nets: ["-5g 07s", "-5g 07s", "-5g 07s", "-4g 95s"] } };
+  function renderMoney(cur) {
+    const s = SESSION[routeKey], turnins = routeKey === "mine" ? [2, 4, 5] : [3];
+    const k = Math.min(turnins.filter((t) => t < cur).length, s.pouches.length - 1);
+    const net = s.nets[k], good = !net.startsWith("-");
+    $("money").innerHTML = `● This plan: cost ${s.cost} <span class="grey">·</span> pouches ${s.pouches[k]} <span class="grey">·</span> net <span class="${good ? "g" : "r"}">${net}</span>`;
+  }
+  $("go").onclick = () => {
+    routeKey = view === "mine" ? "mine" : "buy"; done = new Set(); renderGuide();
+    shopI = 0; bought = 0; renderShop();
+    chat(view === "mine" ? "Route set: 3 writs, 375 rep, ~14 min. 1 waits for tomorrow." : `Route set: ${BUY[choice].route.length} writs, ${BUY[choice].rep} rep, ~${BUY[choice].min} min.`);
+  };
+  $("pclose").onclick = () => { $("planner").style.visibility = "hidden"; };
+  document.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => { $("planner").style.visibility = "visible"; view = b.dataset.open; renderPlanner(); });
+  $("moneyBtn").onclick = () => chat("Writ money: Mithril Frag Bomb +21s 31c · Goblin Rocket Fuel -10s 68c · Flash Bomb -14s 14c · Mechanical Repair Kit -18s 50c · net -22s 01c");
+
+  function renderGuide() {
+    if (!routeKey) {   // after Clear: no route
+      $("gtitle").textContent = "Writs"; $("gcount").textContent = "0/0";
+      $("steps").innerHTML = `<div class="empty">No route yet. Open the planner with the map or coin icon above (or right-click the minimap button).</div>`;
+      $("money").innerHTML = `<span class="grey">No plan running. Start one from the planner to track its cost and pouches here.</span>`;
+      $("arrow").style.opacity = 0; $("arrowText").textContent = "";
+      return;
+    }
+    const R = ROUTES[routeKey];
+    let cur = 0; while (cur < R.steps.length && done.has(cur)) cur++;
+    $("gtitle").textContent = R.title;
+    $("gcount").textContent = `${Math.min(cur + 1, R.steps.length)}/${R.steps.length}`;
+    const out = [];
+    for (let i = cur; i < Math.min(cur + 4, R.steps.length); i++) {
+      out.push(`<div class="step ${i === cur ? "cur" : ""}"><span class="n">${i + 1}</span><div class="lines">${R.steps[i].map((l) => `<div>${l}</div>`).join("")}</div>
+        <button class="check" type="button" aria-label="Tick step ${i + 1}" data-i="${i}"></button></div>`);
+    }
+    if (cur >= R.steps.length) out.push(`<div class="step cur"><span class="n"></span><div class="lines"><div>All planned writs handed in. Close with the X.</div></div><span></span></div>`);
+    $("steps").innerHTML = out.join("");
+    $("steps").querySelectorAll(".check").forEach((b) => b.onclick = () => { done.add(+b.dataset.i); renderGuide(); });
+    renderMoney(cur);
+    const a = (R.arrows[cur] || "").split("|");
+    if (!R.arrows[cur]) { $("arrow").style.opacity = cur >= R.steps.length ? 0 : .25; $("arrowText").textContent = cur >= R.steps.length ? "" : "Shopping step: no waypoint"; }
+    else { $("arrow").style.opacity = 1; $("arrow").style.transform = `rotate(${a[2]}deg)`; $("arrowText").innerHTML = `${a[0]}<br>(${a[1]}yd)`; }
+  }
+  // Clear: asks first, then empties the route, the plan and its shopping
+  const ask = () => $("confirm").classList.add("on");
+  $("clearBtn").onclick = ask; $("gclear").onclick = ask;
+  $("no").onclick = () => $("confirm").classList.remove("on");
+  $("yes").onclick = () => {
+    $("confirm").classList.remove("on");
+    routeKey = null; done = new Set(); renderGuide();
+    $("rows").innerHTML = ""; $("cards").hidden = true; $("note").textContent = "";
+    $("summary").innerHTML = `<span class="grey">Cleared. Pick My writs or Buy writs to plan again.</span>`;
+    shopI = SHOP.length; renderShop();
+    chat("Route and plan cleared.");
+  };
+  // the auction house panel: one click per purchase
+  const SHOP = [["Craftsman's Writ: Draught of Water Breathing", "48s 53c"], ["Draught of Water Breathing", "21s 80c"], ["Craftsman's Writ: Shadoweave Robe", "2g 18s"],
+                ["Craftsman's Writ: Quickdraw Quiver", "76s 49c"], ["Quickdraw Quiver", "34s 10c"], ["Craftsman's Writ: Lesser Stoneshield Potion", "87s 78c"],
+                ["Lesser Stoneshield Potion", "39s 00c"], ["Craftsman's Writ: Wildvine Potion", "76s 00c"], ["Wildvine Potion", "28s 95c"]];
+  let shopI = 0, bought = 0;
+  function renderShop() {
+    $("shopCount").textContent = `${bought} / ${SHOP.length}`;
+    const it = SHOP[shopI];
+    if (!it) { $("shopItem").innerHTML = `<span class="g">Everything on the list is bought.</span>`; $("shopStatus").textContent = "Nothing left to buy.";
+      $("shopBuy").hidden = true; $("shopSkip").hidden = true; return; }
+    $("shopItem").textContent = it[0];
+    $("shopStatus").innerHTML = `Cheapest: <span class="w">${it[1]}</span> for 1. The plan expected ${it[1]} each.`;
+    $("shopBuy").textContent = `Buy for ${it[1]}`; $("shopBuy").hidden = false; $("shopSkip").hidden = false;
+  }
+  $("shopBuy").onclick = () => { chat(`Bought ${SHOP[shopI][0]} for ${SHOP[shopI][1]}.`); bought++; shopI++; renderShop(); };
+  $("shopSkip").onclick = () => { shopI++; renderShop(); };
+  renderShop();
+
+  $("gclose").onclick = () => { document.querySelector(".guide").style.visibility = "hidden"; chat("Guide hidden. Left-click the minimap button to bring it back."); };
+  $("mmBtn").onclick = () => { const g = document.querySelector(".guide"); g.style.visibility = g.style.visibility === "hidden" ? "visible" : "hidden"; };
+  $("mmBtn").oncontextmenu = (e) => { e.preventDefault(); $("planner").style.visibility = "visible"; renderPlanner(); };
+
+  if (location.hash === "#buy") { view = "buy"; routeKey = "buy"; }   // open on the Buy writs plan
+  renderPlanner(); renderGuide();
+  chat("Route set: 3 writs, 375 rep, ~14 min. 1 waits for tomorrow.");
+})();
+</script>

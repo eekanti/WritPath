@@ -12,9 +12,19 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
 - **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
   flight paths you know.
 
+## Screenshots
+
+Mockups with example data (open [mockups/writpath-mockup.html](mockups/writpath-mockup.html) in a browser to click
+through it; add `#buy` to the address to start on the Buy writs plan).
+
+![Buy writs: cheapest and fastest plans, the guide and the auction house panel](mockups/writpath-buy-writs.png)
+
+![My writs: the writs you have, in hand-in order](mockups/writpath-my-writs.png)
+
 ## Install
 
-Copy the `WritPath` folder into `World of Warcraft/_forever_/Interface/AddOns/`.
+Copy the `WritPath` folder into `World of Warcraft/_forever_/Interface/AddOns/` (the `mockups` folder is only
+for this page; the game ignores it).
 
 Optional: **Auctionator** (prices; needed for "Buy writs"), **EllesmereUI** (window style).
 

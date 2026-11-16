@@ -29,6 +29,11 @@ Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-1
   https://www.wowhead.com/forever/guide/professions/craftsmans-writs-overview-recipes-rewards
 - **Wowhead** item and quest tooltips (writ names, tiers, quests, requested items).
 - **wowforever.gg** atlas NPC pages (customer coordinates). https://wowforever.gg/
+- **QuestieDB** (GPL-3.0, https://github.com/Questie/Questie): which NPC takes each writ quest and where that
+  NPC stands, read from its WoW Forever data on 2026-11-15 (customers marked `src = "questie"`). Only these facts
+  were used; no QuestieDB code or files are included.
+- **Bind on Forever** (https://bindonforever.com/), quest pages built from a newer QuestieDB build, for a few
+  writs the installed QuestieDB didn't have yet.
 - Your own game: map pins of writs you accepted (WritPathLearned).
 
 ## Ships recorded by WritPath players (WritPathData.lua)
