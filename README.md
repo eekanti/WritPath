@@ -101,6 +101,8 @@ Then right-click each writ in your bags: WritPath accepts it for you (`/writs ac
 ### Follow the guide
 
 The guide window shows the next steps, and an arrow on screen points to the current one with the distance.
+Scroll over the steps with the mouse wheel to see the rest of the route (or the finished steps); it jumps back to
+the current step when that one is done.
 
 - **Fly** steps finish when you take the flight.
 - **Road crossings and docks** finish once you're within 200 yards. If you take another road and reach a later

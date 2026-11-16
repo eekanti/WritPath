@@ -142,7 +142,9 @@ local function SetWaypoint(s)
 end
 
 ---------------------------------------------------------------- guide window
-local WIDTH, SHOWN = 310, 4
+local WIDTH, SHOWN = 310, 12   -- up to 12 rows, as many as fit in STEPS_H
+local STEPS_H = 360            -- the step list grows to this height, then the mouse wheel scrolls it
+local scroll = 0               -- rows scrolled away from the current step (negative: finished steps)
 local BACKDROP = { bgFile = TEX.flat, edgeFile = TEX.flat, edgeSize = 1, insets = { left = 1, right = 1, top = 1, bottom = 1 } }
 
 local guide = CreateFrame("Frame", "WritPathGuide", UIParent, "BackdropTemplate")
@@ -195,6 +197,12 @@ end
 
 local rows = {}
 local Refresh
+-- the mouse wheel scrolls through the whole route; it snaps back to the current step when that changes
+guide:EnableMouseWheel(true)
+guide:SetScript("OnMouseWheel", function(_, delta)
+  scroll = scroll - delta
+  if Refresh then Refresh(true) end
+end)
 for r = 1, SHOWN do
   local row = CreateFrame("Frame", nil, guide, "BackdropTemplate")
   row:SetBackdrop({ bgFile = "Interface/BUTTONS/WHITE8X8" })
@@ -296,10 +304,11 @@ function Refresh(announce)
   end
   WritPathNav.step = cur
   title:SetText(WritPathNav.title or "Writs")
-  count:SetText(math.min(cur, #ROUTE) .. "/" .. #ROUTE)
+  scroll = math.max(1 - cur, math.min(scroll, #ROUTE - cur))
+  count:SetText(math.min(cur, #ROUTE) .. "/" .. #ROUTE .. (scroll ~= 0 and " |cFFAAAAAA(scrolled)|r" or ""))
 
   if cur ~= lastStep then
-    lastStep = cur
+    lastStep, scroll = cur, 0   -- the route moved on: back to the current step
     SetWaypoint(ROUTE[cur])
     if PlaySound and SOUNDKIT and announce then PlaySound(SOUNDKIT.IG_QUEST_LOG_OPEN or 875) end
   end
@@ -320,24 +329,29 @@ function Refresh(announce)
   else
     hint:Hide()
   end
+  local top, full = y, false
   for r = 1, SHOWN do
-    local row, i = rows[r], cur + r - 1
-    local s = ROUTE[i]
+    local row, i = rows[r], cur + scroll + r - 1
+    local s = not full and ROUTE[i]
     row.index = s and i or nil
     if s then
       row:Show()
-      row:SetBackdropColor(unpack(r == 1 and THEME.current or THEME.step))
+      row:SetBackdropColor(unpack(i == cur and THEME.current or THEME.step))
       row.num:SetText(i)
       local t = {}
       for _, l in ipairs(s.lines) do t[#t + 1] = Icons(l) end
       row.text:SetText(table.concat(t, "\n"))
-      row.text:SetAlpha(r == 1 and 1 or 0.7)
+      row.text:SetAlpha(i == cur and 1 or (i < cur and 0.45 or 0.7))
       row.check:SetNormalTexture(WritPathNav.manual[i] and TEX.checked or TEX.box)
       row.text:SetWidth(WIDTH - 62)
       local h = math.max(26, row.text:GetStringHeight() + 12)
-      row:SetHeight(h)
-      row:ClearAllPoints(); row:SetPoint("TOPLEFT", 4, y); row:SetPoint("TOPRIGHT", -2, y)
-      y = y - h - 2
+      if r > 1 and (top - y) + h > STEPS_H then   -- no room: the wheel reaches the rest
+        full = true; row:Hide(); row.index = nil
+      else
+        row:SetHeight(h)
+        row:ClearAllPoints(); row:SetPoint("TOPLEFT", 4, y); row:SetPoint("TOPRIGHT", -2, y)
+        y = y - h - 2
+      end
     else
       row:Hide()
     end
