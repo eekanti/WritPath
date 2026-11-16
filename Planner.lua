@@ -610,7 +610,7 @@ local function TravelSteps(steps, from, to, label)
   end
 end
 
-local FP_DETOUR, GREY_ = 800, "|cFFAAAAAA"   -- yards from a customer to suggest an unlearned flight path
+local FP_DETOUR, GREY_ = 1e9, "|cFFAAAAAA"   -- any flight path you lack in a zone the route takes you to
 local function Steps(plan)
   local steps, buy, quests, items, suggested = {}, {}, {}, {}, {}
   for _, p in ipairs(plan.route) do
@@ -634,18 +634,25 @@ local function Steps(plan)
     lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
     lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
     if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
-    steps[#steps + 1] = { at = { p.c.map, p.c.x, p.c.y, p.c.npc or p.w.name }, lines = lines,
-                          done = { quests = { p.w.q } }, writ = p.id }
-    -- a flight path you don't have close to this customer: worth grabbing while you're here
+    -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when
+    -- the flight master is nearer to where you come from than the customer is, otherwise right after
     local fp = Travel.UnlearnedNear and Travel.UnlearnedNear(p.pos, FP_DETOUR)
+    local fpStep
     if fp and not suggested[fp.id] then
       suggested[fp.id] = true
       local town = (fp.name or "the flight master"):match("^([^,]+)") or fp.name
-      steps[#steps + 1] = { at = { fp.map, fp.x, fp.y, "Flight master" },
-                            lines = { "{fp} Learn the flight path at " .. G .. town .. "|r while you're here",
-                                      GREY_ .. "Talk to the flight master. Not needed? /writs next skips it.|r" },
-                            done = { taxiMap = true } }
+      fpStep = { at = { fp.map, fp.x, fp.y, "Flight master" },
+                 lines = { "{fp} Learn the flight path at " .. G .. town .. "|r while you're here",
+                           GREY_ .. "Talk to the flight master. Not needed? /writs next skips it.|r" },
+                 done = { taxiMap = true } }
     end
+    local fpPoint = fpStep and Travel.Point(fp.map, fp.x, fp.y)
+    local before = fpPoint and prev and p.pos and prev.inst == fpPoint.inst
+                   and Travel.Dist(prev, fpPoint) < Travel.Dist(prev, p.pos)
+    if fpStep and before then steps[#steps + 1] = fpStep end
+    steps[#steps + 1] = { at = { p.c.map, p.c.x, p.c.y, p.c.npc or p.w.name }, lines = lines,
+                          done = { quests = { p.w.q } }, writ = p.id }
+    if fpStep and not before then steps[#steps + 1] = fpStep end
     prev = p.pos or prev
   end
   return steps

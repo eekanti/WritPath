@@ -214,6 +214,22 @@ for r = 1, SHOWN do
   rows[r] = row
 end
 
+-- a line above the steps when you're near a flight master whose flight path you don't have yet
+local hint = CreateFrame("Frame", nil, guide, "BackdropTemplate")
+hint:SetBackdrop({ bgFile = "Interface/BUTTONS/WHITE8X8" }); hint:SetBackdropColor(0.25, 0.2, 0.05, 0.95); hint:Hide()
+hint.text = hint:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+hint.text:SetPoint("TOPLEFT", 8, -6); hint.text:SetWidth(WIDTH - 24)
+hint.text:SetJustifyH("LEFT"); hint.text:SetJustifyV("TOP"); hint.text:SetSpacing(3)
+local HINT_YARDS = 250
+local hinted = {}   -- said in chat once per flight point per session
+local function FlightHint()
+  local T = WritPath_Travel
+  if not (T and T.UnlearnedNear and T.PlayerPoint) then return nil end
+  local ok, fp = pcall(T.UnlearnedNear, T.PlayerPoint(), HINT_YARDS)
+  return ok and fp or nil
+end
+WritPath_FlightHintFrame = hint   -- for tests
+
 -- EllesmereUI's look when it's installed: its window style, font and accent
 if EllesmereUI and EllesmereUI.RegisterSkin then
   EllesmereUI.RegisterSkin("WritPathGuide", function(S)
@@ -289,6 +305,20 @@ function Refresh(announce)
   end
 
   local y = -4
+  local fp = FlightHint()
+  if fp then
+    local town = (fp.name or "a flight master"):match("^([^,]+)") or fp.name
+    hint.text:SetText(ICONS.fp .. " Flight path here you don't have: |cFF00FF25" .. town .. "|r. Talk to the flight master to learn it.")
+    hint:SetHeight(hint.text:GetStringHeight() + 12)
+    hint:ClearAllPoints(); hint:SetPoint("TOPLEFT", 4, y); hint:SetPoint("TOPRIGHT", -2, y); hint:Show()
+    y = y - hint:GetHeight() - 2
+    if not hinted[fp.id] then
+      hinted[fp.id] = true
+      Print(("You don't have the %s flight path yet: the flight master is right here."):format(town))
+    end
+  else
+    hint:Hide()
+  end
   for r = 1, SHOWN do
     local row, i = rows[r], cur + r - 1
     local s = ROUTE[i]
@@ -321,8 +351,9 @@ function Refresh(announce)
       row.text:SetText(ICONS.rep .. " " .. (WritPathNav.doneText or "All planned writs handed in") .. ". Close with the X.")
     end
     row.text:SetAlpha(1); row:SetHeight(30)
-    row:ClearAllPoints(); row:SetPoint("TOPLEFT", 4, -4); row:SetPoint("TOPRIGHT", -2, -4)
-    y = -36
+    local top = fp and (-4 - hint:GetHeight() - 2) or -4
+    row:ClearAllPoints(); row:SetPoint("TOPLEFT", 4, top); row:SetPoint("TOPRIGHT", -2, top)
+    y = top - 32
     arrow:Hide()
   elseif WritPathNav.shown then
     arrow:Show()
