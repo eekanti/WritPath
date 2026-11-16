@@ -52,22 +52,36 @@ end
 
 -- a pin shows on every zone map around it, squashed to the edge on the neighbours:
 -- keep the one furthest from any edge
-local function FindPin(q)
-  local best, bestScore
+-- a spot read on one map, moved onto the zone it really lies in (the game also shows a quest's pin on the
+-- neighbouring zones' maps, and near a border that copy can look like the better one)
+local function OnOwnZone(map, x, y)
+  local Tr = WritPath_Travel
+  local ok, z, zx, zy = pcall(function() return Tr.Place(map, x / 100, y / 100) end)
+  if ok and z and z ~= map and zx and zx >= 0 and zx <= 100 and zy >= 0 and zy <= 100 then return z, zx, zy end
+  return map, x, y
+end
+
+-- the writ's map pin: the copy on the customer's own zone map when there is one (want), else the copy furthest
+-- from a map edge, moved onto the zone it lies in
+local function FindPin(q, want)
+  local best, bestScore, own, ownScore
   for _, m in ipairs(ZoneMaps()) do
     local ok, pins = pcall(C_QuestLog.GetQuestsOnMap, m)
     if ok and pins then
       for _, p in ipairs(pins) do
         if p.questID == q and p.x then
           local s = math.min(p.x, 1 - p.x, p.y, 1 - p.y)
-          if not bestScore or s > bestScore then
-            best, bestScore = { map = m, x = math.floor(p.x * 1000 + 0.5) / 10, y = math.floor(p.y * 1000 + 0.5) / 10 }, s
-          end
+          local pin = { map = m, x = math.floor(p.x * 1000 + 0.5) / 10, y = math.floor(p.y * 1000 + 0.5) / 10 }
+          if not bestScore or s > bestScore then best, bestScore = pin, s end
+          if want and m == want and (not ownScore or s > ownScore) then own, ownScore = pin, s end
         end
       end
     end
   end
-  return best
+  local pin = own or best
+  if pin and not own then pin.map, pin.x, pin.y = OnOwnZone(pin.map, pin.x, pin.y) end
+  if pin then pin.checked = true end
+  return pin
 end
 
 local Customer   -- defined below
@@ -82,7 +96,8 @@ function Learn()
   local missing, found = false, false
   for id, w in pairs(DB) do
     if not WritPathLearned[id] and InLog(w.q) then
-      local pin = FindPin(w.q)
+      local base = w.c and CUST[w.c]
+      local pin = FindPin(w.q, base and base.x and base.map)
       if not pin then missing = true end
       if pin then
         found = true
@@ -143,6 +158,12 @@ function Customer(id)
   local base = w.c and CUST[w.c]
   local LW = WritPathLearned or {}
   local L = LW[id]
+  if type(L) == "table" and L.map and L.src ~= "turnin" then
+    -- a map pin saved before WritPath checked which zone it lies in: put it on that zone, once
+    if not L.checked and L.x then L.map, L.x, L.y = OnOwnZone(L.map, L.x, L.y); L.checked = true end
+    -- a pin that disagrees with a customer the database knows exactly is the doubtful one: the database wins
+    if base and base.x and base.map and base.map ~= L.map then L = nil end
+  end
   if type(L) == "table" and L.map then
     local key = w.c or (L.npc and ("npc:" .. L.npc))
     if not key then   -- no name known: learned pins on the same spot are the same customer

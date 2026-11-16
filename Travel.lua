@@ -157,6 +157,8 @@ local function Place(srcMap, px, py)
   return zone, math.floor(zx * 1000 + 0.5) / 10, math.floor(zy * 1000 + 0.5) / 10
 end
 
+T.Place = Place
+
 -- RestedXP's world coordinates (HereBeDragons' system) -> percent on a zone map. Uses HereBeDragons when
 -- another addon has loaded it, otherwise the game's own map API (HereBeDragons' world x/y are the game's y/x).
 local function WorldToZone(zone, inst, hx, hy)
