@@ -107,7 +107,7 @@ function Render()
   local line = t and ("Prices " .. Ago(time() - t)) or (RED .. "No scan yet|r")
   if wait > 0 and phase.kind ~= "wait" and phase.kind ~= "read" then line = line .. GREY .. " · next scan in " .. Clock(wait) .. "|r" end
   status:SetText(line)
-  local busy = phase.kind == "wait" or phase.kind == "read"
+  local busy = phase.kind == "wait" or phase.kind == "read" or phase.kind == "load"
   if busy or wait > 0 then scanBtn:Disable() else scanBtn:Enable() end
   if phase.kind == "idle" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(t and 1 or 0)
@@ -117,6 +117,9 @@ function Render()
   elseif phase.kind == "read" then
     bar:SetMinMaxValues(0, math.max(1, phase.n)); bar:SetValue(phase.i)
     barText:SetText(("Reading %s / %s auctions"):format(BreakUpLargeNumbers and BreakUpLargeNumbers(phase.i) or phase.i, BreakUpLargeNumbers and BreakUpLargeNumbers(phase.n) or phase.n))
+  elseif phase.kind == "load" then
+    bar:SetMinMaxValues(0, 1); bar:SetValue(0.95)
+    barText:SetText(("Loading item data for %d auctions..."):format(phase.left))
   elseif phase.kind == "done" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(1)
     barText:SetText(GOLD .. ("Done: %d writ prices in %d s"):format(phase.count, phase.secs) .. "|r")
@@ -130,7 +133,7 @@ end
 local busy, got, startedAt = false, false, 0
 local ev = CreateFrame("Frame")
 
-local function Finish(found, n)
+local function Finish(found, n, missed)
   local items, count = {}, 0
   local statusFn = C_AuctionHouse and C_AuctionHouse.GetItemCommodityStatus
   local COMMODITY = Enum and Enum.ItemCommodityStatus and Enum.ItemCommodityStatus.Commodity or 2
@@ -149,7 +152,8 @@ local function Finish(found, n)
   local secs = math.floor(GetTime() - startedAt + 0.5)
   phase = { kind = "done", count = count, secs = secs }
   Render()
-  Print(("Scanned %d auctions in %d s: prices for %d writs and writ items saved."):format(n, secs, count))
+  Print(("Scanned %d auctions in %d s: prices for %d writs and writ items saved."):format(n, secs, count)
+    .. ((missed or 0) > 0 and (" %d auctions' item data never loaded."):format(missed) or ""))
   if WritPath_PlannerLearned then WritPath_PlannerLearned() end
 end
 
@@ -157,23 +161,48 @@ local function Process()
   local n = C_AuctionHouse.GetNumReplicateItems() or 0
   local want, me = Wanted(), UnitName("player")
   local found, i = {}, 0
+  local pending, asked = {}, {}   -- auctions of wanted items whose data the client hasn't loaded yet
   phase = { kind = "read", i = 0, n = n }
+  -- one auction: kept when it's complete; an item the client hasn't loaded yet comes back without its count and
+  -- price, so its data is requested and the auction read again afterwards (as Auctionator's full scan does)
+  local function Take(k)
+    local info = { C_AuctionHouse.GetReplicateItemInfo(k) }
+    local q, buy, owner, id, full = info[3], info[10], info[14], info[17], info[18]
+    if not (id and want[id]) then return true end
+    if not (q and buy and q > 0) or full == false then
+      if not asked[id] and C_Item and C_Item.RequestLoadItemDataByID then asked[id] = true; pcall(C_Item.RequestLoadItemDataByID, id) end
+      return false
+    end
+    if buy > 0 and owner ~= me then
+      local l = found[id] or {}
+      l[#l + 1] = { buy / q, q }
+      found[id] = l
+    end
+    return true
+  end
+  local tries = 0
+  local function Resolve()
+    if not busy then return end
+    local still = {}
+    for _, k in ipairs(pending) do if not Take(k) then still[#still + 1] = k end end
+    pending = still
+    tries = tries + 1
+    phase = { kind = "load", left = #pending }
+    Render()
+    if #pending > 0 and tries < 30 then C_Timer.After(0.5, Resolve) else Finish(found, n, #pending) end
+  end
   local function Step()
     if not busy then return end   -- the auction house was closed
     local stop = math.min(i + 2000, n)
     for k = i, stop - 1 do
-      local info = { C_AuctionHouse.GetReplicateItemInfo(k) }
-      local q, buy, owner, id = info[3], info[10], info[14], info[17]
-      if id and want[id] and q and q > 0 and buy and buy > 0 and owner ~= me then
-        local l = found[id] or {}
-        l[#l + 1] = { buy / q, q }
-        found[id] = l
-      end
+      if not Take(k) then pending[#pending + 1] = k end
     end
     i = stop
     phase.i = i
     Render()
-    if i < n then C_Timer.After(0, Step) else Finish(found, n) end
+    if i < n then C_Timer.After(0, Step)
+    elseif #pending > 0 then C_Timer.After(0.5, Resolve)
+    else Finish(found, n, 0) end
   end
   Step()
 end
@@ -214,7 +243,8 @@ ev:SetScript("OnEvent", function(_, event)
     Build()
     local ah = AuctionHouseFrame or AuctionFrame
     panel:ClearAllPoints()
-    if ah then panel:SetPoint("TOPRIGHT", ah, "BOTTOMRIGHT", 0, -4) else panel:SetPoint("CENTER") end
+    -- above the auction house window, on the right (below it are other addons' tabs, like Auctionator's)
+    if ah then panel:SetPoint("BOTTOMRIGHT", ah, "TOPRIGHT", 0, 4) else panel:SetPoint("CENTER") end
     if phase.kind == "done" or phase.kind == "fail" then phase = { kind = "idle" } end
     panel:Show(); Render()
   elseif event == "AUCTION_HOUSE_CLOSED" then

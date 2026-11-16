@@ -42,7 +42,7 @@ Roads, boats and flight times you use are learned as you travel.
 
 ### Before you start
 
-1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath prices** panel under the auction house window. It
+1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath prices** panel above the auction house window. It
    reads the whole auction house once (about as long as an Auctionator full scan) and keeps the prices of writs
    and the items they ask for. The game allows one full scan every 15 minutes. The planner shows how old the
    prices are in the top right. If you also use Auctionator, the newer of the two scans is used.
