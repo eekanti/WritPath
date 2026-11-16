@@ -47,7 +47,8 @@ your flights take. What you've learned always wins over the RestedXP data above.
 
 ## Optional addons WritPath works with (read at runtime, not copied)
 
-- **Auctionator**: prices through its public API (`Auctionator.API.v1`), and its saved full-scan time.
+- **Auctionator** (optional): its prices through its public API (`Auctionator.API.v1`) when its scan is newer than
+  WritPath's own, and its saved full-scan time.
 - **EllesmereUI**: window style through its public skinning API (`EllesmereUI.RegisterSkin`).
 - **HereBeDragons**: map coordinate conversion, when another addon has loaded the library. Without it WritPath
   uses the game's own map API (C_Map), so RestedXP's crossings and ships work either way.

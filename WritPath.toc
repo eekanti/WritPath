@@ -1,9 +1,9 @@
 ## Interface: 16001
 ## Title: WritPath
 ## Notes: Plans which Craftsman's Writs to buy and the best order to hand them in, with a guided route. MIT licensed; credits in CREDITS.md.
-## Version: 1.0.0
+## Version: 1.1.0
 ## OptionalDeps: EllesmereUI, Auctionator
-## SavedVariables: WritPathDB, WritPathNav, WritPathMoney, WritPathLearned
+## SavedVariables: WritPathDB, WritPathNav, WritPathMoney, WritPathLearned, WritPathPrices
 ## SavedVariablesPerCharacter: WritPathChar
 
 WritPath.lua
@@ -15,3 +15,4 @@ Nav.lua
 Money.lua
 Planner.lua
 Buyer.lua
+Scanner.lua

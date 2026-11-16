@@ -2,8 +2,8 @@
 
 A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Logistics / merchant reputation).
 
-- **Buy writs:** set a rep target and get the cheapest and the fastest set of writs to reach it, priced live from
-  your Auctionator scan, never two writs for the same customer in one day.
+- **Buy writs:** set a rep target and get the cheapest and the fastest set of writs to reach it, priced from
+  WritPath's own auction house scan (or Auctionator's), never two writs for the same customer in one day.
 - **My writs:** the writs you already have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
 - **Buying help:** "Send to Auctionator" makes a shopping list; at the auction house a "Writ shopping" panel buys
@@ -31,8 +31,8 @@ through it; add `#buy` to the address to start on the Buy writs plan).
 
 Everything WritPath needs is in this folder. Optional addons it uses when you have them:
 
-- **Auctionator**: needed for prices, so for "Buy writs" and the auction house buying panel. Do a full scan in
-  Auctionator first. "My writs" (ordering writs you already have) works without it.
+- **Auctionator**: not needed (WritPath scans writ prices itself). If you have it, its prices are used when its
+  scan is newer, and "Send to Auctionator" makes a shopping list there.
 - **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
@@ -42,8 +42,10 @@ Roads, boats and flight times you use are learned as you travel.
 
 ### Before you start
 
-1. **Scan the auction house with Auctionator** (a full scan). WritPath prices everything from that scan, and the
-   planner shows how old it is in the top right ("Last full AH scan: 4 h ago"). Rescan if it's old.
+1. **Scan writ prices at the auction house**: press **WritPath: scan writs** under the auction house window. It
+   reads the whole auction house once (about as long as an Auctionator full scan) and keeps the prices of writs
+   and the items they ask for. The game allows one full scan every 15 minutes. The planner shows how old the
+   prices are in the top right. If you also use Auctionator, the newer of the two scans is used.
 2. **Open a flight master's map once on each continent.** That's how WritPath learns which flight paths you know.
    Until then routes can't use flights (`/writs travel` shows what it knows).
 3. Find the **minimap button** (a note icon). Left-click shows or hides the guide window; right-click opens the
@@ -157,7 +159,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 
 - **The route walks everywhere**: run `/writs travel`. If flight paths are missing or "not placed", open a flight
   master's map and plan again.
-- **"No AH price"** or writs missing from plans: rescan with Auctionator; `/writs why` gives the reasons.
+- **"No AH price"** or writs missing from plans: press **WritPath: scan writs** at the auction house; `/writs why` gives the reasons.
 - **The Writ shopping panel doesn't open**: it only opens while a running plan still has something to buy.
 - **A customer's spot is wrong**: accept the writ (its map pin corrects it) or hand it in (your spot is saved).
 

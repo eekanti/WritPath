@@ -201,14 +201,31 @@ end
 -- a price: what the auction house really asked in the last half hour (seen while buying: a stack you'd have
 -- to take whole counts in full), else Auctionator's last scan
 local SEEN_FOR = 30 * 60
-local function Price(item)
-  if not item then return nil end
-  local seen = WritPathNav and WritPathNav.seenPrice and WritPathNav.seenPrice[item]
-  if seen and time() - (seen.t or 0) < SEEN_FOR then return seen.u end
+local function AuctionatorTime()
+  local sv = AUCTIONATOR_SAVEDVARS or {}
+  return math.max(sv.TimeOfLastBrowseScan or 0, sv.TimeOfLastReplicateScan or 0)
+end
+local function AuctionatorPrice(item)
   local api = Auctionator and Auctionator.API and Auctionator.API.v1
   if not api then return nil end
   local ok, p = pcall(api.GetAuctionPriceByItemID, "WritPath", item)
   return ok and p or nil
+end
+-- a price per unit when you need n: what the auction house really asked in the last half hour (seen while
+-- buying), else the newer of WritPath's own scan and Auctionator's, else whichever has it
+local function Price(item, n)
+  if not item then return nil end
+  local seen = WritPathNav and WritPathNav.seenPrice and WritPathNav.seenPrice[item]
+  if seen and time() - (seen.t or 0) < SEEN_FOR then return seen.u end
+  local mine = WritPath_ScanPrice and WritPath_ScanPrice(item, n)
+  local theirs = AuctionatorPrice(item)
+  if mine and theirs then
+    return ((WritPath_ScanTime and WritPath_ScanTime() or 0) >= AuctionatorTime()) and mine or theirs
+  end
+  return mine or theirs
+end
+local function HavePrices()
+  return (Auctionator and Auctionator.API) or (WritPath_ScanTime and WritPath_ScanTime()) and true or false
 end
 
 -- copper to do this writ now: the writ (unless you have it) plus the items you're still missing
@@ -219,7 +236,7 @@ local function Cost(id)
   if not writ then return nil, "no AH price for the writ" end
   if not w.req then return nil, "requested item unknown" end
   local need = math.max(0, (w.n or 1) - Count(w.req))
-  local item = need == 0 and 0 or Price(w.req)
+  local item = need == 0 and 0 or Price(w.req, need)
   if not item then return nil, "no AH price for " .. (ItemName(w.req) or "the item") end
   return writ + item * need, have, need
 end
@@ -988,8 +1005,7 @@ local function Ago(secs)
 end
 
 local function PriceAge(plan)
-  local sv = AUCTIONATOR_SAVEDVARS or {}
-  local last = math.max(sv.TimeOfLastBrowseScan or 0, sv.TimeOfLastReplicateScan or 0)
+  local last = math.max(AuctionatorTime(), WritPath_ScanTime and WritPath_ScanTime() or 0)
   local t
   if last > 0 then
     local secs = time() - last
@@ -1138,10 +1154,10 @@ end
 local function DoPlan()
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -60); buyRow:Show(); SelectTab(buyBtn)
   WritPathNav.planMode = "buy"
-  if not (Auctionator and Auctionator.API) then
+  if not HavePrices() then
     cards.cheap:Hide(); cards.fast:Hide()
     Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -90)
-    summary:SetText(W_ .. "Auctionator isn't loaded, so there are no prices to plan with.|r"); return
+    summary:SetText(W_ .. "No prices yet: open the auction house and press \"WritPath: scan writs\" (or install Auctionator).|r"); return
   end
   local target = tonumber(repBox:GetText()) or 1000
   local zoneOnly = zoneChk:GetChecked() and true or false
