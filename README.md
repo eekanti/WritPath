@@ -102,8 +102,9 @@ The guide window shows the next steps, and an arrow on screen points to the curr
 - **Customer** steps finish only when you hand the writ in.
 - **Learn the flight path** steps appear for any zone the route takes you to where you don't have its flight
   path, on your way in or right after the hand-in. They finish when you learn it ("New flight path discovered!") or open that flight master's map
-  (`/writs next` skips one you don't want). Anywhere you go, the guide also says so at the top when you're
-  next to a flight master whose flight path you don't have.
+  (`/writs next` skips one you don't want). As soon as you enter a zone whose flight path
+  you don't have, the guide says so at the top (with the flight master's spot), and learning one re-plans the
+  rest of the trip.
 - After each hand-in, the rest of the trip is worked out again from where you stand, with everything WritPath
   knows by then, and chat says what's next.
 - If a step gets stuck, `/writs next` skips it and `/writs back` undoes that.

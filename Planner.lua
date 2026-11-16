@@ -1178,7 +1178,10 @@ ev:SetScript("OnEvent", function(_, event, a1)
   end
   if event == "TAXIMAP_OPENED" then
     local n = Travel.RecordFlightPaths()
-    if n and n > 0 then Print(("Recorded %d flight paths for route planning."):format(n)) end
+    if n and n > 0 then
+      Print(("Recorded %d flight paths for route planning."):format(n))
+      C_Timer.After(0.5, function() WritPath_RerouteNow("new flight paths") end)
+    end
   elseif event == "PLAYER_LOGIN" then
     WritPathLearned = WritPathLearned or {}
     C_Timer.After(1, PlainLook)
@@ -1212,34 +1215,34 @@ end
 -- After buying: the route is rebuilt from the writs and items you actually have (bags and mail), so a writ
 -- that wasn't bought drops out, an item you're still missing shows up as a shopping step, and the shopping
 -- list keeps only what that route needs. Called when you close the auction house.
--- After each hand-in of a route writ: the rest of the trip is worked out again from where you stand, with
--- everything WritPath knows now (flight paths placed, roads learned since the route started), and the
--- remaining customers in the best order from here. Only the writs still on the route are used.
-function WritPath_RerouteFromHere(q)
+-- The rest of the trip, worked out again from where you stand with everything WritPath knows now: after each
+-- hand-in (q = the quest just handed in), and whenever you gain a flight path. Only the writs still on the
+-- route are used, the remaining customers go in the best order from here, and a "learn the flight path" step
+-- still ahead of you is kept.
+local function Reroute(q, why)
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
-  local left, onRoute = {}, false
-  for _, st in ipairs(WritPathNav.route) do
+  local left, onRoute, keep = {}, q == nil, nil
+  for i, st in ipairs(WritPathNav.route) do
     if st.writ and DB[st.writ] then
-      if DB[st.writ].q == q then onRoute = true elseif not Done(DB[st.writ].q) then left[st.writ] = true end
+      if q and DB[st.writ].q == q then
+        onRoute = true
+        local nxt = WritPathNav.route[i + 1]
+        if nxt and nxt.done and nxt.done.taxiMap then keep = nxt end
+      elseif not Done(DB[st.writ].q) then left[st.writ] = true end
     end
   end
   if not onRoute or not next(left) then return end
   local plan = PlanOwned(left, q)
   if #plan.route == 0 then return end
   local steps = Steps(plan)
-  -- a "learn the flight path" step right after the customer just handed in to is still ahead of you: keep it
-  for i, st in ipairs(WritPathNav.route) do
-    if st.writ and DB[st.writ] and DB[st.writ].q == q then
-      local nxt = WritPathNav.route[i + 1]
-      if nxt and nxt.done and nxt.done.taxiMap then table.insert(steps, 2, nxt) end
-      break
-    end
-  end
+  if keep then table.insert(steps, 2, keep) end
   WritPath_SetRoute(steps, WritPathNav.title, WritPathNav.doneText)
   local nxt = plan.route[1]
-  Print(("Rerouted from here: next %s (%s), %d writs left, ~%d min."):format(nxt.w.name, nxt.c.npc or MapName(nxt.c.map),
-    #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))
+  Print(("Rerouted from here%s: next %s (%s), %d writs left, ~%d min."):format(why and (" (" .. why .. ")") or "",
+    nxt.w.name, nxt.c.npc or MapName(nxt.c.map), #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))
 end
+function WritPath_RerouteFromHere(q) Reroute(q) end
+function WritPath_RerouteNow(why) Reroute(nil, why) end
 
 function WritPath_ReplanFromBags()
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end

@@ -214,13 +214,13 @@ for r = 1, SHOWN do
   rows[r] = row
 end
 
--- a line above the steps when you're near a flight master whose flight path you don't have yet
+-- a line above the steps when the zone you're in has a flight path you don't have yet
 local hint = CreateFrame("Frame", nil, guide, "BackdropTemplate")
 hint:SetBackdrop({ bgFile = "Interface/BUTTONS/WHITE8X8" }); hint:SetBackdropColor(0.25, 0.2, 0.05, 0.95); hint:Hide()
 hint.text = hint:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 hint.text:SetPoint("TOPLEFT", 8, -6); hint.text:SetWidth(WIDTH - 24)
 hint.text:SetJustifyH("LEFT"); hint.text:SetJustifyV("TOP"); hint.text:SetSpacing(3)
-local HINT_YARDS = 250
+local HINT_YARDS = 1e9   -- anywhere in the zone
 local hinted = {}   -- said in chat once per flight point per session
 local function FlightHint()
   local T = WritPath_Travel
@@ -308,13 +308,14 @@ function Refresh(announce)
   local fp = FlightHint()
   if fp then
     local town = (fp.name or "a flight master"):match("^([^,]+)") or fp.name
-    hint.text:SetText(ICONS.fp .. " Flight path here you don't have: |cFF00FF25" .. town .. "|r. Talk to the flight master to learn it.")
+    hint.text:SetText(("%s You don't have this zone's flight path: |cFF00FF25%s|r (%.0f, %.0f). Talk to the flight master to learn it."):format(
+      ICONS.fp, town, fp.x or 0, fp.y or 0))
     hint:SetHeight(hint.text:GetStringHeight() + 12)
     hint:ClearAllPoints(); hint:SetPoint("TOPLEFT", 4, y); hint:SetPoint("TOPRIGHT", -2, y); hint:Show()
     y = y - hint:GetHeight() - 2
     if not hinted[fp.id] then
       hinted[fp.id] = true
-      Print(("You don't have the %s flight path yet: the flight master is right here."):format(town))
+      Print(("You don't have the %s flight path in this zone yet: the flight master is at %.0f, %.0f."):format(town, fp.x or 0, fp.y or 0))
     end
   else
     hint:Hide()
@@ -468,6 +469,8 @@ ev:SetScript("OnEvent", function(_, event, ...)
       WritPathNav.manual[WritPathNav.step] = true
     end
     Refresh(true)
+    -- a new flight path can change the best way everywhere: plan the rest of the trip again from here
+    if WritPath_RerouteNow then C_Timer.After(0.5, function() WritPath_RerouteNow("new flight path") end) end
     return
   end
   if event == "TAXIMAP_OPENED" then   -- talking to a flight master completes a "learn the flight path" step
