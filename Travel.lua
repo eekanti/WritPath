@@ -593,6 +593,22 @@ function T.Explain(a, b)
   return out
 end
 
+-- flight points of your faction in a zone that you haven't learned, nearest first from a place in it
+function T.UnlearnedNear(p, maxYards)
+  if not p then return nil end
+  local known = Known()
+  local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
+  local best, bd
+  for id, n in pairs(WritPath_Data and WritPath_Data.flightNodes or {}) do
+    if not known[id] and n[1] == p.map and (n[4] == mine or n[4] == "AH") then
+      local q = T.Point(n[1], n[2], n[3])
+      local d = q and q.inst == p.inst and Dist(q, p)
+      if d and d <= maxYards and (not bd or d < bd) then best, bd = { id = id, map = n[1], x = n[2], y = n[3], name = n[5] }, d end
+    end
+  end
+  return best, bd
+end
+
 function T.KnownFlightPaths()
   local known, own = Known()
   local n = 0; for _ in pairs(known) do n = n + 1 end

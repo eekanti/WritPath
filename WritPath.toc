@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: WritPath
 ## Notes: Plans which Craftsman's Writs to buy and the best order to hand them in, with a guided route. Includes RestedXP pathing data (CC BY-NC-SA 4.0); credits in CREDITS.md.
-## Version: 0.8.0
+## Version: 0.8.1
 ## OptionalDeps: EllesmereUI, Auctionator
 ## SavedVariables: WritPathDB, WritPathNav, WritPathMoney, WritPathLearned
 

@@ -126,7 +126,7 @@ local function StepDone(i)
   if d.arrive and InZone(ArriveZones(s)) then hit = true end
   -- a waypoint on the way (road crossing, dock) is done once you're close to it; a flight master only once
   -- you've taken the flight (or landed), a writ customer only when you've handed the writ in
-  if not hit and TravelStep(s) and not d.taxi and Near(s) then hit = true end
+  if not hit and TravelStep(s) and not d.taxi and not d.taxiMap and Near(s) then hit = true end
   if hit then WritPathNav.manual[i] = true end
   return hit
 end

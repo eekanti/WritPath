@@ -610,8 +610,9 @@ local function TravelSteps(steps, from, to, label)
   end
 end
 
+local FP_DETOUR, GREY_ = 800, "|cFFAAAAAA"   -- yards from a customer to suggest an unlearned flight path
 local function Steps(plan)
-  local steps, buy, quests, items = {}, {}, {}, {}
+  local steps, buy, quests, items, suggested = {}, {}, {}, {}, {}
   for _, p in ipairs(plan.route) do
     if not p.have then buy[#buy + 1] = "{buy} " .. Y .. "Craftsman's Writ: " .. p.w.name .. "|r" end
     if p.need > 0 then
@@ -635,6 +636,16 @@ local function Steps(plan)
     if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
     steps[#steps + 1] = { at = { p.c.map, p.c.x, p.c.y, p.c.npc or p.w.name }, lines = lines,
                           done = { quests = { p.w.q } }, writ = p.id }
+    -- a flight path you don't have close to this customer: worth grabbing while you're here
+    local fp = Travel.UnlearnedNear and Travel.UnlearnedNear(p.pos, FP_DETOUR)
+    if fp and not suggested[fp.id] then
+      suggested[fp.id] = true
+      local town = (fp.name or "the flight master"):match("^([^,]+)") or fp.name
+      steps[#steps + 1] = { at = { fp.map, fp.x, fp.y, "Flight master" },
+                            lines = { "{fp} Learn the flight path at " .. G .. town .. "|r while you're here",
+                                      GREY_ .. "Talk to the flight master. Not needed? /writs next skips it.|r" },
+                            done = { taxiMap = true } }
+    end
     prev = p.pos or prev
   end
   return steps
@@ -1181,7 +1192,16 @@ function WritPath_RerouteFromHere(q)
   if not onRoute or not next(left) then return end
   local plan = PlanOwned(left, q)
   if #plan.route == 0 then return end
-  WritPath_SetRoute(Steps(plan), WritPathNav.title, WritPathNav.doneText)
+  local steps = Steps(plan)
+  -- a "learn the flight path" step right after the customer just handed in to is still ahead of you: keep it
+  for i, st in ipairs(WritPathNav.route) do
+    if st.writ and DB[st.writ] and DB[st.writ].q == q then
+      local nxt = WritPathNav.route[i + 1]
+      if nxt and nxt.done and nxt.done.taxiMap then table.insert(steps, 2, nxt) end
+      break
+    end
+  end
+  WritPath_SetRoute(steps, WritPathNav.title, WritPathNav.doneText)
   local nxt = plan.route[1]
   Print(("Rerouted from here: next %s (%s), %d writs left, ~%d min."):format(nxt.w.name, nxt.c.npc or MapName(nxt.c.map),
     #plan.route, math.floor((plan.secs or 0) / 60 + 0.5)))
