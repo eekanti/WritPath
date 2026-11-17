@@ -356,7 +356,7 @@ function Refresh(announce)
     local row = rows[1]; row:Show(); row.index = nil
     row:SetBackdropColor(unpack(THEME.current)); row.num:SetText("")
     if #ROUTE == 0 then
-      row.text:SetText("No route yet. Open the planner with the map or coin icon above (or right-click the minimap button).")
+      row.text:SetText("No route yet. Open the planner with the map icon above (or right-click the minimap button).")
     else
       row.text:SetText(ICONS.rep .. " " .. (WritPathNav.doneText or "All planned writs handed in") .. ". Close with the X.")
     end
