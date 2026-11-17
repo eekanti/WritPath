@@ -411,6 +411,8 @@ function WritPath_SetRoute(route, titleText, doneText)
   Show(true)
 end
 function WritPath_CurrentRoute() return ROUTE end
+-- a writ route with steps still to do (a finished one doesn't count)
+function WritPath_RouteActive() return #ROUTE > 0 and (WritPathNav.step or 1) <= #ROUTE end
 function WritPath_Refresh() if WritPathNav then Refresh() end end
 
 local mini = CreateFrame("Button", "WritPathMinimapButton", Minimap)

@@ -83,7 +83,7 @@ end
 -- the planned price of what's still to buy (for the footer's cost)
 function WritPath_ShopRemaining()
   local c = 0
-  for _, it in ipairs(List()) do c = c + Need(it) * (it.unit or 0) end
+  for _, it in ipairs(List()) do if not it.favor then c = c + Need(it) * (it.unit or 0) end end   -- writ shopping only
   return c
 end
 
@@ -159,6 +159,7 @@ local function Build()
       elseif pk == false then GameTooltip:AddLine("None listed right now.", 1, 0.5, 0.3)
       else GameTooltip:AddLine("Not looked up yet.", 0.7, 0.7, 0.7) end
       if it.unit and it.unit > 0 then GameTooltip:AddLine(("The plan expected %s each."):format(Coins(it.unit)), 0.7, 0.7, 0.7) end
+      if it.forText then GameTooltip:AddLine(it.forText, 0.4, 1, 0.4, true) end
       GameTooltip:AddLine("Click: buy this one next.", 0.5, 0.8, 1)
       GameTooltip:Show()
     end)
@@ -216,7 +217,9 @@ end
 local function Render()
   if not panel then return end
   local done, total = Progress()
-  title:SetText(("Writ shopping  %s%d / %d|r"):format(GREY, done, total))
+  local favor, writ = false, false
+  for _, it in ipairs(List()) do if not it.skipped then if it.favor then favor = true else writ = true end end end
+  title:SetText(("%s  %s%d / %d|r"):format(favor and (writ and "Writ + Favor shopping" or "Favor shopping") or "Writ shopping", GREY, done, total))
   local left, plan, paid, unknown = Totals()
   totalsText:SetText(("Left to buy: %s%s|r%s  %s· bought %s · plan %s|r"):format(Y, Coins(left), unknown > 0 and (GREY .. " (" .. unknown .. " not looked up yet)|r") or "",
     GREY, Coins(paid), Coins(plan)))
@@ -231,7 +234,7 @@ local function Render()
       r:Show()
       r.icon:SetTexture((C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(it.id)) or (GetItemIcon and GetItemIcon(it.id)) or 134400)
       local n = ItemName(it.id) or it.name or "?"
-      n = n:gsub("^Craftsman's Writ: ", "Writ: ")
+      n = n:gsub("^Craftsman's Writ: ", "Writ: "):gsub("^Waylaid Crate: ", "Crate: ")
       r.name:SetText((it == state.it and "|cFFFFD100> |r" or "") .. n .. (Need(it) > 1 and (" x" .. Need(it)) or ""))
       r.name:SetAlpha((it.skipped or Need(it) == 0) and 0.5 or 1)
       r.price:SetText(RowPrice(it))
@@ -247,7 +250,8 @@ local function Render()
     itemText:SetText(total == 0 and (GREY .. "No shopping list yet.|r") or (G .. "Everything on the list is bought.|r"))
     status = total == 0 and "Start a route (or press Send to Auctionator) in the planner." or "Nothing left to buy."
   else
-    itemText:SetText((ItemName(it.id) or it.name or "?") .. (Need(it) > 1 and (" x" .. Need(it)) or ""))
+    itemText:SetText((ItemName(it.id) or it.name or "?") .. (Need(it) > 1 and (" x" .. Need(it)) or "")
+      .. (it.forText and ("\n" .. GREY .. it.forText .. "|r") or ""))
     local ph = state.phase
     if ph == "searching" then status, main = "Searching the auction house...", "Searching..."
     elseif ph == "ready" then
@@ -457,7 +461,8 @@ local boughtThisVisit = false
 local pending = {}   -- [auctionID] = { it, qty, paid }: item buyouts waiting for the game to confirm them
 
 -- what you paid: for the footer (this plan's real cost), the turn-in log, and better prices next time
-local function NotePaid(id, qty, paid)
+local function NotePaid(id, qty, paid, favor)
+  if favor then return end   -- Merchant's Favor shopping: not part of any writ's cost or the writ plan's money
   WritPathNav.paidFor = WritPathNav.paidFor or {}
   local p = WritPathNav.paidFor[id] or { qty = 0, paid = 0 }
   p.qty, p.paid, p.t = p.qty + qty, p.paid + paid, time()
@@ -471,7 +476,7 @@ local function Credit(it, qty, paid)
   it.bought = (it.bought or 0) + qty
   it.paid = (it.paid or 0) + (paid or 0)
   boughtThisVisit = true
-  NotePaid(it.id, qty, paid or 0)
+  NotePaid(it.id, qty, paid or 0, it.favor)
   Print(("Bought %s%s for %s."):format(ItemName(it.id) or it.name or "item", qty > 1 and (" x" .. qty) or "", Coins(paid or 0)))
 end
 

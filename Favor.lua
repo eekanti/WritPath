@@ -140,13 +140,22 @@ end
 
 -- start: everything to buy goes on the shopping list (next to any writ shopping)
 function WritPath_FavorStart(plan)
+  -- what each thing is for, shown on its row: "fills 4 Waylaid Crate: Journeyman Parts"
+  local forText = {}
+  for _, p in ipairs(plan.picks) do
+    local crate = "Waylaid Crate: " .. p.name
+    forText[p.crate] = ("Merchant's Favor: %d crate%s, %d Favor"):format(p.count, p.count == 1 and "" or "s", p.count * p.favor)
+    local t = ("fills %d %s"):format(p.count, crate)
+    forText[p.mat] = forText[p.mat] and (forText[p.mat] .. ", " .. t) or t
+  end
+  for id, t in pairs(forText) do if not t:find("^Merchant") then forText[id] = "For Merchant's Favor: " .. t end end
   local list = {}
   for id, n in pairs(plan.used) do
     if n > (plan.owned[id] or 0) then
       local isCrate
       for _, c in ipairs(WritPath_Crates) do if c[1] == id then isCrate = c end end
       list[#list + 1] = { id = id, name = ItemName(id) or (isCrate and ("Waylaid Crate: " .. isCrate[2])) or ("item " .. id),
-                          total = n, unit = WritPath_Price(id, n - (plan.owned[id] or 0)) }
+                          total = n, unit = WritPath_Price(id, n - (plan.owned[id] or 0)), favor = true, forText = forText[id] }
     end
   end
   table.sort(list, function(a, b) return a.id < b.id end)
@@ -155,6 +164,8 @@ function WritPath_FavorStart(plan)
   for _, p in ipairs(plan.picks) do
     WritPathNav.favorPicks[#WritPathNav.favorPicks + 1] = { crate = p.crate, mat = p.mat, n = p.n, count = p.count, favor = p.favor }
   end
+  -- a writ route still under way keeps its shopping next to this; otherwise this is the whole list
+  if not (WritPath_RouteActive and WritPath_RouteActive()) then WritPathNav.shopList = {} end
   if WritPath_AddToShopList then WritPath_AddToShopList(list) end
   Print(("Favor shopping: %d crates for %d Merchant's Favor, %s at the auction house. Fill each crate (right-click), then hand the Sealed crates to Dokimi at the Durotar Supply camp, just west of the Crossroads."):format(
     (function() local n = 0; for _, p in ipairs(plan.picks) do n = n + p.count end; return n end)(), plan.earned, Coins(plan.cost)))
