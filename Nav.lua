@@ -308,7 +308,8 @@ function Refresh(announce)
   end
 
   local y = -4
-  local fp = FlightHint()
+  -- not while flying: passing over a zone isn't being in it
+  local fp = not (UnitOnTaxi and UnitOnTaxi("player")) and FlightHint() or nil
   if fp then
     local town = (fp.name or "a flight master"):match("^([^,]+)") or fp.name
     hint.text:SetText(("%s You don't have this zone's flight path: |cFF00FF25%s|r (%.0f, %.0f). Talk to the flight master to learn it."):format(
