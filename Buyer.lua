@@ -320,6 +320,10 @@ local queued, waiting = false, false   -- the item on the button: query to send 
 local cache = {}                       -- [item id] = { pick = what to buy or false, t = when }
 local ahead = {}                       -- item ids being looked up in advance, in order
 local aheadWaiting = nil               -- the advance lookup awaiting its answer
+-- Random-enchant items ("Wild Leather Helmet of the Owl") are listed under a key per suffix, so a search for the
+-- plain item finds nothing. Then the auction house is browsed by name, and the cheapest suffix is searched.
+local variants = {}                    -- [item id] = "browsing" while looking for its suffixes, "done" after
+local browseFor = nil                  -- the item id the current browse is for
 local FRESH, LOOKAHEAD = 45, 200        -- seconds an advance lookup stays good; how many items ahead (all of them)
 
 local function Entry(id) for _, it in ipairs(List()) do if it.id == id and Need(it) > 0 and not it.skipped then return it end end end
@@ -577,6 +581,7 @@ for _, e in ipairs({ "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "UI_ERROR_MES
 if MODERN then
   for _, e in ipairs({ "COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_ADDED",
                        "ITEM_SEARCH_RESULTS_ADDED", "COMMODITY_PRICE_UPDATED",
+                       "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
                        "COMMODITY_PRICE_UNAVAILABLE", "COMMODITY_PURCHASE_SUCCEEDED", "COMMODITY_PURCHASE_FAILED",
                        "AUCTION_HOUSE_PURCHASE_COMPLETED" }) do pcall(ev.RegisterEvent, ev, e) end
 else
@@ -596,6 +601,7 @@ function WritPath_BuyerOpen(newList)
   if not routeOn and not fresh then WritPathNav.shopList = nil end
   for _, it in ipairs(List()) do it.skipped = nil end
   cache, ahead, aheadWaiting, seen, scrollOff = {}, {}, nil, {}, 0
+  variants, browseFor = {}, nil
   if not newList then boughtThisVisit = false end
   -- only when the planner left you something to buy; an empty or finished list stays out of the way
   if not NextItem() then panel:Hide(); return end
@@ -637,7 +643,32 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
       if ours and C_AuctionHouse.HasFullItemSearchResults and not C_AuctionHouse.HasFullItemSearchResults(a1) then
         C_AuctionHouse.RequestMoreItemSearchResults(a1); return
       end
-      Answer(a1.itemID, function(it) return ChooseItem(it, a1) end)
+      local id = a1.itemID
+      if ours and not variants[id] and (C_AuctionHouse.GetNumItemSearchResults(a1) or 0) == 0 and C_AuctionHouse.SendBrowseQuery then
+        -- nothing under the plain item: it may come with random suffixes. Browse by name for them.
+        variants[id], browseFor = "browsing", id
+        C_AuctionHouse.SendBrowseQuery({ searchString = ItemName(id) or "", sorts = {}, filters = {}, itemClassFilters = {} })
+        return
+      end
+      Answer(id, function(it) return ChooseItem(it, a1) end)
+    end
+  elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
+    -- the suffixes of a random-enchant item: search the cheapest one (its results answer for the item)
+    local id = browseFor
+    if not (id and variants[id] == "browsing") then return end
+    if C_AuctionHouse.HasFullBrowseResults and not C_AuctionHouse.HasFullBrowseResults() then
+      C_AuctionHouse.RequestMoreBrowseResults(); return
+    end
+    variants[id], browseFor = "done", nil
+    local best
+    for _, r in ipairs(C_AuctionHouse.GetBrowseResults() or {}) do
+      if r.itemKey and r.itemKey.itemID == id and (r.minPrice or 0) > 0 and (r.totalQuantity or 0) > 0
+         and not (r.containsOwnerItem or r.containsAccountItem) and (not best or r.minPrice < best.minPrice) then best = r end
+    end
+    if best then
+      C_AuctionHouse.SendSearchQuery(best.itemKey, { sortOrder = 0, reverseSort = false }, true)
+    else
+      Answer(id, function() return false end)
     end
   elseif event == "AUCTION_ITEM_LIST_UPDATE" then
     if waiting then

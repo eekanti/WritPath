@@ -2,8 +2,7 @@
 -- Steps complete by themselves (writ handed in, flight taken, zone reached); the
 -- checkbox on a step completes it by hand. Styled through EllesmereUI's skinning API when it's
 -- installed; otherwise a plain flat dark look. The arrow is WritPath's own (Media/arrow.tga).
--- /writs  show or hide     /writs next | back | reset     /writs plan  open the planner
--- /writs clear  drop the planned route
+-- /writs  show or hide the guide     /writs help  the other commands
 
 local ROUTE = {}   -- the planned route (WritPathNav.route); empty until you start one from the planner
 local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. msg) end
@@ -522,14 +521,16 @@ SLASH_WRITPATH1 = "/writs"
 SlashCmdList.WRITPATH = function(msg)
   msg = (msg or ""):lower():match("^%s*(.-)%s*$")
   local cur = WritPathNav.step or 1
-  if msg == "scan" then WritPath_Scan()
-  elseif msg == "money" then WritPath_MoneyReport()
+  if msg == "help" or msg == "?" then
+    Print("Commands (the buttons on the guide window and the minimap button do the rest):")
+    Print("  |cFFFFD100/writs|r  show or hide the guide")
+    Print("  |cFFFFD100/writs plan|r  open the planner (writs for a rep target, or Merchant's Favor)")
+    Print("  |cFFFFD100/writs runs|r  your last runs: the planner's time estimate against your real time")
+    Print("  |cFFFFD100/writs accept|r  turn off (or back on) accepting writs, handing them in, and handing in Sealed crates")
+    Print("  |cFFFFD100/writs travel|r  which flight paths, roads and ships WritPath knows (for a route that walks everywhere)")
+    Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
   elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "plan" then WritPath_OpenPlanner()
-  elseif msg == "mine" then WritPath_OpenPlanner("mine")
-  elseif msg == "buy" then WritPath_OpenPlanner("buy")
-  elseif msg == "favor" or msg == "favour" then WritPath_OpenPlanner("favor")
-  elseif msg == "why" then WritPath_WhyNot()
   elseif msg == "accept" then
     WritPathNav.noAutoAccept = not WritPathNav.noAutoAccept or nil
     Print(WritPathNav.noAutoAccept and "Writs are no longer accepted or handed in for you."
@@ -548,12 +549,6 @@ SlashCmdList.WRITPATH = function(msg)
     Print("Saved. /reload and it can be read from WritPath's saved data.")
   elseif msg == "travel" then
     for _, l in ipairs(WritPath_Travel and WritPath_Travel.Report and WritPath_Travel.Report() or {}) do Print(l) end
-  elseif msg == "clear" then
-    if WritPath_ClearAll then WritPath_ClearAll() else WritPath_SetRoute(nil); Print("Route cleared.") end
-  elseif msg == "next" then WritPathNav.manual[cur] = true; Refresh(true)
-  elseif msg == "back" then
-    for i = cur - 1, 1, -1 do if WritPathNav.manual[i] then WritPathNav.manual[i] = nil; break end end
-    Refresh()
-  elseif msg == "reset" then WritPathNav.manual = {}; Refresh()
-  else Show(not guide:IsShown()) end
+  elseif msg == "" then Show(not guide:IsShown())
+  else Print(("Unknown command \"%s\": /writs help lists them."):format(msg)) end
 end

@@ -1,7 +1,7 @@
 -- WritPath money: logs each writ turn-in with what it cost and what its Coin Pouch paid.
 -- A pouch is matched to money when a Coin Pouch leaves your bags and your gold goes up
 -- within a few seconds of it. The payout goes to the oldest unpaid turn-in of that tier.
--- /writs money  prints the log
+-- the header's money button prints the log
 
 -- what each writ cost you (writ + item, Auctionator scan 2026-11-14 16:43), in copper
 local WRITS = {
@@ -102,6 +102,29 @@ WritPath_SessionTotals = SessionTotals   -- for the test harness
 WritPath_MoneyUpdate = function() Update() end   -- the buyer calls this after each purchase
 
 -- Start route opens a session with the plan's cost; clearing the plan closes it
+-- Planning again for a bigger target used to start a new money session, forgetting what was bought for the plan
+-- before (fixed in 1.11.2). Once, at login: purchases from the 6 hours before the session started are put back into
+-- it, when no writ was handed in between (so they were for the same trip, not an earlier one).
+function WritPath_MoneyRestore()
+  local s = WritPathMoney and WritPathMoney.session
+  if not s or s.restored then return end
+  s.restored = true
+  local first, sum, n = s.start, 0, 0
+  for _, p in pairs(WritPathNav and WritPathNav.paidFor or {}) do
+    if p.t and p.t < s.start and p.t >= s.start - 6 * 3600 and (p.paid or 0) > 0 then
+      sum, n = sum + p.paid, n + 1
+      if p.t < first then first = p.t end
+    end
+  end
+  if n == 0 then return end
+  for _, e in ipairs(WritPathMoney.log or {}) do
+    if e.turnedIn and (e.t or 0) >= first and (e.t or 0) < s.start then return end   -- an earlier trip: leave it
+  end
+  s.spent, s.cost, s.start = (s.spent or 0) + sum, (s.cost or 0) + sum, first - 1
+  Update()
+  Print(("Restored %d purchases (%s) to this plan's money; it now starts at %s."):format(n, Coins(sum), date and date("%H:%M", first) or "the first of them"))
+end
+
 function WritPath_StartMoneySession(cost, rep)
   WritPathMoney.session = cost and { start = time(), cost = cost, rep = rep } or nil
   Update()
@@ -145,6 +168,7 @@ ev:RegisterEvent("BAG_UPDATE_DELAYED")
 ev:RegisterEvent("PLAYER_MONEY")
 ev:SetScript("OnEvent", function(_, event, a1, _, a3)
   if event == "PLAYER_LOGIN" then
+    C_Timer.After(3, WritPath_MoneyRestore)
     if not WritPathMoney then
       -- seeded with what was known before tracking: Mithril Frag Bomb's pouch paid 80s
       WritPathMoney = { log = { { q = 94288, name = "Mithril Frag Bomb", tier = "Expert", cost = 5869,

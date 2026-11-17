@@ -242,7 +242,10 @@ local function SummaryAdd(results)
     local id = r.itemKey and r.itemKey.itemID
     sCount = sCount + 1
     if id and sWant[id] and (r.totalQuantity or 0) > 0 and (r.minPrice or 0) > 0 then
-      sFound[id] = { { r.minPrice, r.totalQuantity } }
+      -- random-enchant items ("Wild Leather Helmet of the Owl") come as one line per suffix: all of them count
+      sFound[id] = sFound[id] or {}
+      table.insert(sFound[id], { r.minPrice, r.totalQuantity })
+      table.sort(sFound[id], function(a, b) return a[1] < b[1] end)
     end
   end
   phase = { kind = "browse", n = sCount }

@@ -89,7 +89,7 @@ Open the planner (map icon). There is one **Plan** button:
 
 ### Merchant's Favor: the cheapest Waylaid Crates
 
-In the planner, click **Rep** to switch it to **Favor** (or type `/writs favor`), type how much Merchant's Favor you
+In the planner, click **Rep** to switch it to **Favor**, type how much Merchant's Favor you
 want and press **Plan**. WritPath works out which Waylaid Crates and fillings cost the least per Favor at your
 last scan's prices, counting the silver each crate pays back and anything already in your bags as free (untick
 **Use my bags** to buy everything and leave your bags alone). When the
@@ -136,14 +136,14 @@ the current step when that one is done.
   (`/writs accept` turns that off).
 - **Learn the flight path** steps appear for any zone the route takes you to where you don't have its flight
   path, on your way in or right after the hand-in. They finish when you learn it ("New flight path discovered!") or open that flight master's map
-  (`/writs next` skips one you don't want). As soon as you enter a zone whose flight path
+  (tick its box to skip one you don't want). As soon as you enter a zone whose flight path
   you don't have, the guide says so at the top (with the flight master's spot), and learning one re-plans the
   rest of the trip.
 - **Learn the flight path at X, then fly to Y**: routes also use your faction's flight paths you haven't learned
   yet. Riding up to one learns it, and you can take off from it straight away to any you have.
 - The rest of the trip is worked out again from where you stand after each hand-in, whenever you gain a flight
   path, and when you enter a new zone (chat only says so when the way ahead changes).
-- If a step gets stuck, `/writs next` skips it and `/writs back` undoes that.
+- If a step gets stuck, tick its box to skip it; untick it to undo that.
 
 The footer under the guide shows the running plan's money: **cost** (what you actually paid once you've bought,
 plus anything still to buy; the planned cost is shown next to it), **pouches** from turn-ins so far, and **net**.
@@ -171,29 +171,24 @@ and flight points, and trips other WritPath players recorded), and what you lear
 
 ### Slash commands
 
+Most things are buttons: the minimap button, and on the guide window's header Plan (map), Writ money (bag) and
+Clear (red X). The commands that are left (`/writs help` lists them in game):
+
 | Command | What it does |
 |---|---|
 | `/writs` | Show or hide the guide window |
-| `/writs plan` | Open the planner |
-| `/writs mine` | Planner with no target: just the writs you have |
-| `/writs buy` | Planner with your last rep target |
-| `/writs favor` | Planner for Merchant's Favor: the cheapest Waylaid Crates and fillings |
+| `/writs plan` | Open the planner (writs for a rep target, or Merchant's Favor) |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
-| `/writs money` | Every turn-in's cost (writ + item) and pouch, in chat |
-| `/writs accept` | Turn off (or back on) accepting writs for you when you open them, handing them in when you talk to their customer, and handing Sealed crates in at the camp |
-| `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
-| `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |
-| `/writs leg` | Why the way to the next customer looks the way it does (times, route, nearest flight points and docks); also saved for a `/reload` |
-| `/writs why` | Why some writs aren't in plans (no price, customer unknown, ...) |
-| `/writs scan` | Read the map pins of the writs you've accepted |
-| `/writs next` / `/writs back` | Skip the current guide step / undo the last skip |
-| `/writs reset` | Start the guide's steps over |
+| `/writs accept` | Turn off (or back on) accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
+| `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
+| `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
+| `/writs help` | This list, in game |
 
 ### Troubleshooting
 
 - **The route walks everywhere**: run `/writs travel`. If flight paths are missing or "not placed", open a flight
   master's map and plan again.
-- **"No AH price"** or writs missing from plans: press **Scan** in the WritPath prices panel at the auction house; `/writs why` gives the reasons.
+- **"No AH price"** or writs missing from plans: press **Scan** in the WritPath prices panel at the auction house; the planner says why the rest are left out.
 - **The Writ shopping panel doesn't open**: it only opens while a running plan still has something to buy.
 - **A customer's spot is wrong**: accept the writ (its map pin corrects it) or hand it in (your spot is saved).
 
