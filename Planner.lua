@@ -1238,8 +1238,9 @@ local function PriceAge(plan)
   return t
 end
 
+local lastTop = -62
 local function Show(plan, top)
-  current = plan
+  current, lastTop = plan, top
   ageText:SetText(PriceAge(plan))
   local y = 0
   local entries, prev = {}, plan.start
@@ -1271,7 +1272,9 @@ local function Show(plan, top)
   y = y - 6
   summary:ClearAllPoints(); summary:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
   local net = (plan.pouches or 0) - plan.cost
-  if plan.favor then
+  if plan.intro then
+    summary:SetText(plan.intro)
+  elseif plan.favor then
     summary:SetText(favorSummary)
   elseif #plan.route == 0 then
     summary:SetText(W_ .. (plan.mine and (plan.owned == 0 and "No writs in your bags or quest log."
@@ -1290,7 +1293,7 @@ local function Show(plan, top)
   local fps, own = Travel.KnownFlightPaths()
   note:ClearAllPoints(); note:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
   local roads, ships = Travel.Learned()
-  if plan.favor then note:SetText(favorNote) else
+  if plan.intro then note:SetText(plan.introNote or "") elseif plan.favor then note:SetText(favorNote) else
   note:SetText((plan.mine and "Shortest order from where you stand, one writ per customer per day. "
     or "Prices from your last auction house scan; times are estimates. ")
     .. (select(2, WritPath_Pace()) >= 3 and ("Times are scaled to your pace (x%.2f). "):format((WritPath_Pace())) or "")
@@ -1307,6 +1310,9 @@ local function Show(plan, top)
   local BOTTOM = 22 + PAD + 10                          -- buttons and the gap above them
   local maxH = math.floor((UIParent:GetHeight() or 768) * 0.5)
   local viewH = math.min(listH, math.max(90, maxH + top - BOTTOM))
+  -- a size you dragged it to: the window keeps that height, the list scrolls inside it
+  local size = WritPathNav and WritPathNav.plannerSize
+  if size and size.h then viewH = math.max(90, size.h + top - BOTTOM) end
   scroll:ClearAllPoints(); scroll:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, top); scroll:SetSize(LIST_W, viewH)
   scroll:SetVerticalScroll(0)
   local bar = Bar()
@@ -1320,6 +1326,37 @@ local function Show(plan, top)
   goBtn:ClearAllPoints(); goBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD, PAD)
   f:SetHeight(-top + viewH + BOTTOM)
 end
+
+-- resizing: the grip in the bottom-right corner. Widths re-flow as you drag; the list is laid out again when you
+-- let go, and the size is kept for next time.
+local function Relayout(w)
+  W = math.floor(w); INNER = W - PAD * 2; CARD_W = math.floor((INNER - 8) / 2); LIST_W = INNER - SB
+  f:SetWidth(W); buyRow:SetWidth(INNER); content:SetWidth(LIST_W)
+  for _, c in pairs(cards) do c:SetWidth(CARD_W); c.text:SetWidth(CARD_W - 16) end
+  for _, r in ipairs(rowPool) do r:SetWidth(LIST_W); r.left:SetWidth(LIST_W - COST_W - 6) end
+  summary:SetWidth(LIST_W); note:SetWidth(LIST_W)
+end
+f:SetResizable(true)
+if f.SetResizeBounds then f:SetResizeBounds(470, 220, 1100, 1200) elseif f.SetMinResize then f:SetMinResize(470, 220); f:SetMaxResize(1100, 1200) end
+local grip = CreateFrame("Button", nil, f)
+grip:SetSize(16, 16); grip:SetPoint("BOTTOMRIGHT", -2, 2)
+local lvl = f:GetFrameLevel(); if type(lvl) == "number" then grip:SetFrameLevel(lvl + 20) end   -- above the buttons
+grip:SetNormalTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Up")
+grip:SetHighlightTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Highlight")
+grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
+local sizing = false
+grip:SetScript("OnMouseDown", function() sizing = true; f:StartSizing("BOTTOMRIGHT") end)
+grip:SetScript("OnMouseUp", function()
+  f:StopMovingOrSizing(); sizing = false
+  WritPathNav.plannerSize = { w = math.floor(f:GetWidth()), h = math.floor(f:GetHeight()) }
+  Relayout(f:GetWidth())
+  if current and (current.favor or #(current.route or {}) > 0 or current.mine) then
+    if cards.cheap:IsShown() and plans and WritPath_PlannerReselect then WritPath_PlannerReselect() else Show(current, lastTop) end
+  else WritPath_PlannerStart() end
+end)
+f:SetScript("OnSizeChanged", function(_, w) if sizing then Relayout(w) end end)
+WritPath_PlannerRelayout = Relayout   -- for tests
+WritPath_PlannerGrip = grip
 
 local function CardText(key, plan, other)
   local same = #plan.route == #other.route
@@ -1349,6 +1386,7 @@ local function Select(key)
   for k, c in pairs(cards) do if k == key then c.sel:Show() else c.sel:Hide() end end
   Show(plans[key], LayoutCards())
 end
+WritPath_PlannerReselect = function() Select(choice or "cheap") end   -- the resize grip lays the cards out again
 cards.cheap:SetScript("OnClick", function() Select("cheap") end)
 cards.fast:SetScript("OnClick", function() Select("fast") end)
 
@@ -1410,14 +1448,11 @@ local function SetMode(favor)
   modeBtn:SetText(favor and "Favor" or "Rep"); FitWidth(modeBtn)
   bagsChk:SetChecked(not WritPathNav.favorNoBags)
   if favor then bagsChk:Show(); bagsL:Show() else bagsChk:Hide(); bagsL:Hide() end
-  -- the last target of that kind, or empty (no made-up default)
-  local t = favor and WritPathNav.favorTarget or (not favor and WritPathNav.plan and WritPathNav.plan.target)
-  repBox:SetText(t and tostring(t) or "")
+  repBox:SetText("")   -- you type the target: nothing planned you didn't ask for
 end
 modeBtn:SetScript("OnClick", function()
   SetMode(not Favor())
-  -- a target of that kind from before: plan it; none yet: show what to do
-  if (tonumber(repBox:GetText()) or 0) > 0 then DoPlan() else WritPath_PlannerStart() end
+  WritPath_PlannerStart()   -- switching never plans by itself: Plan does
 end)
 bagsChk:SetScript("OnClick", function(self) WritPathNav.favorNoBags = not self:GetChecked() or nil; DoPlan() end)
 bagsChk:SetScript("OnEnter", function(self)
@@ -1503,25 +1538,27 @@ end
 function WritPath_PlannerStart(first)
   cards.cheap:Hide(); cards.fast:Hide()
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
-  Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -62)
+  repBox:SetText("")
   local H = "|cFFFFD100"
+  local intro, introNote
   if WritPathNav and WritPathNav.planFor == "favor" then
     local NL = string.char(10)
-    summary:SetText((first and (G .. first .. "|r ") or "") .. H .. "Plan Merchant's Favor|r" .. NL
+    intro = ((first and (G .. first .. "|r ") or "") .. H .. "Plan Merchant's Favor|r" .. NL
       .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath prices panel) so prices are fresh." .. NL
       .. "2. Type how much Favor you want and press " .. H .. "Plan|r. Untick " .. H .. "Use my bags|r to buy everything." .. NL
       .. "3. Press " .. H .. "Start buying|r: the shopping list opens at the auction house. Fill each crate (right-click it)"
       .. " and talk to Dokimi at the camp west of the Crossroads to hand them in.")
-    note:SetText(GREY .. "Click Favor to switch back to planning writs for reputation.|r")
+    introNote = GREY .. "Click Favor to switch back to planning writs for reputation.|r"
   else
     local NL = string.char(10)
-    summary:SetText((first and (G .. first .. "|r ") or "") .. H .. "Plan writs|r" .. NL
+    intro = ((first and (G .. first .. "|r ") or "") .. H .. "Plan writs|r" .. NL
       .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath prices panel) so prices are fresh." .. NL
       .. "2. Type a rep target and press " .. H .. "Plan|r. Leave it empty to plan just the writs you already have." .. NL
       .. "3. Pick " .. H .. "Cheapest|r or " .. H .. "Fastest|r and press " .. H .. "Start route|r: the shopping list opens at the"
       .. " auction house, and the guide takes you to each customer.")
-    note:SetText(GREY .. "Click Rep to plan Merchant's Favor instead (the cheapest Waylaid Crates).|r")
+    introNote = GREY .. "Click Rep to plan Merchant's Favor instead (the cheapest Waylaid Crates).|r"
   end
+  Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0, intro = intro, introNote = introNote }, -62)
   current = nil   -- nothing planned: reopening the planner shows this again
 end
 -- WritPath's own confirm window. Not Blizzard's StaticPopup: an addon using those shared popups taints them,
@@ -1570,6 +1607,8 @@ function WritPath_OpenPlanner(mode)   -- mode: "mine" (just your writs), "buy" (
     elseif o and (mode == "buy" or WritPathNav.planMode ~= "mine") then repBox:SetText(o.target) end
   end
   FitWidth(planBtn)
+  local size = WritPathNav.plannerSize
+  if size and size.w then Relayout(size.w) end
   f:Show()
   -- nothing planned yet this session and no particular view asked for: say what to do, don't plan by itself
   if not mode and not current then WritPath_PlannerStart(); return end

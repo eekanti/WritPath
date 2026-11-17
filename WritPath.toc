@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: WritPath
 ## Notes: Plans which Craftsman's Writs to buy and the best order to hand them in, with a guided route. MIT licensed; credits in CREDITS.md.
-## Version: 1.11.5
+## Version: 1.11.6
 ## IconTexture: Interface\AddOns\WritPath\Media\icon
 ## OptionalDeps: EllesmereUI, Auctionator
 ## SavedVariables: WritPathDB, WritPathNav, WritPathMoney, WritPathLearned, WritPathPrices
