@@ -6,8 +6,7 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
   writs you have and priced from WritPath's own auction house scan (or Auctionator's), never two writs for the
   same customer in one day. With no target, it plans just the writs you have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
-- **Buying help:** "Send to Auctionator" makes a shopping list; at the auction house a "Writ shopping" panel buys
-  the list one click at a time, with a price cap.
+- **Buying help:** at the auction house a shopping panel buys the plan's list one click at a time, with a price cap.
 - **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
 - **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
   flight paths you know.
@@ -33,7 +32,7 @@ through it; add `#buy` to the address to start on the Buy writs plan).
 Everything WritPath needs is in this folder. Optional addons it uses when you have them:
 
 - **Auctionator**: not needed (WritPath scans writ prices itself). If you have it, its prices are used when its
-  scan is newer, and "Send to Auctionator" makes a shopping list there.
+  scan is newer (only for items WritPath's own scan didn't see).
 - **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
@@ -85,7 +84,6 @@ Open the planner (map icon). There is one **Plan** button:
    spot before you travel.
 4. If the target can't be reached today, the plan says how close you can get and why.
 5. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
-   (**Send to Auctionator** also makes a "WritPath" shopping list in Auctionator, if you'd rather buy there.)
 
 ### Merchant's Favor: the cheapest Waylaid Crates
 

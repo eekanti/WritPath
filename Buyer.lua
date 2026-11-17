@@ -9,7 +9,7 @@
 --   * stacks: the cheapest that doesn't give you more than you need, else the cheapest one
 --   * price cap: more than 25% over the price the plan was built on isn't bought unless you say so
 --   * purchases may arrive by mail: what WritPath bought counts as yours before it's in your bags
--- The list comes from the plan (Start route or Send to Auctionator in the planner).
+-- The list comes from the plan (Start route, or Start buying for Merchant's Favor, in the planner).
 
 local CAP = 1.25
 local G, W_, Y, GREY = "|cFF00FF25", "|cFFFCDC00", "|cFF00BCD4", "|cFFAAAAAA"
@@ -255,7 +255,7 @@ local function Render()
   local unit = it and it.unit and it.unit > 0 and Coins(it.unit) or "?"
   if not it then
     itemText:SetText(total == 0 and (GREY .. "No shopping list yet.|r") or (G .. "Everything on the list is bought.|r"))
-    status = total == 0 and "Start a route (or press Send to Auctionator) in the planner." or "Nothing left to buy."
+    status = total == 0 and "Start a route (or Favor buying) in the planner." or "Nothing left to buy."
   else
     itemText:SetText((ItemName(it.id) or it.name or "?") .. (Need(it) > 1 and (" x" .. Need(it)) or "")
       .. (it.forText and ("\n" .. GREY .. it.forText .. "|r") or ""))
@@ -594,8 +594,8 @@ local WON = ERR_AUCTION_WON_S and ERR_AUCTION_WON_S:gsub("%%s", "(.+)") or "You 
 function WritPath_BuyerOpen(newList)
   Build(); Dock()
   mainBtn:SetScript("OnClick", Click); altBtn:SetScript("OnClick", AltClick)
-  -- a list belongs to a plan: keep it while that route runs, or for a few hours after "Send to Auctionator"
-  -- without a route. A leftover from an old plan is dropped instead of popping up at every visit.
+  -- a list belongs to a plan: keep it while that route runs, or for a few hours after it was made (Favor buying
+  -- has no route). A leftover from an old plan is dropped instead of popping up at every visit.
   local routeOn = WritPathNav.route and #WritPathNav.route > 0
   local fresh = WritPathNav.shopAt and time() - WritPathNav.shopAt < 3 * 3600
   if not routeOn and not fresh then WritPathNav.shopList = nil end

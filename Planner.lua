@@ -1030,7 +1030,6 @@ end
 local summary = Text(content, nil, LIST_W)
 local note = Text(content, "GameFontDisableSmall", LIST_W)
 local goBtn = Btn(f, "Start route"); goBtn:Disable()
-local shopBtn = Btn(f, "Send to Auctionator"); shopBtn:Disable()
 local clearBtn = Btn(f, "Clear")   -- clears the route, the plan and its shopping (asks first)
 clearBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", PAD, PAD)
 
@@ -1317,10 +1316,8 @@ local function Show(plan, top)
 
   goBtn:SetText(plan.favor and "Start buying" or "Start route")
   if (plan.favor and #plan.picks > 0) or (not plan.favor and #plan.route > 0) then goBtn:Enable() else goBtn:Disable() end
-  if not plan.favor and #ShoppingFor(plan) > 0 and Auctionator and Auctionator.API then shopBtn:Enable() else shopBtn:Disable() end
-  FitWidth(goBtn); FitWidth(shopBtn); FitWidth(clearBtn)
+  FitWidth(goBtn); FitWidth(clearBtn)
   goBtn:ClearAllPoints(); goBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD, PAD)
-  shopBtn:ClearAllPoints(); shopBtn:SetPoint("RIGHT", goBtn, "LEFT", -6, 0)
   f:SetHeight(-top + viewH + BOTTOM)
 end
 
@@ -1435,29 +1432,6 @@ planBtn:SetScript("OnClick", function() DoPlan() end)
 repBox:SetScript("OnEnterPressed", function(bx) bx:ClearFocus(); DoPlan() end)
 closeX:SetScript("OnClick", function() f:Hide() end)
 
--- Auctionator: a shopping list called "WritPath" with exactly what this plan needs (searches at once at the AH)
-local function SendToAuctionator(plan)
-  local api = Auctionator and Auctionator.API and Auctionator.API.v1
-  if not api then Print("Auctionator isn't loaded."); return end
-  local terms, missing = {}, 0
-  for _, it in ipairs(ShoppingFor(plan)) do
-    if it.name then
-      local ok, str = pcall(api.ConvertToSearchString, "WritPath", { searchString = it.name, isExact = true, quantity = it.n })
-      terms[#terms + 1] = ok and str or ('"' .. it.name .. '"')
-    else missing = missing + 1 end
-  end
-  if #terms == 0 then Print("Nothing to buy for this plan."); return end
-  local ok, err = pcall(api.CreateShoppingList, "WritPath", "WritPath", terms)
-  if not ok then Print("Auctionator refused the list: " .. tostring(err)); return end
-  Print(("Auctionator list \"WritPath\" ready: %d things to buy. At the auction house, open Auctionator's Shopping tab."):format(#terms)
-    .. (missing > 0 and (" " .. missing .. " item names weren't loaded yet: press the button again in a moment.") or ""))
-end
-shopBtn:SetScript("OnClick", function()
-  if not current then return end
-  SendToAuctionator(current)
-  if WritPath_SetShopList then WritPath_SetShopList(BuyList(current)) end
-end)
-
 goBtn:SetScript("OnClick", function()
   if current and current.favor then
     if #current.picks > 0 then WritPath_FavorStart(current); f:Hide() end
@@ -1494,8 +1468,8 @@ goBtn:SetScript("OnClick", function()
         .. (current.later and #current.later > 0 and (" " .. #current.later .. " wait for tomorrow.") or ""))
 end)
 
--- Clear everything a plan set up: the guide's route, the money session, the buy list at the auction house,
--- Auctionator's "WritPath" shopping list, and the planner itself. What WritPath has learned stays.
+-- Clear everything a plan set up: the guide's route, the money session, the buy list at the auction house and the
+-- planner itself (and an old "WritPath" list in Auctionator, from when WritPath made one). What WritPath has learned stays.
 local function EmptyAuctionatorList()
   local api = Auctionator and Auctionator.API and Auctionator.API.v1
   if not (api and api.GetShoppingListItems and api.DeleteShoppingListItem) then return end
@@ -1860,7 +1834,7 @@ function WritPath_DropFromPlan(ids, why)
 end
 
 -- exposed for the test harness
-WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, SendToAuctionator = SendToAuctionator, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn }
+WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn }
 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
