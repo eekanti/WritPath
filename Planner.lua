@@ -226,6 +226,10 @@ end
 -- buying), else the newer of WritPath's own scan and Auctionator's, else whichever has it
 local function Price(item, n)
   if not item then return nil end
+  -- WritPath's own scan knows how many are listed: needing more than that means you can't buy them, whatever
+  -- price another source has (Auctionator's has no quantity, so it would make anything look plentiful)
+  local avail = WritPath_ScanAvail and WritPath_ScanAvail(item)
+  if avail and avail < math.max(1, n or 1) then return nil end
   local seen = WritPathNav and WritPathNav.seenPrice and WritPathNav.seenPrice[item]
   if seen and time() - (seen.t or 0) < SEEN_FOR then return seen.u end
   local mine = WritPath_ScanPrice and WritPath_ScanPrice(item, n)
@@ -955,6 +959,11 @@ local repL = Text(buyRow); repL:SetPoint("LEFT", modeBtn, "RIGHT", 8, 0); repL:S
 local repBox = CreateFrame("EditBox", nil, buyRow, "InputBoxTemplate"); repBox:SetSize(54, 20); repBox:SetAutoFocus(false)
 repBox:SetNumeric(true); repBox:SetText("1000"); repBox:SetPoint("LEFT", repL, "RIGHT", 10, 0)
 local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
+-- Favor only: count what's already in your bags as free, or buy everything
+local bagsChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); bagsChk:SetSize(22, 22)
+bagsChk:SetPoint("LEFT", planBtn, "RIGHT", 10, 0)
+local bagsL = Text(buyRow); bagsL:SetPoint("LEFT", bagsChk, "RIGHT", 2, 0); bagsL:SetText("Use my bags"); bagsL:SetWordWrap(false)
+bagsChk:Hide(); bagsL:Hide()
 for _, w in ipairs({ repBox, planBtn }) do
   w:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan")
@@ -1027,6 +1036,7 @@ local function ApplySkin(S)
   S.CloseButton(closeX)
   for _, btn in ipairs(buttons) do S.Button(btn); if S.StateButtonLabel then S.StateButtonLabel(btn) end end
   S.EditBox(repBox, { padInput = true })
+  if WritPath_BagsCheck and S.Checkbox then S.Checkbox(WritPath_BagsCheck) end
   for _, c in pairs(cards) do S.Panel(c, { inset = true }) end
   if Bar() and S.ScrollBar then S.ScrollBar(Bar()) end
   for _, fs in ipairs(fonts) do S.Font(fs) end
@@ -1382,15 +1392,27 @@ function DoFavor()
     Show({ favor = true, picks = {}, route = {}, earned = 0, target = target, cost = 0, back = 0, lockedOut = 0 }, -62)
     summary:SetText(W_ .. "No prices yet: open the auction house and press Scan (or install Auctionator).|r"); return
   end
-  Show(WritPath_FavorPlan(target), -62)
+  Show(WritPath_FavorPlan(target, WritPathNav.favorNoBags), -62)
 end
 local function SetMode(favor)
   WritPathNav.planFor = favor and "favor" or "rep"
   modeBtn:SetText(favor and "Favor" or "Rep"); FitWidth(modeBtn)
+  bagsChk:SetChecked(not WritPathNav.favorNoBags)
+  if favor then bagsChk:Show(); bagsL:Show() else bagsChk:Hide(); bagsL:Hide() end
   if favor then repBox:SetText(tostring(WritPathNav.favorTarget or 100))
   else repBox:SetText(tostring(WritPathNav.plan and WritPathNav.plan.target or 1000)) end
 end
 modeBtn:SetScript("OnClick", function() SetMode(not Favor()); DoPlan() end)
+bagsChk:SetScript("OnClick", function(self) WritPathNav.favorNoBags = not self:GetChecked() or nil; DoPlan() end)
+bagsChk:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Use my bags")
+  GameTooltip:AddLine("On: crates and materials already in your bags are used first, for free.", 1, 1, 1, true)
+  GameTooltip:AddLine("Off: the plan buys everything and leaves what's in your bags alone.", 1, 1, 1, true)
+  GameTooltip:Show()
+end)
+bagsChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
+WritPath_BagsCheck = bagsChk   -- for tests
+if skin and skin.Checkbox then skin.Checkbox(bagsChk) end   -- EllesmereUI skinned the window before this existed
 modeBtn:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan for")
   GameTooltip:AddLine("Rep: the writs to reach a reputation target (empty: just the writs you have).", 1, 1, 1, true)
@@ -1709,6 +1731,7 @@ end)
 
 function WritPath_ReplanFromBags()
   if not (WritPathNav and WritPathNav.route and #WritPathNav.route > 0) then return end
+  if WritPath_RouteActive and not WritPath_RouteActive() then return end   -- a finished route stays finished
   local before = {}
   for _, st in ipairs(WritPathNav.route) do if st.writ then before[st.writ] = true end end
   -- writs dropped from the plan (nothing to buy for them) stay out, even if you have them

@@ -53,11 +53,11 @@ end
 -- the cheapest plan for `target` Favor: one crate at a time, always the crate and filling that add the least
 -- cost per Favor, given what's already planned (the cheapest listings go first, so prices climb) and what you
 -- own (free). Returns the planner's view of it.
-function WritPath_FavorPlan(target)
+function WritPath_FavorPlan(target, noBags)   -- noBags: plan as if your bags were empty (buy everything)
   local Price = WritPath_Price
   local level = UnitLevel and UnitLevel("player") or 60
   local used, owned = {}, {}
-  local function Own(id) if owned[id] == nil then owned[id] = Count(id) end; return owned[id] end
+  local function Own(id) if owned[id] == nil then owned[id] = noBags and 0 or Count(id) end; return owned[id] end
   local function Buy(id, want)   -- cost of having `want` of it: buy what you don't own
     local need = want - Own(id)
     if need <= 0 then return 0 end
@@ -102,7 +102,7 @@ function WritPath_FavorPlan(target)
   end
   table.sort(picks, function(a, b) return (a.cost - a.silver * a.count) / (a.favor * a.count) < (b.cost - b.silver * b.count) / (b.favor * b.count) end)
   return { favor = true, target = target, earned = earned, cost = cost, back = back, picks = picks, used = used,
-           owned = owned, lockedOut = lockedOut, route = {} }
+           owned = owned, lockedOut = lockedOut, route = {}, noBags = noBags or nil }
 end
 
 -- the planner's rows, summary and note for a Favor plan
@@ -130,7 +130,9 @@ function WritPath_FavorView(plan)
       summary = summary .. "\n" .. W_ .. ("Only %d of %d: the auction house doesn't have enough crates or materials listed."):format(plan.earned, plan.target) .. "|r"
     end
   end
-  local note = "Cheapest crate and filling first, at your last scan's prices (crates and materials in your bags count as free). "
+  local note = "Cheapest crate and filling first, at your last scan's prices"
+    .. (plan.noBags and " (everything bought: what's in your bags is left alone). " or " (crates and materials in your bags count as free). ")
+    .. ""
     .. "Fill each crate by right-clicking it, then hand the Sealed crates to Dokimi at the Durotar Supply camp, just west of the Crossroads "
     .. "(Alliance: Marcy Baker, Three Corners, Redridge). Artisan crates are left out until what they pay is known."
     .. (have and (" You have " .. have .. " Merchant's Favor.") or "")
@@ -152,10 +154,12 @@ function WritPath_FavorStart(plan)
   local list = {}
   for id, n in pairs(plan.used) do
     if n > (plan.owned[id] or 0) then
+      -- not using your bags: buy all of it on top of what you have (the list counts your bags as bought)
+      local total = plan.noBags and (n + Count(id)) or n
       local isCrate
       for _, c in ipairs(WritPath_Crates) do if c[1] == id then isCrate = c end end
       list[#list + 1] = { id = id, name = ItemName(id) or (isCrate and ("Waylaid Crate: " .. isCrate[2])) or ("item " .. id),
-                          total = n, unit = WritPath_Price(id, n - (plan.owned[id] or 0)), favor = true, forText = forText[id] }
+                          total = total, unit = WritPath_Price(id, n - (plan.owned[id] or 0)), favor = true, forText = forText[id] }
     end
   end
   table.sort(list, function(a, b) return a.id < b.id end)

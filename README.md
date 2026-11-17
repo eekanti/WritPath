@@ -91,7 +91,8 @@ Open the planner (map icon). There is one **Plan** button:
 
 In the planner, click **Rep** to switch it to **Favor** (or type `/writs favor`), type how much Merchant's Favor you
 want and press **Plan**. WritPath works out which Waylaid Crates and fillings cost the least per Favor at your
-last scan's prices, counting the silver each crate pays back and anything already in your bags as free. When the
+last scan's prices, counting the silver each crate pays back and anything already in your bags as free (untick
+**Use my bags** to buy everything and leave your bags alone). When the
 cheapest crate or material runs out on the auction house, the next best takes over, until the target is reached
 (or it tells you how far the auction house can get you). **Start buying** puts the crates and materials on the
 shopping list, next to any writ shopping. Right-click each crate to fill it and hand the Sealed crates to Dokimi

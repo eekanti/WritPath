@@ -329,3 +329,11 @@ function WritPath_ScanPrice(id, n)
   return cost / n
 end
 function WritPath_ScanTime() return WritPathPrices and WritPathPrices.t end
+-- how many of an item the last scan saw listed (nil: the scan didn't see it at all)
+function WritPath_ScanAvail(id)
+  local e = WritPathPrices and WritPathPrices.items and WritPathPrices.items[id]
+  if not (e and e.l) then return nil end
+  local n = 0
+  for _, x in ipairs(e.l) do n = n + (x[2] or 0) end
+  return n
+end

@@ -190,15 +190,22 @@ if EllesmereUI and EllesmereUI.RegisterSkin then EllesmereUI.RegisterSkin("WritP
 local Search
 
 local Skip
+-- a price against what the plan expected: green within 10%, yellow within 25%, red above (white: nothing to compare)
+local function Shade(total, expected)
+  if not (expected and expected > 0) then return "|cFFFFFFFF" end
+  local r = total / expected
+  if r <= 1.10 + 1e-9 then return "|cFF1EFF00" elseif r <= 1.25 + 1e-9 then return "|cFFFFD100" end
+  return "|cFFFF4040"
+end
+local function Expected(it, qty) return it.unit and it.unit > 0 and it.unit * qty or nil end
 local function RowPrice(it)
   if it.skipped then return GREY .. "skipped|r" end
   if Need(it) == 0 then return G .. "bought|r" end
   local pk = seen[it.id]
   if pk == false then return W_ .. "none listed|r" end
   if not pk then return GREY .. "..." .. "|r" end
-  local over = it.unit and it.unit > 0 and pk.total > it.unit * math.min(pk.qty, Need(it)) * CAP + 0.5
   -- a star: cheaper per unit in a stack bigger than you need (hover the row for it)
-  return (over and W_ or Y) .. Coins(pk.total) .. "|r" .. (pk.stack and (GREY .. "*|r") or "")
+  return Shade(pk.total, Expected(it, math.min(pk.qty, Need(it)))) .. Coins(pk.total) .. "|r" .. (pk.stack and (GREY .. "*|r") or "")
 end
 -- what's left to buy at what the auction house asks now (the plan's price where nothing was found yet)
 local function Totals()
@@ -259,7 +266,7 @@ local function Render()
       status = ("Cheapest: %s%s|r for %d%s. The plan expected %s each."):format(Y, Coins(p.total), p.qty, each, unit)
       if p.qty > Need(it) then status = status .. W_ .. (" Only sold as a stack of %d: you need %d.|r"):format(p.qty, Need(it)) end
       if p.stack then status = status .. GREY .. ("\nCheaper per unit: a stack of %d at %s each (%s).|r"):format(p.stack.qty, Coins(p.stack.unit), Coins(p.stack.total)) end
-      main = (p.kind == "commodity" and "Get price: " or "Buy for ") .. Coins(p.total)
+      main = "Buy @ " .. Shade(p.total, Expected(it, math.min(p.qty, Need(it)))) .. Coins(p.total) .. "|r"
       alt = "Skip"
     elseif ph == "over" then
       if p.qty > Need(it) then
@@ -269,13 +276,13 @@ local function Render()
         status = W_ .. ("Cheapest is %s each, more than %d%% over the %s the plan was built on."):format(Coins(p.unit), (CAP - 1) * 100, unit) .. "|r"
       end
       if p.stack then status = status .. GREY .. ("\nCheaper per unit: a stack of %d at %s each (%s).|r"):format(p.stack.qty, Coins(p.stack.unit), Coins(p.stack.total)) end
-      main, alt = "Skip", "Buy anyway: " .. Coins(p.total)
-    elseif ph == "quote" then status, main = "Getting a firm price...", "Getting price..."
+      main, alt = "Skip", "Buy anyway @ " .. Shade(p.total, Expected(it, math.min(p.qty, Need(it)))) .. Coins(p.total) .. "|r"
+    elseif ph == "quote" then status, main = "Getting a firm price...", "Buying..."
     elseif ph == "confirm" then
       status = ("Firm price: %s%s|r for %d (%s each).%s"):format(Y, Coins(state.quoteTotal), p.qty, Coins(state.quoteUnit),
         state.quoteUnit > p.unit * 1.0001 and (W_ .. " Higher than the search showed.|r") or "")
       local overCap = it.unit and it.unit > 0 and state.quoteUnit > it.unit * CAP
-      main, alt = (overCap and "Confirm anyway: " or "Confirm: ") .. Coins(state.quoteTotal), "Cancel"
+      main, alt = (overCap and "Confirm anyway @ " or "Confirm @ ") .. Shade(state.quoteTotal, Expected(it, p.qty)) .. Coins(state.quoteTotal) .. "|r", "Cancel"
     elseif ph == "none" then status, main = W_ .. "Not on the auction house right now.|r", "Skip"
     elseif ph == "buying" then status, main = "Buying...", "Buying..."
     elseif ph == "unsure" then
@@ -475,7 +482,7 @@ end
 local function Credit(it, qty, paid)
   it.bought = (it.bought or 0) + qty
   it.paid = (it.paid or 0) + (paid or 0)
-  boughtThisVisit = true
+  if not it.favor then boughtThisVisit = true end   -- writ shopping: the route is rebuilt when you leave
   NotePaid(it.id, qty, paid or 0, it.favor)
   Print(("Bought %s%s for %s."):format(ItemName(it.id) or it.name or "item", qty > 1 and (" x" .. qty) or "", Coins(paid or 0)))
 end
