@@ -41,14 +41,9 @@ Roads, boats and flight times you use are learned as you travel.
 
 ### Staying up to date
 
-1. Once: open `Interface\AddOns\WritPath\tools` and double-click **Setup Updater.bat**. It puts an
-   **Update WritPath** shortcut on your desktop and checks for a new version each time you log in to Windows.
-   No administrator rights needed; your settings and learned data are never touched.
-2. In game, WritPath tells you when a newer version is out (it hears it from friends, guild or group members who
-   already have it): double-click **Update WritPath**, then `/reload` (restart the game if new files were added).
-
-To remove the updater: delete the two shortcuts (desktop, and "WritPath updater" in your Startup folder) and
-`%LOCALAPPDATA%\WritPath`.
+Install and update WritPath with the CurseForge app, or download the newest zip from the
+[releases page](https://github.com/eekanti/WritPath/releases/latest). In game, WritPath says in chat when a newer
+version is out (it hears it from friends, guild or group members who already have it).
 
 ## How to use
 

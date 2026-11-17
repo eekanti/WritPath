@@ -102,7 +102,7 @@ WritPath_Scan = Run   -- /writs scan (Nav.lua owns the slash command)
 ---------------------------------------------------------------- a newer WritPath is out
 -- WritPath users tell each other which version they have: hidden addon messages to your guild, your group and
 -- your online friends, at login and when your group changes. Someone with a newer version means there's an
--- update: you're told (once a session, and again at each login until you have it) to run the updater.
+-- update: a line in chat says so (once a session, and again at each login until you have it).
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
