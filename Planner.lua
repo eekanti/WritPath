@@ -1572,13 +1572,17 @@ ev:RegisterEvent("QUEST_GREETING")
 ev:RegisterEvent("QUEST_TURNED_IN")
 ev:RegisterEvent("TAXIMAP_OPENED")
 ev:SetScript("OnEvent", function(_, event, a1)
+  -- the camp's crate takers: every finished quest handed in there (Sealed crates, the camp's own quests)
+  local CAMP = { ["Dokimi"] = true, ["Marcy Baker"] = true }
+  local function AtCamp() local n = UnitName and (UnitName("npc") or UnitName("target")); return n and CAMP[n] or false end
+  local function CrateTitle(t) return t and (t:find("Crate") or t:find("Shipping Container")) and true or false end
   if event == "QUEST_COMPLETE" or event == "QUEST_PROGRESS" then
     NoteTurnin()   -- first: who you're handing in to, and where
     -- hand a writ in for you: "Continue" on the progress page, then the reward (a writ has no reward choice;
     -- if one ever does, you choose). /writs accept turns this off with the auto-accept.
     if WritPathNav and WritPathNav.noAutoAccept then return end
     local q = GetQuestID and GetQuestID()
-    if not (q and q > 0 and WritPath_IsWritQuest(q)) then return end
+    if not ((q and q > 0 and WritPath_IsWritQuest(q)) or AtCamp()) then return end
     if event == "QUEST_PROGRESS" then
       if IsQuestCompletable and IsQuestCompletable() and CompleteQuest then CompleteQuest() end
     elseif GetQuestReward and (not GetNumQuestChoices or GetNumQuestChoices() <= 1) then
@@ -1590,16 +1594,18 @@ ev:SetScript("OnEvent", function(_, event, a1)
     -- a customer's window lists quests: open the finished writ (only one per customer per day anyway)
     if WritPathNav and WritPathNav.noAutoAccept then return end
     if event == "GOSSIP_SHOW" and C_GossipInfo and C_GossipInfo.GetActiveQuests then
+      local camp = AtCamp()
       for _, info in ipairs(C_GossipInfo.GetActiveQuests() or {}) do
-        if info.isComplete and info.questID and WritPath_IsWritQuest(info.questID) then
+        if info.isComplete and info.questID and (camp or WritPath_IsWritQuest(info.questID)) then
           C_GossipInfo.SelectActiveQuest(info.questID); return
         end
       end
     elseif event == "QUEST_GREETING" and GetNumActiveQuests and GetActiveQuestID then
+      local camp = AtCamp()
       for i = 1, GetNumActiveQuests() do
         local q = GetActiveQuestID(i)
         local done = IsActiveQuestCompleted == nil or IsActiveQuestCompleted(i)   -- missing on some clients: try anyway
-        if q and WritPath_IsWritQuest(q) and done then SelectActiveQuest(i); return end
+        if q and (camp or WritPath_IsWritQuest(q)) and done then SelectActiveQuest(i); return end
       end
     end
     return
@@ -1608,7 +1614,8 @@ ev:SetScript("OnEvent", function(_, event, a1)
     -- only Craftsman's Writs, never other quests; /writs accept turns this off and on
     if WritPathNav and WritPathNav.noAutoAccept then return end
     local q = GetQuestID and GetQuestID()
-    if q and q > 0 and WritPath_IsWritQuest(q) and AcceptQuest then AcceptQuest() end
+    local title = GetTitleText and GetTitleText()
+    if q and q > 0 and (WritPath_IsWritQuest(q) or CrateTitle(title)) and AcceptQuest then AcceptQuest() end
     return
   end
   if event == "QUEST_TURNED_IN" then

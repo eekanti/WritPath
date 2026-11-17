@@ -95,8 +95,9 @@ last scan's prices, counting the silver each crate pays back and anything alread
 **Use my bags** to buy everything and leave your bags alone). When the
 cheapest crate or material runs out on the auction house, the next best takes over, until the target is reached
 (or it tells you how far the auction house can get you). **Start buying** puts the crates and materials on the
-shopping list, next to any writ shopping. Right-click each crate to fill it and hand the Sealed crates to Dokimi
-at the Durotar Supply camp, just west of the Crossroads (Alliance: Marcy Baker at Three Corners, Redridge).
+shopping list, next to any writ shopping. Right-click each crate to fill it and talk to Dokimi
+at the Durotar Supply camp, just west of the Crossroads (Alliance: Marcy Baker at Three Corners, Redridge): your
+Sealed crates are handed in for you (`/writs accept` turns that off).
 Artisan crates aren't planned until what they pay is known.
 
 ### Buy: the Writ shopping list at the auction house
@@ -179,7 +180,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | `/writs favor` | Planner for Merchant's Favor: the cheapest Waylaid Crates and fillings |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs money` | Every turn-in's cost (writ + item) and pouch, in chat |
-| `/writs accept` | Turn off (or back on) accepting writs for you when you open them, and handing them in when you talk to their customer |
+| `/writs accept` | Turn off (or back on) accepting writs for you when you open them, handing them in when you talk to their customer, and handing Sealed crates in at the camp |
 | `/writs clear` | Clear the route, the plan and its shopping list (no confirm) |
 | `/writs travel` | Which flight paths are known and placed, and how many roads and ships WritPath knows |
 | `/writs leg` | Why the way to the next customer looks the way it does (times, route, nearest flight points and docks); also saved for a `/reload` |
