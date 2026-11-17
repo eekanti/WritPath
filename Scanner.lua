@@ -73,8 +73,8 @@ local function Build()
     -- beside the panel, not above it: the panel sits at the top of the screen, where a tooltip above it gets pushed
     -- back down over the button
     GameTooltip:SetOwner(self, "ANCHOR_NONE"); GameTooltip:ClearAllPoints()
-    GameTooltip:SetPoint("TOPRIGHT", panel, "TOPLEFT", -4, 0); GameTooltip:SetText("Scan writ prices")
-    GameTooltip:AddLine("Reads the auction house and keeps the prices of writs and the items they ask for. A detailed scan (every listing, stacks too) when the game allows one, every 15 minutes; otherwise a quick summary scan (lowest price per item).", 1, 1, 1, true)
+    GameTooltip:SetPoint("TOPRIGHT", panel, "TOPLEFT", -4, 0); GameTooltip:SetText("Scan auction house prices")
+    GameTooltip:AddLine("Reads the auction house and keeps the prices of writs and the items they ask for, and of Waylaid Crates and their fillings. A detailed scan (every listing, stacks too) when the game allows one, every 15 minutes; otherwise a quick summary scan (lowest price per item).", 1, 1, 1, true)
     GameTooltip:Show()
   end)
   scanBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -125,7 +125,7 @@ function Render()
   if working then scanBtn:Disable() else scanBtn:Enable() end
   if phase.kind == "idle" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(t and 1 or 0)
-    barText:SetText(t and (GREY .. (WritPathPrices.count or 0) .. " writ prices · " .. (WritPathPrices.kind == "summary" and "summary scan" or "detailed scan") .. "|r") or (GREY .. "Press Scan to read writ prices|r"))
+    barText:SetText(t and (GREY .. (WritPathPrices.count or 0) .. " prices · " .. (WritPathPrices.kind == "summary" and "summary scan" or "detailed scan") .. "|r") or (GREY .. "Press Scan to read prices|r"))
   elseif phase.kind == "wait" then
     barText:SetText("Waiting for the auction house...")
   elseif phase.kind == "read" then
@@ -140,7 +140,7 @@ function Render()
     barText:SetText(("Loading item data for %d auctions..."):format(phase.left))
   elseif phase.kind == "done" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(1)
-    barText:SetText(GOLD .. ("Done (%s): %d writ prices in %d s"):format(phase.summary and "summary" or "detailed", phase.count, phase.secs) .. "|r")
+    barText:SetText(GOLD .. ("Done (%s): %d prices in %d s"):format(phase.summary and "summary" or "detailed", phase.count, phase.secs) .. "|r")
   elseif phase.kind == "fail" then
     bar:SetMinMaxValues(0, 1); bar:SetValue(0)
     barText:SetText(RED .. phase.why .. "|r")
@@ -172,7 +172,7 @@ local function Finish(found, n, missed, summary)
   local secs = math.floor(GetTime() - startedAt + 0.5)
   phase = { kind = "done", count = count, secs = secs, summary = summary }
   Render()
-  Print(("%s scan: %d %s in %d s, prices for %d writs and writ items saved."):format(summary and "Summary" or "Detailed", n,
+  Print(("%s scan: %d %s in %d s, prices for %d writs, crates and their items saved."):format(summary and "Summary" or "Detailed", n,
     summary and "items" or "auctions", secs, count)
     .. ((missed or 0) > 0 and (" %d auctions' item data never loaded."):format(missed) or ""))
   if WritPath_PlannerLearned then WritPath_PlannerLearned() end

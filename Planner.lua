@@ -1293,7 +1293,7 @@ local function Show(plan, top)
   local roads, ships = Travel.Learned()
   if plan.favor then note:SetText(favorNote) else
   note:SetText((plan.mine and "Shortest order from where you stand, one writ per customer per day. "
-    or "Prices from your last Auctionator scan; times are estimates. ")
+    or "Prices from your last auction house scan; times are estimates. ")
     .. (select(2, WritPath_Pace()) >= 3 and ("Times are scaled to your pace (x%.2f). "):format((WritPath_Pace())) or "")
     .. ("WritPath knows %d road crossings and %d ships from your travels; more as you ride. "):format(roads, ships)
     .. (fps == 0 and "No flight paths known yet: open any flight master's map once on each continent."
