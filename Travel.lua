@@ -678,8 +678,6 @@ local SHIP_NAMES = {
   [1413] = { [1434] = { "boat", "the Ratchet dock", "Booty Bay, Stranglethorn Vale" } },
   [1456] = { [1458] = { "zeppelin", "the Thunder Bluff zeppelin", "the Undercity" } },
   [1458] = { [1456] = { "zeppelin", "the Undercity zeppelin", "Thunder Bluff" } },
-  [1454] = { [1418] = { "zeppelin", "the Orgrimmar zeppelin", "the Badlands" } },
-  [1418] = { [1454] = { "zeppelin", "the Badlands zeppelin", "Orgrimmar" } },
   [2548] = { [1446] = { "boat", "the Powderfuse Port dock", "Steamwheedle Port, Tanaris" } },
   [1446] = { [2548] = { "boat", "the Steamwheedle Port dock", "Powderfuse Port, Riverglades" } },
 }
@@ -1033,8 +1031,11 @@ local function Poll()
         RecordPath(REC.trail, last, p)
         REC.trail = { { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now } }
       end
-    elseif REC.still and now - REC.still.t < 600 then
-      RecordShip(REC.still, p)   -- a ship: from where you last stood waiting
+    elseif REC.still and now - REC.still.t < 600 and now - REC.still.t >= 45 then
+      -- a ship: from where you last stood waiting. A boat or zeppelin takes a minute or more to cross; landing
+      -- on the other continent sooner was a summon, portal or teleport (a summon was once taken for an Orgrimmar -> Badlands
+      -- zeppelin), not a ship
+      RecordShip(REC.still, p)
     end
   end
 
