@@ -1,5 +1,6 @@
 # Pushing a version tag (v1.9.1) builds WritPath-1.9.1.zip, with the addon in a "WritPath" folder ready to drop
 # into Interface\AddOns, and publishes it as a GitHub release. The tag's message is the release notes.
+# WritPath-1.9.1-curseforge.zip is the one to upload to CurseForge: no updater scripts, nothing from git.
 name: Release
 
 on:
@@ -28,6 +29,12 @@ jobs:
           mkdir -p build/WritPath
           rsync -a --exclude '.git' --exclude '.github' --exclude 'mockups' --exclude 'build' ./ build/WritPath/
           (cd build && zip -qr "WritPath-$VER.zip" WritPath)
+          # for CurseForge: no updater scripts (the CurseForge app updates it), nothing git-related
+          mkdir -p build/cf
+          rsync -a --exclude 'tools' build/WritPath build/cf/
+          find build/cf -name '.git*' -prune -exec rm -rf {} +
+          (cd build/cf && zip -qr "../WritPath-$VER-curseforge.zip" WritPath)
+          if unzip -l "build/WritPath-$VER-curseforge.zip" | grep -E '\.git|tools/|\.bat|\.ps1'; then echo "CurseForge zip has files it mustn't"; exit 1; fi
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > build/notes.md
           echo "VER=$VER" >> "$GITHUB_ENV"
 
@@ -35,5 +42,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "build/WritPath-$VER.zip" \
+          gh release create "$GITHUB_REF_NAME" "build/WritPath-$VER.zip" "build/WritPath-$VER-curseforge.zip" \
             --title "WritPath $VER" --notes-file build/notes.md --latest
