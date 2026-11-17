@@ -320,7 +320,7 @@ local function LocateFlightPaths()
   -- game couldn't place goes to the flight master of the zone its name ends in ("Kargath, Badlands")
   local FM = WritPath_Data and WritPath_Data.flightMasters or {}
   local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
-  local function Ours(m) return m[4] == mine or m[4] == "AH" end
+  local function Ours(m) return m[4] == mine or m[4] == "AH" end   -- "D": druids only, never a place to learn a flight path
   for id in pairs(known) do
     local f = WritPathLearned.fp[id]
     if f and f.map then
@@ -1131,8 +1131,7 @@ function T.Teleports()
     end
   end
   if KnowsSpell(MOONGLADE) then
-    local m, x, y = FlightSpot(UnitFactionGroup("player") == "Horde" and 69 or 49)
-    local p = m and T.Point(m, x, y)
+    local p = T.Point(1450, 44.1, 45.2)   -- where Teleport: Moonglade lands, by the druids' own flight masters
     if p then list[#list + 1] = { key = "moonglade", text = "Cast Teleport: Moonglade", dest = p, destName = "Moonglade",
                                   ready = (SpellLeft(MOONGLADE)), cd = 0, cast = 20 } end
   end

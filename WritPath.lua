@@ -3,6 +3,44 @@
 
 local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. msg) end
 
+---------------------------------------------------------------- what's in your bags
+-- How many of an item are IN your bags: not what you're wearing, and not the bags themselves (a quiver or ammo
+-- pouch is a bag in a bag slot, and the game's item count includes it). Read once per bag change, then looked up.
+local bagCounts
+local function ReadBags()
+  local C = C_Container
+  local numSlots = (C and C.GetContainerNumSlots) or GetContainerNumSlots
+  local itemID = (C and C.GetContainerItemID) or GetContainerItemID
+  local info = (C and C.GetContainerItemInfo) or GetContainerItemInfo
+  if not (numSlots and itemID and info) then return nil end
+  local t = {}
+  local last = (NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4)
+  for bag = 0, last do
+    for slot = 1, numSlots(bag) or 0 do
+      local id = itemID(bag, slot)
+      if id then
+        local i = info(bag, slot)
+        local n = type(i) == "table" and i.stackCount or select(2, info(bag, slot)) or 1
+        t[id] = (t[id] or 0) + (n or 1)
+      end
+    end
+  end
+  return t
+end
+function WritPath_BagCount(id)
+  if not id then return 0 end
+  if not bagCounts then bagCounts = ReadBags() end
+  if bagCounts then return bagCounts[id] or 0 end
+  -- no bag API (never on a real client): the game's own count
+  if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(id) or 0 end
+  return GetItemCount and GetItemCount(id) or 0
+end
+local bagWatch = CreateFrame("Frame")
+for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_ENTERING_WORLD" }) do
+  bagWatch:RegisterEvent(e)
+end
+bagWatch:SetScript("OnEvent", function() bagCounts = nil end)
+
 local function WritQuests()
   local out = {}
   if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
@@ -106,7 +144,7 @@ WritPath_Scan = Run   -- /writs scan (Nav.lua owns the slash command)
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
-WritPath_VERSION = "1.9.5"
+WritPath_VERSION = "1.10.0"
 local MINE = WritPath_VERSION
 local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
 local function Newer(a, b)   -- is version a newer than version b?

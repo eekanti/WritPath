@@ -87,6 +87,17 @@ Open the planner (map icon). There is one **Plan** button:
 5. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
    (**Send to Auctionator** also makes a "WritPath" shopping list in Auctionator, if you'd rather buy there.)
 
+### Merchant's Favor: the cheapest Waylaid Crates
+
+In the planner, click **Rep** to switch it to **Favor** (or type `/writs favor`), type how much Merchant's Favor you
+want and press **Plan**. WritPath works out which Waylaid Crates and fillings cost the least per Favor at your
+last scan's prices, counting the silver each crate pays back and anything already in your bags as free. When the
+cheapest crate or material runs out on the auction house, the next best takes over, until the target is reached
+(or it tells you how far the auction house can get you). **Start buying** puts the crates and materials on the
+shopping list, next to any writ shopping. Right-click each crate to fill it and hand the Sealed crates to Dokimi
+at the Durotar Supply camp, just west of the Crossroads (Alliance: Marcy Baker at Three Corners, Redridge).
+Artisan crates aren't planned until what they pay is known.
+
 ### Buy: the Writ shopping list at the auction house
 
 Open the auction house and the **Writ shopping** list opens beside it with everything the plan needs (it only opens
@@ -164,6 +175,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 | `/writs plan` | Open the planner |
 | `/writs mine` | Planner with no target: just the writs you have |
 | `/writs buy` | Planner with your last rep target |
+| `/writs favor` | Planner for Merchant's Favor: the cheapest Waylaid Crates and fillings |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs money` | Every turn-in's cost (writ + item) and pouch, in chat |
 | `/writs accept` | Turn off (or back on) accepting writs for you when you open them, and handing them in when you talk to their customer |

@@ -31,10 +31,7 @@ local function Coins(c, signed)
   return (neg and "-" or "") .. str
 end
 
-local function Count(id)
-  if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(id) or 0 end
-  return GetItemCount and GetItemCount(id) or 0
-end
+local function Count(id) return WritPath_BagCount(id) end   -- in your bags, not worn (WritPath.lua)
 
 local function Totals()
   local got, spent, unpaid = 0, 0, 0

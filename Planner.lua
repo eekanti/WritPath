@@ -15,10 +15,7 @@ local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " 
 -- how many you have: in your bags, plus what WritPath bought for you that's still in the mail
 local function Count(id)
   if not id then return 0 end
-  local n = 0
-  if C_Item and C_Item.GetItemCount then n = C_Item.GetItemCount(id) or 0
-  elseif GetItemCount then n = GetItemCount(id) or 0 end
-  return n + (WritPath_InMail and WritPath_InMail(id) or 0)
+  return WritPath_BagCount(id) + (WritPath_InMail and WritPath_InMail(id) or 0)
 end
 local function Done(q) return C_QuestLog.IsQuestFlaggedCompleted(q) end
 local function InLog(q) return C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetLogIndexForQuestID(q) ~= nil end
@@ -36,6 +33,7 @@ local function Coins(c)
   local t = g > 0 and (g .. "g " .. s .. "s") or (s > 0 and (s .. "s " .. c % 100 .. "c") or (c % 100 .. "c"))
   return (neg and "-" or "") .. t
 end
+WritPath_Coins = Coins
 
 ---------------------------------------------------------------- learning customers from map pins
 local zoneMaps
@@ -237,6 +235,7 @@ local function Price(item, n)
   end
   return mine or theirs
 end
+WritPath_Price = Price   -- Favor.lua prices crates and materials the same way
 local function HavePrices()
   return (Auctionator and Auctionator.API) or (WritPath_ScanTime and WritPath_ScanTime()) and true or false
 end
@@ -950,7 +949,9 @@ ageText:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, -32)
 
 -- the rep target and the Plan button
 local buyRow = CreateFrame("Frame", nil, f); buyRow:SetSize(INNER, 24)
-local repL = Text(buyRow); repL:SetPoint("LEFT", 0, 0); repL:SetText("Rep target"); repL:SetWordWrap(false)
+-- what to plan for: reputation (writs) or Merchant's Favor (Waylaid Crates)
+local modeBtn = Btn(buyRow, "Rep"); modeBtn:SetPoint("LEFT", 0, 0)
+local repL = Text(buyRow); repL:SetPoint("LEFT", modeBtn, "RIGHT", 8, 0); repL:SetText("target"); repL:SetWordWrap(false)
 local repBox = CreateFrame("EditBox", nil, buyRow, "InputBoxTemplate"); repBox:SetSize(54, 20); repBox:SetAutoFocus(false)
 repBox:SetNumeric(true); repBox:SetText("1000"); repBox:SetPoint("LEFT", repL, "RIGHT", 10, 0)
 local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
@@ -1222,7 +1223,9 @@ local function Show(plan, top)
   ageText:SetText(PriceAge(plan))
   local y = 0
   local entries, prev = {}, plan.start
-  for i, p in ipairs(plan.route) do
+  local favorSummary, favorNote
+  if plan.favor then entries, favorSummary, favorNote = WritPath_FavorView(plan) end
+  for i, p in ipairs(plan.favor and {} or plan.route) do
     local tl = plan.tele and plan.tele[i]
     local leg = (prev and p.pos) and Minutes(Secs(prev, p.pos) - (tl and tl.save or 0)) or nil
     prev = p.pos or prev
@@ -1247,8 +1250,10 @@ local function Show(plan, top)
 
   y = y - 6
   summary:ClearAllPoints(); summary:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-  local net = plan.pouches - plan.cost
-  if #plan.route == 0 then
+  local net = (plan.pouches or 0) - plan.cost
+  if plan.favor then
+    summary:SetText(favorSummary)
+  elseif #plan.route == 0 then
     summary:SetText(W_ .. (plan.mine and (plan.owned == 0 and "No writs in your bags or quest log."
       or "None of your writs can go today: see the lines above.")
       or ("Nothing to plan: no writ with a known customer and an AH price is free today." .. WhyNone())) .. "|r")
@@ -1265,6 +1270,7 @@ local function Show(plan, top)
   local fps, own = Travel.KnownFlightPaths()
   note:ClearAllPoints(); note:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
   local roads, ships = Travel.Learned()
+  if plan.favor then note:SetText(favorNote) else
   note:SetText((plan.mine and "Shortest order from where you stand, one writ per customer per day. "
     or "Prices from your last Auctionator scan; times are estimates. ")
     .. (select(2, WritPath_Pace()) >= 3 and ("Times are scaled to your pace (x%.2f). "):format((WritPath_Pace())) or "")
@@ -1272,6 +1278,7 @@ local function Show(plan, top)
     .. (fps == 0 and "No flight paths known yet: open any flight master's map once on each continent."
      or (own >= fps and (fps .. " flight paths known.")
      or (fps .. " flight paths known (" .. (fps - own) .. " from RestedXP until you open a flight master's map on that continent)."))))
+  end
   y = y - note:GetStringHeight() - 4
 
   -- the scroll area takes what's left of half the screen; the window is never taller than that
@@ -1287,8 +1294,9 @@ local function Show(plan, top)
     if listH > viewH + 1 then bar:Show() else bar:Hide() end
   end
 
-  if #plan.route > 0 then goBtn:Enable() else goBtn:Disable() end
-  if #ShoppingFor(plan) > 0 and Auctionator and Auctionator.API then shopBtn:Enable() else shopBtn:Disable() end
+  goBtn:SetText(plan.favor and "Start buying" or "Start route")
+  if (plan.favor and #plan.picks > 0) or (not plan.favor and #plan.route > 0) then goBtn:Enable() else goBtn:Disable() end
+  if not plan.favor and #ShoppingFor(plan) > 0 and Auctionator and Auctionator.API then shopBtn:Enable() else shopBtn:Disable() end
   FitWidth(goBtn); FitWidth(shopBtn); FitWidth(clearBtn)
   goBtn:ClearAllPoints(); goBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD, PAD)
   shopBtn:ClearAllPoints(); shopBtn:SetPoint("RIGHT", goBtn, "LEFT", -6, 0)
@@ -1339,7 +1347,10 @@ local function DoMine()
   Show(plan, -62)
 end
 
+local function Favor() return WritPathNav and WritPathNav.planFor == "favor" end
+local DoFavor
 local function DoPlan(buy)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
+  if Favor() then DoFavor(); return end
   local target = tonumber(repBox:GetText())
   if buy and not (target and target > 0) then target = WritPathNav.plan and WritPathNav.plan.target or 1000 end
   if not target or target <= 0 then DoMine(); return end   -- no target: just the writs you have
@@ -1359,6 +1370,34 @@ local function DoPlan(buy)   -- buy: plan for a target even if the box is empty 
   cards.cheap:Show(); cards.fast:Show()
   Select(WritPathNav.planChoice or "cheap")
 end
+-- Merchant's Favor: the cheapest crates and fillings for a Favor target (Favor.lua)
+function DoFavor()
+  buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
+  cards.cheap:Hide(); cards.fast:Hide()
+  WritPathNav.planMode = "favor"
+  local target = tonumber(repBox:GetText())
+  if not (target and target > 0) then target = WritPathNav.favorTarget or 100 end
+  WritPathNav.favorTarget = target
+  if not HavePrices() then
+    Show({ favor = true, picks = {}, route = {}, earned = 0, target = target, cost = 0, back = 0, lockedOut = 0 }, -62)
+    summary:SetText(W_ .. "No prices yet: open the auction house and press Scan (or install Auctionator).|r"); return
+  end
+  Show(WritPath_FavorPlan(target), -62)
+end
+local function SetMode(favor)
+  WritPathNav.planFor = favor and "favor" or "rep"
+  modeBtn:SetText(favor and "Favor" or "Rep"); FitWidth(modeBtn)
+  if favor then repBox:SetText(tostring(WritPathNav.favorTarget or 100))
+  else repBox:SetText(tostring(WritPathNav.plan and WritPathNav.plan.target or 1000)) end
+end
+modeBtn:SetScript("OnClick", function() SetMode(not Favor()); DoPlan() end)
+modeBtn:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan for")
+  GameTooltip:AddLine("Rep: the writs to reach a reputation target (empty: just the writs you have).", 1, 1, 1, true)
+  GameTooltip:AddLine("Favor: the cheapest Waylaid Crates and fillings to earn that much Merchant's Favor.", 1, 1, 1, true)
+  GameTooltip:Show()
+end)
+modeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 planBtn:SetScript("OnClick", function() DoPlan() end)
 repBox:SetScript("OnEnterPressed", function(bx) bx:ClearFocus(); DoPlan() end)
 closeX:SetScript("OnClick", function() f:Hide() end)
@@ -1387,6 +1426,10 @@ shopBtn:SetScript("OnClick", function()
 end)
 
 goBtn:SetScript("OnClick", function()
+  if current and current.favor then
+    if #current.picks > 0 then WritPath_FavorStart(current); f:Hide() end
+    return
+  end
   if not current or #current.route == 0 then return end
   WritPathNav.plannedCost = WritPathNav.plannedCost or {}
   for _, p in ipairs(current.route) do WritPathNav.plannedCost[p.w.q] = p.cost end
@@ -1466,6 +1509,12 @@ function WritPath_OpenPlanner(mode)   -- mode: "mine" (just your writs), "buy" (
   local o = WritPathNav.plan
   if mode == "mine" then repBox:SetText("")
   elseif o and (mode == "buy" or WritPathNav.planMode ~= "mine") then repBox:SetText(o.target) end
+  if mode == "favor" then WritPathNav.planFor = "favor" elseif mode then WritPathNav.planFor = "rep" end
+  SetMode(Favor())
+  if not Favor() then
+    if mode == "mine" then repBox:SetText("")
+    elseif o and (mode == "buy" or WritPathNav.planMode ~= "mine") then repBox:SetText(o.target) end
+  end
   FitWidth(planBtn)
   f:Show()
   DoPlan(mode == "buy")

@@ -75,10 +75,7 @@ end
 
 ---------------------------------------------------------------- step state
 local function QuestDone(q) return C_QuestLog.IsQuestFlaggedCompleted(q) end
-local function Count(id)
-  if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(id) or 0 end
-  return GetItemCount and GetItemCount(id) or 0
-end
+local function Count(id) return WritPath_BagCount(id) end   -- in your bags, not worn (WritPath.lua)
 
 -- a step on the way somewhere (it has a waypoint, and it isn't a hand-in or the shopping step)
 local NEAR_YARDS = 200
@@ -529,6 +526,7 @@ SlashCmdList.WRITPATH = function(msg)
   elseif msg == "plan" then WritPath_OpenPlanner()
   elseif msg == "mine" then WritPath_OpenPlanner("mine")
   elseif msg == "buy" then WritPath_OpenPlanner("buy")
+  elseif msg == "favor" or msg == "favour" then WritPath_OpenPlanner("favor")
   elseif msg == "why" then WritPath_WhyNot()
   elseif msg == "accept" then
     WritPathNav.noAutoAccept = not WritPathNav.noAutoAccept or nil

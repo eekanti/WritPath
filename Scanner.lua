@@ -21,6 +21,11 @@ local function Wanted()
     w[id] = true
     if wr.req then w[wr.req] = true end
   end
+  -- Waylaid Crates and what they're filled with (Favor.lua)
+  for _, c in ipairs(WritPath_Crates or {}) do
+    w[c[1]] = true
+    for _, f in ipairs(c[6]) do w[f[1]] = true end
+  end
   return w
 end
 

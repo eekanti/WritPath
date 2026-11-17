@@ -16,10 +16,7 @@ local G, W_, Y, GREY = "|cFF00FF25", "|cFFFCDC00", "|cFF00BCD4", "|cFFAAAAAA"
 local MODERN = C_AuctionHouse and C_AuctionHouse.SendSearchQuery and true or false
 local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. msg) end
 
-local function Count(id)
-  if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(id) or 0 end
-  return GetItemCount and GetItemCount(id) or 0
-end
+local function Count(id) return WritPath_BagCount(id) end   -- in your bags, not worn (WritPath.lua)
 local function ItemName(id)
   if C_Item and C_Item.GetItemNameByID then local n = C_Item.GetItemNameByID(id); if n then return n end end
   return GetItemInfo and (GetItemInfo(id)) or nil
@@ -41,6 +38,21 @@ function WritPath_SetShopList(list)
   WritPathNav.shopList = list
   WritPathNav.shopAt = time()
   -- a plan started with the auction house already open: open the list right away
+  if ahOpen and WritPath_BuyerOpen then WritPath_BuyerOpen(true)
+  elseif WritPath_BuyerRefresh then WritPath_BuyerRefresh() end
+end
+
+-- more to buy, next to what's on the list already (Merchant's Favor shopping beside writ shopping): the same
+-- item adds to its row, nothing already bought is forgotten
+function WritPath_AddToShopList(list)
+  WritPathNav.shopList = WritPathNav.shopList or {}
+  for _, e in ipairs(list or {}) do
+    local row
+    for _, it in ipairs(WritPathNav.shopList) do if it.id == e.id and not it.skipped then row = it end end
+    if row then row.total = (row.total or 0) + e.total
+    else e.base, e.bought = Count(e.id), 0; table.insert(WritPathNav.shopList, e) end
+  end
+  WritPathNav.shopAt = time()
   if ahOpen and WritPath_BuyerOpen then WritPath_BuyerOpen(true)
   elseif WritPath_BuyerRefresh then WritPath_BuyerRefresh() end
 end
@@ -523,6 +535,7 @@ function Skip(it, why)
     end
   end
   if WritPath_DropFromPlan then WritPath_DropFromPlan(drop, why) end
+  if WritPath_FavorSkip then WritPath_FavorSkip(it.id) end   -- a crate or what it's filled with (Favor.lua)
 end
 WritPath_BuyerSkip = Skip   -- for tests
 

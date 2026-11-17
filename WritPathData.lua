@@ -87,9 +87,9 @@ WritPath_Data = {
     { 1448, 34.4, 54.0, "H" },   -- Brakkar, Wind Rider Master
     { 1448, 62.5, 24.2, "A" },   -- Mishellena, Hippogryph Master
     { 1449, 45.2, 5.8, "AH" },   -- Gryfe, Flight Master
-    { 1450, 32.1, 66.6, "H" },   -- Faustron, Wind Rider Master
-    { 1450, 44.1, 45.2, "AH" },   -- Silva Fil'naveth, Darnassus Flight Master
-    { 1450, 44.3, 45.9, "AH" },   -- Bunthen Plainswind, Thunder Bluff Flight Master
+    { 1450, 32.1, 66.3, "H" },   -- Faustron, Wind Rider Master
+    { 1450, 44.1, 45.2, "D" },   -- Silva Fil'naveth, Darnassus Flight Master (druids only)
+    { 1450, 44.3, 45.9, "D" },   -- Bunthen Plainswind, Thunder Bluff Flight Master (druids only)
     { 1450, 48.1, 67.3, "A" },   -- Sindrayl, Hippogryph Master
     { 1451, 48.7, 36.7, "H" },   -- Runk Windtamer, Wind Rider Master
     { 1451, 50.6, 34.5, "A" },   -- Cloud Skydancer, Hippogryph Master
@@ -154,7 +154,7 @@ WritPath_Data = {
     [66] = { 1422, 42.9, 85.1, "A", "Chillwind Camp, Western Plaguelands" },   -- Bibilfaz Featherwhistle
     [67] = { 1423, 71.8, 49.6, "A", "Light's Hope Chapel, Eastern Plaguelands" },   -- Khaelyn Steelwing
     [68] = { 1423, 70.5, 47.5, "H", "Light's Hope Chapel, Eastern Plaguelands" },   -- Georgia
-    [69] = { 1450, 44.3, 45.9, "H", "Nighthaven, Moonglade" },   -- Bunthen Plainswind
+    [69] = { 1450, 32.1, 66.3, "H", "Nighthaven, Moonglade" },   -- Faustron (Bunthen Plainswind at 44.3, 45.9 flies druids only; fixed 2026-11-17)
     [70] = { 1428, 65.7, 24.2, "H", "Flame Crest, Burning Steppes" },   -- Vahgruk
     [71] = { 1428, 84.3, 68.3, "A", "Morgan's Vigil, Burning Steppes" },   -- Borgus Stoutarm
     [72] = { 1451, 48.7, 36.7, "H", "Cenarion Hold, Silithus" },   -- Runk Windtamer
