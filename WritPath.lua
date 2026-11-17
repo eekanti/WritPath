@@ -119,12 +119,8 @@ local told = {}
 local function Notice(v)
   if told[v] then return end
   told[v] = true
-  Print(("|cFFFFD100WritPath %s is out (you have %s). Double-click \"Update WritPath\" on your desktop, then /reload.|r"):format(v, MINE))
-  Print("|cFFAAAAAANo shortcut yet? Run \"Setup Updater.bat\" in Interface/AddOns/WritPath/tools once.|r")
-  if RaidNotice_AddMessage and RaidWarningFrame and ChatTypeInfo and ChatTypeInfo.RAID_WARNING then
-    RaidNotice_AddMessage(RaidWarningFrame, "WritPath " .. v .. " is out: run Update WritPath, then /reload", ChatTypeInfo.RAID_WARNING)
-  end
-  if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then PlaySound(SOUNDKIT.RAID_WARNING) end
+  -- one quiet line in chat, the way addons usually say it
+  Print(("A newer version (%s) is available. You have %s."):format(v, MINE))
 end
 local function Seen(v)
   if not (v and Newer(v, MINE)) then return end
