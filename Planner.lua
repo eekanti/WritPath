@@ -749,13 +749,19 @@ local function PlanBoth(target, zoneOnly, quick)
   end
   return res
 end
+local COMMITTED_FOR = 6 * 3600
 function PlanBothInner(target, zoneOnly, seedIds)
   local mine = PlanOwned()
   -- writs you have whose items you have too cost nothing: always used. Writs you have that still need an item
   -- bought compete on price like any writ you'd buy, so a small target doesn't pay for items it doesn't need.
+  -- A writ WritPath bought for you in the last few hours is committed: you planned it, so every new plan keeps it
+  -- and buys its item (planning again for a bigger target mustn't strand a writ you just paid for). Older spare
+  -- writs still compete on price.
   local start, owned, ownedKeys, paidOwned = mine.start, {}, {}, {}
+  local paid = WritPathNav and WritPathNav.paidFor or {}
+  local function JustBought(id) local b = paid[id]; return b and (b.t or 0) > time() - COMMITTED_FOR end
   for _, p in ipairs(mine.route) do
-    if (p.cost or 0) > 0 then paidOwned[#paidOwned + 1] = p
+    if (p.cost or 0) > 0 and not JustBought(p.id) then paidOwned[#paidOwned + 1] = p
     else owned[#owned + 1] = p; ownedKeys[p.c.key] = true end
   end
   local cands = Buyable(zoneOnly, ownedKeys)
