@@ -968,7 +968,7 @@ local buyRow = CreateFrame("Frame", nil, f); buyRow:SetSize(INNER, 24)
 local modeBtn = Btn(buyRow, "Rep"); modeBtn:SetPoint("LEFT", 0, 0)
 local repL = Text(buyRow); repL:SetPoint("LEFT", modeBtn, "RIGHT", 8, 0); repL:SetText("target"); repL:SetWordWrap(false)
 local repBox = CreateFrame("EditBox", nil, buyRow, "InputBoxTemplate"); repBox:SetSize(54, 20); repBox:SetAutoFocus(false)
-repBox:SetNumeric(true); repBox:SetText("1000"); repBox:SetPoint("LEFT", repL, "RIGHT", 10, 0)
+repBox:SetNumeric(true); repBox:SetText(""); repBox:SetPoint("LEFT", repL, "RIGHT", 10, 0)
 local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("LEFT", repBox, "RIGHT", 12, 0)
 -- Favor only: count what's already in your bags as free, or buy everything
 local bagsChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); bagsChk:SetSize(22, 22)
@@ -1368,7 +1368,7 @@ end
 local function Favor() return WritPathNav and WritPathNav.planFor == "favor" end
 local DoFavor
 local function DoPlan(buy)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
-  if Favor() then DoFavor(); return end
+  if Favor() then DoFavor(buy); return end
   local target = tonumber(repBox:GetText())
   if buy and not (target and target > 0) then target = WritPathNav.plan and WritPathNav.plan.target or 1000 end
   if not target or target <= 0 then DoMine(); return end   -- no target: just the writs you have
@@ -1389,12 +1389,15 @@ local function DoPlan(buy)   -- buy: plan for a target even if the box is empty 
   Select(WritPathNav.planChoice or "cheap")
 end
 -- Merchant's Favor: the cheapest crates and fillings for a Favor target (Favor.lua)
-function DoFavor()
+function DoFavor(saved)   -- saved: use the last Favor target when the box is empty
+  local target = tonumber(repBox:GetText())
+  if not (target and target > 0) then
+    if not (saved and WritPathNav.favorTarget) then WritPath_PlannerStart(); return end   -- nothing asked for yet
+    target = WritPathNav.favorTarget
+  end
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
   cards.cheap:Hide(); cards.fast:Hide()
   WritPathNav.planMode = "favor"
-  local target = tonumber(repBox:GetText())
-  if not (target and target > 0) then target = WritPathNav.favorTarget or 100 end
   WritPathNav.favorTarget = target
   if not HavePrices() then
     Show({ favor = true, picks = {}, route = {}, earned = 0, target = target, cost = 0, back = 0, lockedOut = 0 }, -62)
@@ -1407,10 +1410,15 @@ local function SetMode(favor)
   modeBtn:SetText(favor and "Favor" or "Rep"); FitWidth(modeBtn)
   bagsChk:SetChecked(not WritPathNav.favorNoBags)
   if favor then bagsChk:Show(); bagsL:Show() else bagsChk:Hide(); bagsL:Hide() end
-  if favor then repBox:SetText(tostring(WritPathNav.favorTarget or 100))
-  else repBox:SetText(tostring(WritPathNav.plan and WritPathNav.plan.target or 1000)) end
+  -- the last target of that kind, or empty (no made-up default)
+  local t = favor and WritPathNav.favorTarget or (not favor and WritPathNav.plan and WritPathNav.plan.target)
+  repBox:SetText(t and tostring(t) or "")
 end
-modeBtn:SetScript("OnClick", function() SetMode(not Favor()); DoPlan() end)
+modeBtn:SetScript("OnClick", function()
+  SetMode(not Favor())
+  -- a target of that kind from before: plan it; none yet: show what to do
+  if (tonumber(repBox:GetText()) or 0) > 0 then DoPlan() else WritPath_PlannerStart() end
+end)
 bagsChk:SetScript("OnClick", function(self) WritPathNav.favorNoBags = not self:GetChecked() or nil; DoPlan() end)
 bagsChk:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Use my bags")
@@ -1488,11 +1496,33 @@ function WritPath_ClearAll()
   EmptyAuctionatorList()
   current, plans, choice = nil, nil, nil
   repBox:SetText("")
+  WritPath_PlannerStart("Cleared.")
+  Print("Route and plan cleared.")
+end
+-- the planner with nothing planned yet: what to do, for the mode it's in
+function WritPath_PlannerStart(first)
   cards.cheap:Hide(); cards.fast:Hide()
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
   Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -62)
-  summary:SetText(GREY .. "Cleared. Type a rep target (or leave it empty for just your writs) and press Plan.|r"); note:SetText("")
-  Print("Route and plan cleared.")
+  local H = "|cFFFFD100"
+  if WritPathNav and WritPathNav.planFor == "favor" then
+    local NL = string.char(10)
+    summary:SetText((first and (G .. first .. "|r ") or "") .. H .. "Plan Merchant's Favor|r" .. NL
+      .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath prices panel) so prices are fresh." .. NL
+      .. "2. Type how much Favor you want and press " .. H .. "Plan|r. Untick " .. H .. "Use my bags|r to buy everything." .. NL
+      .. "3. Press " .. H .. "Start buying|r: the shopping list opens at the auction house. Fill each crate (right-click it)"
+      .. " and talk to Dokimi at the camp west of the Crossroads to hand them in.")
+    note:SetText(GREY .. "Click Favor to switch back to planning writs for reputation.|r")
+  else
+    local NL = string.char(10)
+    summary:SetText((first and (G .. first .. "|r ") or "") .. H .. "Plan writs|r" .. NL
+      .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath prices panel) so prices are fresh." .. NL
+      .. "2. Type a rep target and press " .. H .. "Plan|r. Leave it empty to plan just the writs you already have." .. NL
+      .. "3. Pick " .. H .. "Cheapest|r or " .. H .. "Fastest|r and press " .. H .. "Start route|r: the shopping list opens at the"
+      .. " auction house, and the guide takes you to each customer.")
+    note:SetText(GREY .. "Click Rep to plan Merchant's Favor instead (the cheapest Waylaid Crates).|r")
+  end
+  current = nil   -- nothing planned: reopening the planner shows this again
 end
 -- WritPath's own confirm window. Not Blizzard's StaticPopup: an addon using those shared popups taints them,
 -- and the next protected thing Blizzard does with one gets blocked and blamed on WritPath.
@@ -1501,7 +1531,9 @@ local function Confirm()
   if confirm then return confirm end
   local W = 300
   confirm = CreateFrame("Frame", "WritPathConfirm", UIParent, "BackdropTemplate")
-  confirm:SetWidth(W); confirm:SetPoint("CENTER", 0, 120); confirm:SetFrameStrata("DIALOG")
+  -- above every other window (the planner is a dialog too), with a solid background behind its text
+  confirm:SetWidth(W); confirm:SetPoint("CENTER", 0, 120); confirm:SetFrameStrata("FULLSCREEN_DIALOG"); confirm:SetToplevel(true)
+  local bg = confirm:CreateTexture(nil, "BACKGROUND", nil, -8); bg:SetAllPoints(); bg:SetColorTexture(0.06, 0.06, 0.07, 1)
   confirm:EnableMouse(true); confirm:SetClampedToScreen(true); confirm:Hide()
   tinsert(UISpecialFrames, "WritPathConfirm")   -- Escape answers No
   local msg = confirm:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -1523,7 +1555,7 @@ local function Confirm()
   end
   return confirm
 end
-function WritPath_AskClear() Confirm():Show() end
+function WritPath_AskClear() local c = Confirm(); c:Show(); c:Raise() end
 WritPath_PlannerInternals_Confirm = function() return confirm end   -- for tests
 clearBtn:SetScript("OnClick", WritPath_AskClear)
 
@@ -1539,7 +1571,9 @@ function WritPath_OpenPlanner(mode)   -- mode: "mine" (just your writs), "buy" (
   end
   FitWidth(planBtn)
   f:Show()
-  DoPlan(mode == "buy")
+  -- nothing planned yet this session and no particular view asked for: say what to do, don't plan by itself
+  if not mode and not current then WritPath_PlannerStart(); return end
+  DoPlan(mode == "buy" or mode == "favor")
 end
 -- something new was learned (a customer's spot or name): an open planner shows it straight away
 function WritPath_PlannerLearned()
