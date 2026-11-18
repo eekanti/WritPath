@@ -46,6 +46,7 @@ end
 -- the plan you're running: what it cost when you started it (writs and items to buy; your own writs count
 -- as nothing) against the pouches from its turn-ins so far. WritPathMoney.session is set by Start route.
 local REP = { Journeyman = 75, Expert = 125, Artisan = 200 }
+local atAH = false   -- the auction house is open
 local function SessionTotals()
   local s = WritPathMoney.session
   if not s then return nil end
@@ -57,17 +58,17 @@ local function SessionTotals()
       handedCost, handed = handedCost + (e.cost or 0), handed + 1
     end
   end
-  -- while the route is under way: once you've bought something, the cost is what you really paid plus the
-  -- planned price of anything still on the shopping list; before that, it's the plan's estimate.
-  -- Once it's finished, only what really happened counts: what you paid at the AH, or (if WritPath didn't see
-  -- you buy) the planned price of the writs you handed in. Writs you skipped cost nothing.
+  -- Before you've bought anything, the cost is the plan's estimate. Once you have: at the auction house it's
+  -- what you've paid plus the planned price of what's still on the list; when you leave, it's just what you
+  -- paid (whatever you didn't buy costs nothing), and buying more later adds to it.
+  -- A finished route WritPath never saw you buy for: the planned price of the writs you handed in.
   local cost, rem = s.cost or 0, 0
   local active = WritPath_RouteActive and WritPath_RouteActive()
-  if active and s.spent then
-    rem = WritPath_ShopRemaining and WritPath_ShopRemaining() or 0
-    cost = s.spent + rem
+  if s.spent then
+    rem = active and WritPath_ShopRemaining and WritPath_ShopRemaining() or 0
+    cost = atAH and (s.spent + rem) or s.spent
   elseif not active then
-    cost = s.spent or (handed > 0 and handedCost or 0)
+    cost = handed > 0 and handedCost or 0
   end
   return got, cost, got - cost, unpaid, (s.spent or not active) and (s.cost or 0) or nil, rem
 end
@@ -184,7 +185,12 @@ ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("QUEST_TURNED_IN")
 ev:RegisterEvent("BAG_UPDATE_DELAYED")
 ev:RegisterEvent("PLAYER_MONEY")
+ev:RegisterEvent("AUCTION_HOUSE_SHOW")
+ev:RegisterEvent("AUCTION_HOUSE_CLOSED")
 ev:SetScript("OnEvent", function(_, event, a1, _, a3)
+  if event == "AUCTION_HOUSE_SHOW" or event == "AUCTION_HOUSE_CLOSED" then
+    atAH = event == "AUCTION_HOUSE_SHOW"; Update(); return
+  end
   if event == "PLAYER_LOGIN" then
     C_Timer.After(3, WritPath_MoneyRestore)
     if not WritPathMoney then
