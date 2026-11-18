@@ -2,7 +2,8 @@
 --
 -- The author runs a private collector addon. When it asks (over guild, party/raid, instance chat, or a whisper to
 -- an in-game friend), this copy whispers back what YOU learned yourself while travelling: road crossings you rode,
--- winding paths, boat and zeppelin trips, flight times and writ customers' spots from your hand-ins. Nothing else:
+-- winding paths, boat and zeppelin trips, flight times, writ customers' spots from your hand-ins, and the road
+-- steps of your writ routes (checkpoints about 100 yards apart, with how many runs used them). Nothing else:
 -- no gold, no names but the NPCs', nothing from your bags. Each record is sent once; the collector confirms what it
 -- got. The author checks the records and ships the good ones to every player in a later version.
 -- /writs share turns this off (and back on).
@@ -35,6 +36,18 @@ local function Records()
   for id, v in pairs(L) do   -- customer spots from hand-ins (writ pins are keyed by item id)
     if type(id) == "number" and type(v) == "table" and v.src == "turnin" and v.map then
       out[#out + 1] = ("N,%d,%d,%s,%s,%s"):format(id, v.map, Round(v.x), Round(v.y), Clean(v.npc))
+    end
+  end
+  -- road steps from the checkpoints (writ routes only): sent when first ridden, again at 3 runs and at 10
+  local R = L.roads
+  if R and R.edges and R.cells then
+    for step, n in pairs(R.edges) do
+      local a, b = step:match("^(.-)>(.+)$")
+      local A, B = a and R.cells[a], b and R.cells[b]
+      if A and B then
+        local bucket = n >= 10 and 10 or (n >= 3 and 3 or 1)
+        out[#out + 1] = ("E,%d,%s,%s,%d,%s,%s,%d"):format(A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y), bucket)
+      end
     end
   end
   table.sort(out)

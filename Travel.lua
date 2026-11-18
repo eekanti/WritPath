@@ -988,6 +988,32 @@ local function RecordPath(trail, a, b)
 end
 T.Path = { Simplify = Simplify, Agree = Agree, Record = function(trail, a, b) RecordPath(trail, a, b) end }
 
+-- Checkpoints (roads learned from many rides): the world is a grid of spots CELL yards apart. While a writ route is
+-- under way, every step from one spot into the next is counted, once per run. A step ridden in 3 or more runs is
+-- road; a wrong turn or a chase almost never repeats. Logged now, used for routes once the data has been reviewed.
+local CELL = 100
+local function CellKey(p) return p.inst .. ":" .. math.floor(p.wx / CELL) .. ":" .. math.floor(p.wy / CELL) end
+local function Roads()
+  WritPathLearned.roads = WritPathLearned.roads or { cells = {}, edges = {} }
+  return WritPathLearned.roads
+end
+local function RecordStep(p)
+  local run = WritPathNav and WritPathNav.run
+  local runId = run and run.start or 0
+  if REC.runId ~= runId then REC.runId, REC.runSteps = runId, {} end
+  local key = CellKey(p)
+  local R = Roads()
+  if not R.cells[key] then R.cells[key] = { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 } end
+  local prev = REC.cell
+  REC.cell = key
+  if not prev or prev == key then return end
+  local step = prev .. ">" .. key
+  if REC.runSteps[step] then return end   -- once per run
+  REC.runSteps[step] = true
+  R.edges[step] = (R.edges[step] or 0) + 1
+end
+T.Roads = Roads
+
 local function RecordShip(dock, land)
   WritPathLearned.transports = WritPathLearned.transports or {}
   local hit = Near(WritPathLearned.transports, function(t)
@@ -1074,8 +1100,10 @@ local function Poll()
   -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time.
   local onRoute = WritPath_RouteActive and WritPath_RouteActive()
   if not clean or not onRoute or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
-    REC.trail = nil
+    REC.trail, REC.cell = nil, nil   -- the next checkpoint starts afresh (no step across a flight or a jump)
+    if clean and onRoute then RecordStep(p) end
   else
+    RecordStep(p)
     REC.trail = REC.trail or {}
     local tr = REC.trail
     local tail = tr[#tr]

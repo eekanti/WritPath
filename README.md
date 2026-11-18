@@ -195,7 +195,8 @@ Clear (red X). The commands that are left (`/writs help` lists them in game):
 
 When WritPath's author is online and in your guild, party or raid, instance group or on your in-game friends list,
 their copy may ask yours for what you've learned while travelling: road crossings you rode, winding paths, boat and
-zeppelin trips, flight times and writ customers' spots from your hand-ins. It's sent as hidden addon messages, once
+zeppelin trips, flight times, writ customers' spots from your hand-ins, and the roads your writ routes take
+(checkpoints about 100 yards apart, and how many runs used them). It's sent as hidden addon messages, once
 per record. Nothing else is sent: no gold, items or anything about your character beyond its name, which comes with
 any whisper. The author checks the records and ships the good ones to every player in later versions.
 `/writs share` turns this off (and back on).
