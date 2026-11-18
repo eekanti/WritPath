@@ -41,12 +41,21 @@ local function Records()
   -- road steps from the checkpoints (writ routes only): sent when first ridden, again at 3 runs and at 10
   local R = L.roads
   if R and R.edges and R.cells then
-    for step, n in pairs(R.edges) do
+    for step, v in pairs(R.edges) do
+      local e = type(v) == "number" and { n = v } or v
       local a, b = step:match("^(.-)>(.+)$")
       local A, B = a and R.cells[a], b and R.cells[b]
       if A and B then
+        local n = e.n or 0
         local bucket = n >= 10 and 10 or (n >= 3 and 3 or 1)
-        out[#out + 1] = ("E,%d,%s,%s,%d,%s,%s,%d"):format(A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y), bucket)
+        local slow = (e.k or 0) > 0 and Round(e.r / e.k) or 0   -- 1.0 open riding, 2.0 twice as slow (0: not measured)
+        out[#out + 1] = ("E,%d,%s,%s,%d,%s,%s,%d,%s"):format(A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y), bucket, slow)
+      end
+    end
+    -- spots where someone died or swam on a route
+    for _, c in pairs(R.cells) do
+      if (c.d or 0) > 0 or (c.w or 0) > 0 then
+        out[#out + 1] = ("K,%d,%s,%s,%d,%d"):format(c.m, Round(c.x), Round(c.y), c.d or 0, c.w or 0)
       end
     end
   end

@@ -162,6 +162,9 @@ list after asking. What WritPath has learned stays.
   its turns are saved. Once two of your rides agree, routes follow it, with a guide step at each turn
   (`/writs travel` shows how many it knows).
 - **Your hearthstone's spot**, when you set it at an innkeeper or land from it.
+- **Roads**: while you follow a writ route, WritPath notes the roads you take (spots about 100 yards apart), how
+  fast you could ride them, and where players died or had to swim. A road taken on 3 or more runs is used in routes,
+  with a guide step at each bend; in zones with learned roads, routes prefer them to riding cross-country.
 - **Flight paths you know**, each time you open a flight master's map.
 
 It starts from what ships with it (customer spots from community sources and QuestieDB, RestedXP's roads, boats

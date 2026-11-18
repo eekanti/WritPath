@@ -419,8 +419,11 @@ end
 
 ---------------------------------------------------------------- the graph
 local nodes, byZone, cache, roads
+local roadZone = {}       -- zones with learned roads (checkpoints): off-road riding there counts OFFROAD slower
+local ROAD_RUNS, OFFROAD, ROAD_ACCESS = 3, 1.3, 5   -- runs before a step is road; off-road penalty; access every 5 spots
 
-function T.Reset() nodes, byZone, cache, roads = nil, nil, nil, nil end
+function T.Reset() nodes, byZone, cache, roads, roadZone = nil, nil, nil, nil, {} end
+local function Ride(zone) return roadZone[zone] and OFFROAD or 1 end   -- straight riding inside a zone
 
 -- riding straight from one zone into another is only allowed when WritPath knows no roads for one of them:
 -- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
@@ -483,7 +486,7 @@ local function Add(n)
   byZone[n.zone] = byZone[n.zone] or {}; table.insert(byZone[n.zone], n)
   return n
 end
-local function Edge(a, b, cost, kind, legs) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind, legs = legs } end
+local function Edge(a, b, cost, kind, legs, pts) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind, legs = legs, pts = pts } end
 
 function T.Build()
   nodes, byZone, cache, roads = {}, {}, {}, {}
@@ -630,11 +633,72 @@ function T.Build()
   end
   -- which zones have known roads (a crossing on either side)
   for _, n in ipairs(nodes) do if n.kind == "exit" or n.kind == "entry" then roads[n.zone] = true end end
-  -- riding between any two places in the same zone
+  -- learned roads: checkpoint steps ridden in ROAD_RUNS or more runs. A stretch of road with no junction is one
+  -- link that remembers its shape (with an access point every ROAD_ACCESS spots); its cost is the time it really
+  -- took, plus extra where players died or swam.
+  local R = L.roads
+  local roadNodes = {}
+  if R and R.edges and R.cells then
+    local pt = {}
+    local function P(k)
+      if pt[k] == nil then local c = R.cells[k]; pt[k] = c and T.Point(c.m, c.x, c.y) or false end
+      return pt[k]
+    end
+    local step, nbr = {}, {}       -- step[a][b] = cost; nbr[a] = set of spots linked either way
+    for key, v in pairs(R.edges) do
+      local e = type(v) == "number" and { n = v } or v
+      if (e.n or 0) >= ROAD_RUNS then
+        local a, b = key:match("^(.-)>(.+)$")
+        local pa, pb = a and P(a), b and P(b)
+        if pa and pb and pa.inst == pb.inst then
+          local cost = Dist(pa, pb) / RIDE * ((e.k or 0) > 0 and e.r / e.k or 1)
+          local cb = R.cells[b]
+          if (cb.d or 0) > 0 then cost = cost + 20 * math.min(cb.d, 3) end   -- deaths here: mobs worth avoiding
+          if (cb.w or 0) > 0 then cost = cost * 1.3 end                      -- swimming
+          step[a] = step[a] or {}; step[a][b] = cost
+          nbr[a] = nbr[a] or {}; nbr[a][b] = true
+          nbr[b] = nbr[b] or {}; nbr[b][a] = true
+          roadZone[R.cells[a].m], roadZone[R.cells[b].m] = true, true
+        end
+      end
+    end
+    local function Count(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
+    local function Interior(k) return Count(nbr[k]) == 2 end
+    local function NodeOf(k)
+      if not roadNodes[k] then roadNodes[k] = Add({ zone = R.cells[k].m, p = P(k), kind = "road" }) end
+      return roadNodes[k]
+    end
+    -- walk every stretch from a junction or end (or an access point) to the next one
+    local walked = {}
+    local function Walk(a)
+      if walked[a] then return end
+      walked[a] = true
+      for b, cost in pairs(step[a] or {}) do
+        local pts, total, prev, cur, len = { P(a), P(b) }, cost, a, b, 1
+        while Interior(cur) and len % ROAD_ACCESS ~= 0 do
+          local nxt
+          for c in pairs(step[cur] or {}) do if c ~= prev then nxt = c end end
+          if not nxt then break end   -- a one-way end: this spot becomes a place of its own
+          total = total + step[cur][nxt]; pts[#pts + 1] = P(nxt)
+          prev, cur, len = cur, nxt, len + 1
+        end
+        Edge(NodeOf(a), NodeOf(cur), total, "road", nil, pts)
+        if Interior(cur) and len % ROAD_ACCESS == 0 then Walk(cur) end
+      end
+    end
+    for k in pairs(step) do if not Interior(k) then Walk(k) end end
+  end
+  -- riding between any two places in the same zone (learned road spots join only their nearby places)
   for _, list in pairs(byZone) do
     for _, a in ipairs(list) do
       for _, b in ipairs(list) do
-        if a ~= b and a.p.inst == b.p.inst then Edge(a, b, Dist(a.p, b.p) / RIDE, "ride") end
+        if a ~= b and a.p.inst == b.p.inst then
+          if a.kind ~= "road" and b.kind ~= "road" then Edge(a, b, Dist(a.p, b.p) / RIDE * Ride(a.zone), "ride")
+          elseif a.kind ~= b.kind then
+            local d = Dist(a.p, b.p)
+            if d < 400 then Edge(a, b, d / RIDE * OFFROAD, "ride") end   -- onto or off a road
+          end
+        end
       end
     end
   end
@@ -645,19 +709,51 @@ local function From(src)
   local key = src.map .. ":" .. src.x .. ":" .. src.y .. (loose and ":loose" or "")
   if cache[key] then return cache[key] end
   local dist, prev, done = {}, {}, {}
+  -- a binary heap of { time, node }: the road network can have many places
+  local heap = {}
+  local function Push(d, i)
+    heap[#heap + 1] = { d, i }
+    local c = #heap
+    while c > 1 do
+      local up = math.floor(c / 2)
+      if heap[up][1] <= heap[c][1] then break end
+      heap[up], heap[c] = heap[c], heap[up]; c = up
+    end
+  end
+  local function Pop()
+    local top = heap[1]; if not top then return nil end
+    local last = table.remove(heap)
+    if #heap > 0 then
+      heap[1] = last
+      local c = 1
+      while true do
+        local l, r, m = c * 2, c * 2 + 1, c
+        if heap[l] and heap[l][1] < heap[m][1] then m = l end
+        if heap[r] and heap[r][1] < heap[m][1] then m = r end
+        if m == c then break end
+        heap[m], heap[c] = heap[c], heap[m]; c = m
+      end
+    end
+    return top
+  end
   -- start: ride to any known place on this continent; straight across a zone you haven't learned roads for
   -- costs a bit more, because the straight line may run into hills
   for _, n in ipairs(nodes) do
-    if n.p.inst == src.inst and Open(src.map, n.zone) then dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and 1 or UNKNOWN) end
+    if n.p.inst == src.inst and Open(src.map, n.zone) then
+      dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and Ride(src.map) or UNKNOWN)
+      Push(dist[n.i], n.i)
+    end
   end
   while true do
-    local u, best
-    for i, d in pairs(dist) do if not done[i] and (not best or d < best) then u, best = i, d end end
-    if not u then break end
-    done[u] = true
-    for _, e in ipairs(nodes[u].edges) do
-      local nd = best + e.cost
-      if not dist[e.to.i] or nd < dist[e.to.i] then dist[e.to.i], prev[e.to.i] = nd, { u, e } end
+    local top = Pop()
+    if not top then break end
+    local u, best = top[2], top[1]
+    if not done[u] and best <= (dist[u] or math.huge) then
+      done[u] = true
+      for _, e in ipairs(nodes[u].edges) do
+        local nd = best + e.cost
+        if not dist[e.to.i] or nd < dist[e.to.i] then dist[e.to.i], prev[e.to.i] = nd, { u, e }; Push(nd, e.to.i) end
+      end
     end
   end
   cache[key] = { dist = dist, prev = prev }
@@ -681,13 +777,13 @@ function Time(a, b)
   if not (a and b) then return 600 end
   if not nodes then T.Build() end
   -- straight there, or over the known roads, ships and flights and then straight to the stop
-  local best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and 1 or UNKNOWN) or nil
+  local best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil
   local via
   local r = From(a)
   for _, n in ipairs(nodes) do
     local d = r.dist[n.i]
     if d and n.p.inst == b.inst and Open(b.map, n.zone) then
-      d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and 1 or UNKNOWN)
+      d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
       if not best or d < best then best, via = d, n end
     end
   end
@@ -717,6 +813,22 @@ local function ShipText(from, to)
 end
 T.ShipText = ShipText
 
+-- along a learned road: only the points where it really turns (over 30 degrees), or every 600 yards on a long
+-- straight, and the end
+local function Bends(pts)
+  local out, since = {}, 0
+  for k = 2, #pts - 1 do
+    local ax, ay = pts[k].wx - pts[k - 1].wx, pts[k].wy - pts[k - 1].wy
+    local bx, by = pts[k + 1].wx - pts[k].wx, pts[k + 1].wy - pts[k].wy
+    local la, lb = math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by)
+    since = since + la
+    if (la > 0 and lb > 0 and (ax * bx + ay * by) / (la * lb) < 0.866) or since >= 600 then out[#out + 1] = pts[k]; since = 0 end
+  end
+  out[#out + 1] = pts[#pts]
+  return out
+end
+T.RoadBends = Bends
+
 -- the waypoints on the way from a to b: { kind, at = point, into = zone, text }
 function T.Legs(a, b)
   local _, via, r = T.Time(a, b)
@@ -734,9 +846,27 @@ function T.Legs(a, b)
     local into = first.kind == "exit" and first.peer or first.zone
     legs[#legs + 1] = { kind = "cross", at = first.p, into = into, text = "{goto} Ride into |cFF00FF25" .. ZoneName(into) .. "|r" }
   end
+  local roadPts, roadZoneOf
+  local function FlushRoad()
+    if not roadPts then return end
+    for _, q in ipairs(Bends(roadPts)) do
+      legs[#legs + 1] = { kind = "cross", road = true, at = q, into = roadZoneOf,
+                          text = ("{goto} Follow the road: |cFF00FF25%.1f, %.1f|r"):format(q.x, q.y) }
+    end
+    roadPts = nil
+  end
   for _, c in ipairs(chain) do
     local k = c.e.kind
-    if k == "cross" and c.e.legs then   -- a mountain path: start of the path, its waypoints, the border
+    if k ~= "road" then FlushRoad() end
+    if k == "road" and c.e.pts then      -- a learned road: gathered piece by piece, then its bends (below)
+      if not roadPts then
+        roadPts, roadZoneOf = {}, c.from.zone
+        legs[#legs + 1] = { kind = "cross", road = true, at = c.e.pts[1], into = c.from.zone,
+                            text = ("{goto} Ride to the road at |cFF00FF25%.1f, %.1f|r"):format(c.e.pts[1].x, c.e.pts[1].y) }
+        roadPts[1] = c.e.pts[1]
+      end
+      for i = 2, #c.e.pts do roadPts[#roadPts + 1] = c.e.pts[i] end
+    elseif k == "cross" and c.e.legs then   -- a mountain path: start of the path, its waypoints, the border
       if not c.e.legs[1].cross then
         legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.from.zone,
                             text = ("{goto} Go to the start of the path: |cFF00FF25%.1f, %.1f|r"):format(c.from.p.x, c.from.p.y) }
@@ -762,6 +892,7 @@ function T.Legs(a, b)
       end
     end
   end
+  FlushRoad()
   -- two crossings at the same spot (a border straight back out) say nothing useful twice
   for j = #legs, 2, -1 do
     if legs[j].kind == "cross" and legs[j - 1].kind == "cross" and Dist(legs[j].at, legs[j - 1].at) < 30 then table.remove(legs, j - 1) end
@@ -990,28 +1121,57 @@ T.Path = { Simplify = Simplify, Agree = Agree, Record = function(trail, a, b) Re
 
 -- Checkpoints (roads learned from many rides): the world is a grid of spots CELL yards apart. While a writ route is
 -- under way, every step from one spot into the next is counted, once per run. A step ridden in 3 or more runs is
--- road; a wrong turn or a chase almost never repeats. Logged now, used for routes once the data has been reviewed.
+-- road; a wrong turn or a chase almost never repeats. Each step also keeps how slow it was (its time against the
+-- time it takes at the speed you were moving: 1.0 is open riding, 2.0 took twice as long), and each spot how often
+-- someone died or swam there.
 local CELL = 100
 local function CellKey(p) return p.inst .. ":" .. math.floor(p.wx / CELL) .. ":" .. math.floor(p.wy / CELL) end
 local function Roads()
   WritPathLearned.roads = WritPathLearned.roads or { cells = {}, edges = {} }
   return WritPathLearned.roads
 end
-local function RecordStep(p)
+local function Edge0(v) if type(v) == "number" then return { n = v } end; return v end   -- older saves: a bare count
+local function RecordStep(p, now)
   local run = WritPathNav and WritPathNav.run
   local runId = run and run.start or 0
-  if REC.runId ~= runId then REC.runId, REC.runSteps = runId, {} end
+  if REC.runId ~= runId then REC.runId, REC.runSteps, REC.runSwim = runId, {}, {} end
   local key = CellKey(p)
   local R = Roads()
-  if not R.cells[key] then R.cells[key] = { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 } end
+  local cell = R.cells[key]
+  if not cell then cell = { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }; R.cells[key] = cell end
+  -- swimming here (once per run per spot)
+  if IsSwimming and IsSwimming() and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
+  -- the speed you're moving at, sampled while in this spot
+  local speed = GetUnitSpeed and GetUnitSpeed("player") or 0
+  if speed and speed > 0 then REC.speedSum, REC.speedN = (REC.speedSum or 0) + speed, (REC.speedN or 0) + 1 end
   local prev = REC.cell
-  REC.cell = key
-  if not prev or prev == key then return end
+  if prev == key then return end
+  local prevP, prevT, sum, cnt = REC.cellP, REC.cellT, REC.speedSum, REC.speedN
+  REC.cell, REC.cellP, REC.cellT, REC.speedSum, REC.speedN = key, p, now, 0, 0
+  if not prev then return end
   local step = prev .. ">" .. key
   if REC.runSteps[step] then return end   -- once per run
   REC.runSteps[step] = true
-  R.edges[step] = (R.edges[step] or 0) + 1
+  local e = Edge0(R.edges[step] or { n = 0 })
+  e.n = (e.n or 0) + 1
+  -- how slow: the time it took against the time at the speed you were going (0.5 to 5)
+  local d = prevP and Dist(prevP, p) or 0
+  if prevT and now and cnt and cnt > 0 and d > 20 then
+    local expected = d / (sum / cnt)
+    local ratio = math.max(0.5, math.min(5, (now - prevT) / expected))
+    e.r, e.k = (e.r or 0) + ratio, (e.k or 0) + 1
+  end
+  R.edges[step] = e
 end
+-- someone died here (counted on the spot where it happened)
+local function RecordDeath(p)
+  local R = Roads()
+  local key = CellKey(p)
+  local cell = R.cells[key] or { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }
+  cell.d = (cell.d or 0) + 1
+  R.cells[key] = cell
+end
+T.RoadEdge = Edge0
 T.Roads = Roads
 
 local function RecordShip(dock, land)
@@ -1075,6 +1235,8 @@ local function Poll()
   local p = T.PlayerPoint()
   local taxi = UnitOnTaxi("player") and true or false
   local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
+  if dead and not REC.dead and p and not p.sea and WritPath_RouteActive and WritPath_RouteActive() then RecordDeath(p) end
+  REC.dead = dead
   local inside = IsInInstance and IsInInstance()
   local last = REC.last
 
@@ -1101,9 +1263,9 @@ local function Poll()
   local onRoute = WritPath_RouteActive and WritPath_RouteActive()
   if not clean or not onRoute or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
     REC.trail, REC.cell = nil, nil   -- the next checkpoint starts afresh (no step across a flight or a jump)
-    if clean and onRoute then RecordStep(p) end
+    if clean and onRoute then RecordStep(p, now) end
   else
-    RecordStep(p)
+    RecordStep(p, now)
     REC.trail = REC.trail or {}
     local tr = REC.trail
     local tail = tr[#tr]
