@@ -1069,8 +1069,11 @@ local function Poll()
   if not p or inside or p.sea then return end
 
   local clean = not taxi and not dead and not (last and last.taxi) and now - REC.teleport > 30
-  -- the breadcrumb trail (reset by anything that isn't riding: a flight, a teleport, dying, a big jump)
-  if not clean or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
+  -- the breadcrumb trail (reset by anything that isn't riding: a flight, a teleport, dying, a big jump). Only kept
+  -- while a writ route is under way: then you're travelling on purpose, not questing or wandering about town, so a
+  -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time.
+  local onRoute = WritPath_RouteActive and WritPath_RouteActive()
+  if not clean or not onRoute or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
     REC.trail = nil
   else
     REC.trail = REC.trail or {}
