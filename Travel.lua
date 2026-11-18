@@ -434,6 +434,33 @@ local function NoRoad(a, b)
 end
 T.NoRoad = NoRoad
 
+-- Learned records that look wrong stay out of routes, old ones included (before loops were cut while recording):
+-- a path that doubles back, loops or takes 2.5 times the straight way, and a boat or zeppelin trip on a route that
+-- isn't a known one, taken only once (a summon or portal recorded as a ship).
+local function PathShapeOK(c)
+  local pts = {}
+  for _, v in ipairs(c.via or {}) do pts[#pts + 1] = v end
+  pts[#pts + 1] = { c.x, c.y }
+  local function d(a, b) return math.sqrt((a[1] - b[1]) ^ 2 + (a[2] - b[2]) ^ 2) end
+  for k = 2, #pts - 1 do
+    local ax, ay = pts[k][1] - pts[k - 1][1], pts[k][2] - pts[k - 1][2]
+    local bx, by = pts[k + 1][1] - pts[k][1], pts[k + 1][2] - pts[k][2]
+    local la, lb = math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by)
+    if la > 0 and lb > 0 and (ax * bx + ay * by) / (la * lb) < -0.866 then return false end
+  end
+  for i = 1, #pts do for j = i + 2, #pts do if d(pts[i], pts[j]) < 2 then return false end end end
+  local len = 0
+  for k = 2, #pts do len = len + d(pts[k - 1], pts[k]) end
+  return not (len > 2.5 * d(pts[1], pts[#pts]))
+end
+T.PathShapeOK = PathShapeOK
+local KNOWN_SHIPS = { ["1411>1434"] = true, ["1434>1411"] = true, ["1411>1420"] = true, ["1420>1411"] = true,
+  ["1420>1434"] = true, ["1434>1420"] = true, ["1434>1413"] = true, ["1413>1434"] = true, ["1456>1458"] = true,
+  ["1458>1456"] = true, ["2548>1446"] = true, ["1446>2548"] = true, ["2548>1414"] = true, ["1446>1415"] = true,
+  ["1414>1446"] = true, ["1415>2548"] = true }
+local function ShipOK(t) return t.src or (t.n or 1) >= 2 or KNOWN_SHIPS[t.from .. ">" .. t.to] or false end
+T.ShipOK = ShipOK
+
 local loose = false   -- set while looking for any way at all, when the known roads don't connect two places
 local function Direct(za, zb)
   if za == zb then return true end
@@ -465,7 +492,7 @@ function T.Build()
   -- straight there is what the path goes around
   local paths, ends = {}, {}
   for _, c in ipairs(WritPath_Data and WritPath_Data.paths or {}) do paths[#paths + 1] = c end
-  for _, c in ipairs(L.paths or {}) do if (c.n or 1) >= 2 then paths[#paths + 1] = c end end
+  for _, c in ipairs(L.paths or {}) do if (c.n or 1) >= 2 and not c.suspect and PathShapeOK(c) then paths[#paths + 1] = c end end
   for _, c in ipairs(paths) do local q = T.Point(c.from, c.x, c.y); if q then ends[#ends + 1] = { c.from, c.to, q } end end
   local function Replaced(from, to, p)
     for _, e in ipairs(ends) do
@@ -549,10 +576,12 @@ function T.Build()
     return z, zx, zy
   end
   for _, t in ipairs(L.transports or {}) do
-    local from, x, y = OnZone(t.from, t.x, t.y)
-    local to, tx, ty = OnZone(t.to, t.tx, t.ty)
-    local dock, land = from and T.Point(from, x, y), to and T.Point(to, tx, ty)
-    if dock and land then Sail(from, dock, to, land); sailed[from .. ">" .. to] = true end
+    if ShipOK(t) then
+      local from, x, y = OnZone(t.from, t.x, t.y)
+      local to, tx, ty = OnZone(t.to, t.tx, t.ty)
+      local dock, land = from and T.Point(from, x, y), to and T.Point(to, tx, ty)
+      if dock and land then Sail(from, dock, to, land); sailed[from .. ">" .. to] = true end
+    end
   end
   -- ships WritPath players have recorded (WritPathData.lua), then the ones RestedXP's guides take
   for _, t in ipairs(WritPath_Data and WritPath_Data.transports or {}) do
@@ -890,10 +919,38 @@ local function Agree(a, b)
   end
   return Near(A, B) and Near(B, A)
 end
+-- A wrong turn, a backtrack or running from mobs and coming back: the trail returns near a spot it already passed.
+-- Everything between the two visits is cut out, so only the way you actually needed stays.
+local LOOP_YDS = 70
+local function CutLoops(pts)
+  local out, i = {}, 1
+  while i <= #pts do
+    out[#out + 1] = pts[i]
+    local back
+    for j = #pts, i + 2, -1 do if Dist(pts[i], pts[j]) < LOOP_YDS then back = j; break end end
+    i = back or (i + 1)
+  end
+  return out
+end
+-- what's still odd after that: a turn that doubles back (over 150 degrees), or far more ground than the way needs
+local function Suspect(pts)
+  for k = 2, #pts - 1 do
+    local ax, ay = pts[k].wx - pts[k - 1].wx, pts[k].wy - pts[k - 1].wy
+    local bx, by = pts[k + 1].wx - pts[k].wx, pts[k + 1].wy - pts[k].wy
+    local la, lb = math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by)
+    if la > 0 and lb > 0 and (ax * bx + ay * by) / (la * lb) < -0.866 then return "doubles back" end
+  end
+  local len = 0
+  for k = 2, #pts do len = len + Dist(pts[k - 1], pts[k]) end
+  if len > 2.5 * Dist(pts[1], pts[#pts]) then return "roundabout" end
+end
+T.Path_CutLoops, T.Path_Suspect = CutLoops, Suspect   -- for tests
+
 local function RecordPath(trail, a, b)
   local pts = {}
   for _, q in ipairs(trail or {}) do if q.map == a.map and q.inst == a.inst then pts[#pts + 1] = q end end
   pts[#pts + 1] = a
+  pts = CutLoops(pts)
   if #pts < 3 then return end
   local len = 0
   for k = 2, #pts do len = len + Dist(pts[k - 1], pts[k]) end
@@ -903,14 +960,14 @@ local function RecordPath(trail, a, b)
   local via = {}
   for k = 1, #s - 1 do via[#via + 1] = { math.floor(s[k].x * 10 + 0.5) / 10, math.floor(s[k].y * 10 + 0.5) / 10 } end
   local new = { from = a.map, to = b.map, x = math.floor(a.x * 10 + 0.5) / 10, y = math.floor(a.y * 10 + 0.5) / 10,
-                via = via, len = math.floor(len), n = 1, t = time() }
+                via = via, len = math.floor(len), n = 1, t = time(), suspect = Suspect(s) }
   WritPathLearned.paths = WritPathLearned.paths or {}
   local L = WritPathLearned.paths
   local same = {}
   for i, c in ipairs(L) do
     local q = c.from == new.from and c.to == new.to and T.Point(c.from, c.x, c.y)
     if q and Dist(q, a) < 80 then
-      if Agree(c, new) then
+      if Agree(c, new) and not new.suspect and not c.suspect then
         c.n = (c.n or 1) + 1; c.t = new.t
         if new.len > (c.len or 0) then c.via, c.len = new.via, new.len end   -- the longer ride covers more of the way
         if c.n == 2 then T.Reset() end
