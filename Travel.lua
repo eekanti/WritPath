@@ -15,11 +15,17 @@ WritPath_Travel = T
 local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, yards/s, s, s, s
 local LEARN_FP = 20     -- seconds to talk to a new flight master before taking off
 local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
-local HOSTILE = 1200   -- extra seconds for a dock in the other faction's town: use it only when nothing else works
+local HOSTILE = 1200   -- extra seconds for riding into the other faction's capital: only when the stop is inside
 -- zones whose dock is in a faction town (classic): Southshore, Menethil, Auberdine, Rut'theran, Theramore,
--- Stormwind / Orgrimmar's and the Undercity's zeppelin towers, Grom'gol
-local ALLIANCE_DOCKS = { [1424] = true, [1437] = true, [1439] = true, [1438] = true, [1445] = true, [1453] = true }
-local HORDE_DOCKS = { [1411] = true, [1420] = true, [1412] = true }
+-- Stormwind / Orgrimmar's and the Undercity's zeppelin towers, Grom'gol, and the capitals themselves (Forever's
+-- Thunder Bluff - Undercity zeppelin is recorded on the city maps)
+local ALLIANCE_DOCKS = { [1424] = true, [1437] = true, [1439] = true, [1438] = true, [1445] = true, [1453] = true,
+                         [1455] = true, [1457] = true }
+local HORDE_DOCKS = { [1411] = true, [1420] = true, [1412] = true, [1454] = true, [1456] = true, [1458] = true }
+-- the other faction's capitals: riding in costs HOSTILE (guards), so routes go round them unless the stop is inside
+local ALLIANCE_CITIES = { [1453] = true, [1455] = true, [1457] = true }   -- Stormwind, Ironforge, Darnassus
+local HORDE_CITIES = { [1454] = true, [1456] = true, [1458] = true }      -- Orgrimmar, Thunder Bluff, Undercity
+local hostileCity = {}
 
 ---------------------------------------------------------------- points
 local function HBD() return LibStub and LibStub("HereBeDragons-2.0", true) end
@@ -513,9 +519,13 @@ local function Add(n)
   byZone[n.zone] = byZone[n.zone] or {}; table.insert(byZone[n.zone], n)
   return n
 end
-local function Edge(a, b, cost, kind, legs, pts) a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind, legs = legs, pts = pts } end
+local function Edge(a, b, cost, kind, legs, pts)
+  if kind == "cross" and hostileCity[b.zone] and not hostileCity[a.zone] then cost = cost + HOSTILE end   -- into their capital
+  a.edges[#a.edges + 1] = { to = b, cost = cost, kind = kind, legs = legs, pts = pts }
+end
 
 function T.Build()
+  hostileCity = UnitFactionGroup("player") == "Horde" and ALLIANCE_CITIES or HORDE_CITIES
   nodes, byZone, cache, roads = {}, {}, {}, {}
   local L = WritPathLearned or {}
   -- winding paths (shipped, and learned ones ridden twice) replace a plain crossing at the same spot: riding
@@ -591,13 +601,14 @@ function T.Build()
       Edge(exit, entry, CROSS, "cross"); Edge(entry, exit, CROSS, "cross")
     end
   end
-  -- ships you've taken, one way each (the way back is its own record); ships between the other faction's
-  -- towns cost a lot more: guards on both ends
+  -- ships you've taken, one way each (the way back is its own record). The other faction's boats and zeppelins
+  -- are left out: their guards kill you on the tower or the dock (Alliance players were sent to the Undercity
+  -- zeppelin, 2026-11-18). Everyone keeps the neutral boats (Ratchet - Booty Bay, Riverglades).
   local hostile = UnitFactionGroup("player") == "Horde" and ALLIANCE_DOCKS or HORDE_DOCKS
   local sailed = {}   -- from..to pairs you've taken yourself: those win over the shipped routes
   local function Sail(from, dock, to, land)
-    local cost = SAIL + ((hostile[from] or hostile[to]) and HOSTILE or 0)
-    Edge(Add({ zone = from, p = dock, kind = "dock" }), Add({ zone = to, p = land, kind = "land" }), cost, "sail")
+    if hostile[from] or hostile[to] then return end
+    Edge(Add({ zone = from, p = dock, kind = "dock" }), Add({ zone = to, p = land, kind = "land" }), SAIL, "sail")
   end
   -- a place recorded on a continent map (out at sea) -> the zone it's in
   local function OnZone(m, x, y)
