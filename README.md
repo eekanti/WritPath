@@ -206,4 +206,4 @@ any whisper. The author checks the records and ships the good ones to every play
 
 ## License
 
-MIT (see [LICENSE](LICENSE)). Data sources are credited in [CREDITS.md](CREDITS.md).
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (see [LICENSE](LICENSE)): free to use, share and change with credit, not for commercial use, and changed versions must use the same license. Versions before 1.14.3 were MIT. Data sources are credited in [CREDITS.md](CREDITS.md).

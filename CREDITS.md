@@ -1,6 +1,6 @@
 # WritPath credits
 
-WritPath is MIT licensed (see LICENSE) and ships no other addon's code or art. Its data is facts about the game:
+WritPath is licensed CC BY-NC-SA 4.0 (see LICENSE) and ships no other addon's code or art. Its data is facts about the game:
 where customers and flight masters stand, where zones meet, where boats leave, how long flights take. These were
 gathered from the public sources below, refined by what players record in game, or read at runtime from other addons you have.
 
