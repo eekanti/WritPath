@@ -425,6 +425,33 @@ local ROAD_RUNS, OFFROAD, ROAD_ACCESS = 3, 1.3, 5   -- runs before a step is roa
 function T.Reset() nodes, byZone, cache, roads, roadZone = nil, nil, nil, nil, {} end
 local function Ride(zone) return roadZone[zone] and OFFROAD or 1 end   -- straight riding inside a zone
 
+-- Checkpoint hexes: the world is tiled with hexagons HEX yards across (flat side to flat side, pointy top), named
+-- "continent:q:r" (axial coordinates). All 6 neighbours share an edge and are the same distance away, so a road at
+-- any angle runs through them the same way every time.
+local HEX = 50
+local HEXR = HEX / math.sqrt(3)   -- centre to corner
+local HEXDIR = { { 1, 0 }, { 1, -1 }, { 0, -1 }, { -1, 0 }, { -1, 1 }, { 0, 1 } }
+local function HexOf(wx, wy)
+  local q = (math.sqrt(3) / 3 * wx - wy / 3) / HEXR
+  local r = (2 / 3 * wy) / HEXR
+  local x, z = q, r
+  local y = -x - z
+  local rx, ry, rz = math.floor(x + 0.5), math.floor(y + 0.5), math.floor(z + 0.5)
+  local dx, dy, dz = math.abs(rx - x), math.abs(ry - y), math.abs(rz - z)
+  if dx > dy and dx > dz then rx = -ry - rz elseif dy > dz then ry = -rx - rz else rz = -rx - ry end
+  return rx, rz
+end
+local function HexKey(p) local q, r = HexOf(p.wx, p.wy); return p.inst .. ":" .. q .. ":" .. r end
+local function HexNeighbours(key)
+  local inst, q, r = key:match("^(.-):(%-?%d+):(%-?%d+)$")
+  if not inst then return {} end
+  q, r = tonumber(q), tonumber(r)
+  local out = {}
+  for _, d in ipairs(HEXDIR) do out[#out + 1] = inst .. ":" .. (q + d[1]) .. ":" .. (r + d[2]) end
+  return out
+end
+T.HexKey, T.HexNeighbours = HexKey, HexNeighbours
+
 -- riding straight from one zone into another is only allowed when WritPath knows no roads for one of them:
 -- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
 -- border runs into the mountains between Feralas and Un'Goro, Duskwood and Stranglethorn, ...)
@@ -638,24 +665,43 @@ function T.Build()
   -- took, plus extra where players died or swam.
   local R = L.roads
   local roadNodes = {}
-  if R and R.edges and R.cells then
+  if R and R.v == 2 and R.edges and R.cells then   -- v2: hexes (an old square-grid store is ignored)
     local pt = {}
     local function P(k)
       if pt[k] == nil then local c = R.cells[k]; pt[k] = c and T.Point(c.m, c.x, c.y) or false end
       return pt[k]
     end
+    -- a hex is road when it was ridden and ROAD_RUNS different runs went through it or right next to it: a road
+    -- along the edge between two rows of hexes still adds up, and no run is counted twice
+    local isRoad, near = {}, R.near or {}
+    for key, c in pairs(R.cells) do
+      if (c.v or 0) >= 1 and (near[key] or 0) >= ROAD_RUNS then isRoad[key] = true end
+    end
+    -- linked where a run actually moved between them (never through a wall); one way only when it's clear (3+ runs
+    -- one way, none back: a drop you can't climb)
     local step, nbr = {}, {}       -- step[a][b] = cost; nbr[a] = set of spots linked either way
-    for key, v in pairs(R.edges) do
-      local e = type(v) == "number" and { n = v } or v
-      if (e.n or 0) >= ROAD_RUNS then
-        local a, b = key:match("^(.-)>(.+)$")
-        local pa, pb = a and P(a), b and P(b)
+    local function E(a, b) local v = R.edges[a .. ">" .. b]; return v and (type(v) == "number" and { n = v } or v) end
+    local seen = {}
+    for key in pairs(R.edges) do
+      local a, b = key:match("^(.-)>(.+)$")
+      local pair = a and b and ((a < b) and (a .. "|" .. b) or (b .. "|" .. a))
+      if pair and not seen[pair] and isRoad[a] and isRoad[b] then
+        seen[pair] = true
+        local pa, pb = P(a), P(b)
         if pa and pb and pa.inst == pb.inst then
-          local cost = Dist(pa, pb) / RIDE * ((e.k or 0) > 0 and e.r / e.k or 1)
-          local cb = R.cells[b]
-          if (cb.d or 0) > 0 then cost = cost + 20 * math.min(cb.d, 3) end   -- deaths here: mobs worth avoiding
-          if (cb.w or 0) > 0 then cost = cost * 1.3 end                      -- swimming
-          step[a] = step[a] or {}; step[a][b] = cost
+          local ab, ba = E(a, b), E(b, a)
+          local nab, nba = ab and ab.n or 0, ba and ba.n or 0
+          local r, k = (ab and ab.r or 0) + (ba and ba.r or 0), (ab and ab.k or 0) + (ba and ba.k or 0)
+          local base = Dist(pa, pb) / RIDE * (k > 0 and r / k or 1)
+          local function Cost(to)
+            local c, cell = base, R.cells[to]
+            if (cell.d or 0) > 0 then c = c + 20 * math.min(cell.d, 3) end   -- deaths here: mobs worth avoiding
+            if (cell.w or 0) > 0 then c = c * 1.3 end                        -- swimming
+            return c
+          end
+          local oneWay = (nab >= 3 and nba == 0) and "ab" or ((nba >= 3 and nab == 0) and "ba" or nil)
+          if oneWay ~= "ba" then step[a] = step[a] or {}; step[a][b] = Cost(b) end
+          if oneWay ~= "ab" then step[b] = step[b] or {}; step[b][a] = Cost(a) end
           nbr[a] = nbr[a] or {}; nbr[a][b] = true
           nbr[b] = nbr[b] or {}; nbr[b][a] = true
           roadZone[R.cells[a].m], roadZone[R.cells[b].m] = true, true
@@ -1119,26 +1165,35 @@ local function RecordPath(trail, a, b)
 end
 T.Path = { Simplify = Simplify, Agree = Agree, Record = function(trail, a, b) RecordPath(trail, a, b) end }
 
--- Checkpoints (roads learned from many rides): the world is a grid of spots CELL yards apart. While a writ route is
--- under way, every step from one spot into the next is counted, once per run. A step ridden in 3 or more runs is
--- road; a wrong turn or a chase almost never repeats. Each step also keeps how slow it was (its time against the
+-- Checkpoints (roads learned from many rides): the world is tiled with 50-yard hexes (HexKey above). While a writ route is
+-- under way, every step from one hex into the next is counted, once per run, and so is each hex it passes. A hex is
+-- road when 3 different runs went through it or a neighbour (Build); a wrong turn or a chase almost never repeats. Each step also keeps how slow it was (its time against the
 -- time it takes at the speed you were moving: 1.0 is open riding, 2.0 took twice as long), and each spot how often
 -- someone died or swam there.
-local CELL = 100
-local function CellKey(p) return p.inst .. ":" .. math.floor(p.wx / CELL) .. ":" .. math.floor(p.wy / CELL) end
+local CellKey = HexKey
 local function Roads()
-  WritPathLearned.roads = WritPathLearned.roads or { cells = {}, edges = {} }
+  -- v2: 50-yard hexes (the first version used 100-yard squares; those few records are dropped)
+  if not (WritPathLearned.roads and WritPathLearned.roads.v == 2) then WritPathLearned.roads = { v = 2, cells = {}, edges = {}, near = {} } end
   return WritPathLearned.roads
 end
 local function Edge0(v) if type(v) == "number" then return { n = v } end; return v end   -- older saves: a bare count
 local function RecordStep(p, now)
   local run = WritPathNav and WritPathNav.run
   local runId = run and run.start or 0
-  if REC.runId ~= runId then REC.runId, REC.runSteps, REC.runSwim = runId, {}, {} end
+  if REC.runId ~= runId then REC.runId, REC.runSteps, REC.runSwim, REC.runCells, REC.runNear = runId, {}, {}, {}, {} end
   local key = CellKey(p)
   local R = Roads()
   local cell = R.cells[key]
   if not cell then cell = { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }; R.cells[key] = cell end
+  if not REC.runCells[key] then
+    REC.runCells[key] = true; cell.v = (cell.v or 0) + 1      -- runs through this hex
+    -- runs through it or a neighbour (each run once per hex)
+    R.near = R.near or {}
+    local around = HexNeighbours(key); around[#around + 1] = key
+    for _, k in ipairs(around) do
+      if not REC.runNear[k] then REC.runNear[k] = true; R.near[k] = (R.near[k] or 0) + 1 end
+    end
+  end
   -- swimming here (once per run per spot)
   if IsSwimming and IsSwimming() and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
   -- the speed you're moving at, sampled while in this spot

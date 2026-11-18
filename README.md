@@ -162,8 +162,8 @@ list after asking. What WritPath has learned stays.
   its turns are saved. Once two of your rides agree, routes follow it, with a guide step at each turn
   (`/writs travel` shows how many it knows).
 - **Your hearthstone's spot**, when you set it at an innkeeper or land from it.
-- **Roads**: while you follow a writ route, WritPath notes the roads you take (spots about 100 yards apart), how
-  fast you could ride them, and where players died or had to swim. A road taken on 3 or more runs is used in routes,
+- **Roads**: while you follow a writ route, WritPath notes the roads you take (50-yard hexes), how
+  fast you could ride them, and where players died or had to swim. A road taken on 3 or more runs (through a hex or right next to it) is used in routes,
   with a guide step at each bend; in zones with learned roads, routes prefer them to riding cross-country.
 - **Flight paths you know**, each time you open a flight master's map.
 
@@ -199,7 +199,7 @@ Clear (red X). The commands that are left (`/writs help` lists them in game):
 When WritPath's author is online and in your guild, party or raid, instance group or on your in-game friends list,
 their copy may ask yours for what you've learned while travelling: road crossings you rode, winding paths, boat and
 zeppelin trips, flight times, writ customers' spots from your hand-ins, and the roads your writ routes take
-(checkpoints about 100 yards apart, and how many runs used them). It's sent as hidden addon messages, once
+(50-yard hexes, and how many runs used them). It's sent as hidden addon messages, once
 per record. Nothing else is sent: no gold, items or anything about your character beyond its name, which comes with
 any whisper. The author checks the records and ships the good ones to every player in later versions.
 `/writs share` turns this off (and back on).
