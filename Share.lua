@@ -49,13 +49,14 @@ local function Records()
         local n = e.n or 0
         local bucket = n >= 10 and 10 or (n >= 3 and 3 or 1)
         local slow = (e.k or 0) > 0 and Round(e.r / e.k) or 0   -- 1.0 open riding, 2.0 twice as slow (0: not measured)
-        out[#out + 1] = ("E,%d,%s,%s,%d,%s,%s,%d,%s"):format(A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y), bucket, slow)
+        -- the grid squares' own names (the same for every player) first, then where this player saw them
+        out[#out + 1] = ("E,%s,%s,%d,%s,%d,%s,%s,%d,%s,%s"):format(a, b, bucket, slow, A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y))
       end
     end
     -- spots where someone died or swam on a route
-    for _, c in pairs(R.cells) do
+    for key, c in pairs(R.cells) do
       if (c.d or 0) > 0 or (c.w or 0) > 0 then
-        out[#out + 1] = ("K,%d,%s,%s,%d,%d"):format(c.m, Round(c.x), Round(c.y), c.d or 0, c.w or 0)
+        out[#out + 1] = ("K,%s,%d,%d,%d,%s,%s"):format(key, c.d or 0, c.w or 0, c.m, Round(c.x), Round(c.y))
       end
     end
   end
