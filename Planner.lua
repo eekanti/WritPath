@@ -1491,6 +1491,7 @@ goBtn:SetScript("OnClick", function()
   for _, p in ipairs(current.route) do WritPathNav.planIds[p.id] = true end
   WritPath_SetRoute(Steps(current), ("Writs: %d rep"):format(current.rep),
                     ("Planned writs handed in: |cFF00FF25%d rep|r"):format(current.rep))
+  WritPathNav.doneRep = current.rep   -- the last line shows the rep really handed in against this
   if again then
     local s = WritPathMoney.session
     s.cost, s.rep = (s.spent or 0) + current.cost, current.rep   -- planned: spent so far plus what's left to buy

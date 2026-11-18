@@ -45,24 +45,31 @@ end
 
 -- the plan you're running: what it cost when you started it (writs and items to buy; your own writs count
 -- as nothing) against the pouches from its turn-ins so far. WritPathMoney.session is set by Start route.
+local REP = { Journeyman = 75, Expert = 125, Artisan = 200 }
 local function SessionTotals()
   local s = WritPathMoney.session
   if not s then return nil end
-  local got, unpaid = 0, 0
+  local got, unpaid, handedCost, handed = 0, 0, 0, 0
   for _, e in ipairs(WritPathMoney.log) do
     if (e.t or 0) >= s.start and e.turnedIn then
       got = got + (e.paid or 0) + (e.questMoney or 0)
       if not e.paid then unpaid = unpaid + 1 end
+      handedCost, handed = handedCost + (e.cost or 0), handed + 1
     end
   end
-  -- once you've bought something, the cost is what you really paid, plus the planned price of anything
-  -- still on the shopping list; before that, it's the plan's estimate
+  -- while the route is under way: once you've bought something, the cost is what you really paid plus the
+  -- planned price of anything still on the shopping list; before that, it's the plan's estimate.
+  -- Once it's finished, only what really happened counts: what you paid at the AH, or (if WritPath didn't see
+  -- you buy) the planned price of the writs you handed in. Writs you skipped cost nothing.
   local cost, rem = s.cost or 0, 0
-  if s.spent then
+  local active = WritPath_RouteActive and WritPath_RouteActive()
+  if active and s.spent then
     rem = WritPath_ShopRemaining and WritPath_ShopRemaining() or 0
     cost = s.spent + rem
+  elseif not active then
+    cost = s.spent or (handed > 0 and handedCost or 0)
   end
-  return got, cost, got - cost, unpaid, s.spent and (s.cost or 0) or nil, rem
+  return got, cost, got - cost, unpaid, (s.spent or not active) and (s.cost or 0) or nil, rem
 end
 
 ---------------------------------------------------------------- footer under the guide window
@@ -79,6 +86,17 @@ local ftext = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 ftext:SetJustifyH("LEFT"); ftext:SetJustifyV("TOP"); ftext:SetWordWrap(true); ftext:SetSpacing(2)
 ftext:SetPoint("TOPLEFT", 8, -6); ftext:SetPoint("RIGHT", footer, "RIGHT", -8, 0)
 WritPath_FooterText = ftext   -- Nav.lua gives it the EllesmereUI font
+
+-- rep from the writs handed in since this plan started (the guide's last line)
+function WritPath_SessionRep()
+  local s = WritPathMoney and WritPathMoney.session
+  if not s then return nil end
+  local rep = 0
+  for _, e in ipairs(WritPathMoney.log) do
+    if (e.t or 0) >= s.start and e.turnedIn then rep = rep + (REP[e.tier] or 0) end
+  end
+  return rep
+end
 
 local function Update()
   local got, cost, net, unpaid, planned, rem = SessionTotals()

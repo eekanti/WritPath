@@ -358,7 +358,14 @@ function Refresh(announce)
     if #ROUTE == 0 then
       row.text:SetText("No route yet. Open the planner with the map icon above (or right-click the minimap button).")
     else
-      row.text:SetText(ICONS.rep .. " " .. (WritPathNav.doneText or "All planned writs handed in") .. ". Close with the X.")
+      local done = WritPathNav.doneText or "All planned writs handed in"
+      local rep = WritPathNav.doneRep and WritPath_SessionRep and WritPath_SessionRep()
+      if rep then   -- what you really handed in, not what was planned
+        done = ("Writs handed in: |cFF00FF25%d rep|r"):format(rep)
+        if rep ~= WritPathNav.doneRep then done = done .. (" |cFFAAAAAA(planned %d)|r"):format(WritPathNav.doneRep) end
+      end
+      row.text:SetText(ICONS.rep .. " " .. done .. ". Close with the X.")
+      if WritPath_MoneyUpdate then WritPath_MoneyUpdate() end   -- the footer's cost now counts only what happened
     end
     row.text:SetAlpha(1); row:SetHeight(30)
     local top = fp and (-4 - hint:GetHeight() - 2) or -4
@@ -405,7 +412,7 @@ close:SetScript("OnClick", function() Show(false) end)
 
 -- the planner hands over a new route here; progress starts fresh
 function WritPath_SetRoute(route, titleText, doneText)
-  WritPathNav.route, WritPathNav.title, WritPathNav.doneText = route, titleText, doneText
+  WritPathNav.route, WritPathNav.title, WritPathNav.doneText, WritPathNav.doneRep = route, titleText, doneText, nil
   ROUTE = route or {}
   WritPathNav.manual, lastStep = {}, nil
   Show(true)
