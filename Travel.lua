@@ -14,6 +14,7 @@ local T = {}
 WritPath_Travel = T
 local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, yards/s, s, s, s
 local LEARN_FP = 20     -- seconds to talk to a new flight master before taking off
+local FLY_GUESS, FLIGHT_GUESS_OVERHEAD = 20.9, 36   -- a flight with no known time: straight yards/s, s (fitted)
 local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
 local HOSTILE = 1200   -- extra seconds for riding into the other faction's capital: only when the stop is inside
 -- zones whose dock is in a faction town (classic): Southshore, Menethil, Auberdine, Rut'theran, Theramore,
@@ -72,7 +73,11 @@ local function FlightTime(a, b)
     if (f[1] == a and f[2] == b) or (f[1] == b and f[2] == a) then return f[3] end
   end
   local r = RXP.flightTimes and RXP.flightTimes[UnitFactionGroup("player")] or {}
-  return (r[a] and r[a][b]) or (r[b] and r[b][a])
+  local rxp = (r[a] and r[a][b]) or (r[b] and r[b][a])
+  if rxp then return rxp end
+  -- pairs RestedXP's list lacks: the length of the game's flight paths between them (Polestar's network)
+  local n = RXP.networkTimes and RXP.networkTimes[UnitFactionGroup("player")] or {}
+  return (n[a] and n[a][b]) or (n[b] and n[b][a])
 end
 T.FlightTime = FlightTime
 
@@ -664,8 +669,10 @@ function T.Build()
       if a ~= b and a.p.inst == b.p.inst and not b.unlearned then
         -- the time this flight took you (or RestedXP's time), otherwise a guess from distance; learning first
         -- takes a moment more
+        -- the guess: flights follow the flight paths, not a straight line; fitted to the recorded times, a flight
+        -- takes about 36 s plus a second per 21 yards of straight distance (FLY's 28 is the gryphon's speed)
         local secs = FlightTime(a.fpid, b.fpid)
-        Edge(a, b, (secs and (secs + 15) or (FLIGHT_OVERHEAD + Dist(a.p, b.p) / FLY)) + (a.unlearned and LEARN_FP or 0), "fly")
+        Edge(a, b, (secs and (secs + 15) or (FLIGHT_GUESS_OVERHEAD + Dist(a.p, b.p) / FLY_GUESS)) + (a.unlearned and LEARN_FP or 0), "fly")
       end
     end
   end
@@ -807,9 +814,15 @@ local function From(src)
     local u, best = top[2], top[1]
     if not done[u] and best <= (dist[u] or math.huge) then
       done[u] = true
+      -- landed from a flight: never take off again straight away. The game flies you from the first flight
+      -- point to the last in one go, so a second takeoff only adds a stop (and a guessed flight time could
+      -- otherwise make the stop look quicker: Nethergarde -> Farholde Keep -> Thelsamar)
+      local landed = prev[u] and prev[u][2].kind == "fly"
       for _, e in ipairs(nodes[u].edges) do
-        local nd = best + e.cost
-        if not dist[e.to.i] or nd < dist[e.to.i] then dist[e.to.i], prev[e.to.i] = nd, { u, e }; Push(nd, e.to.i) end
+        if not (landed and e.kind == "fly") then
+          local nd = best + e.cost
+          if not dist[e.to.i] or nd < dist[e.to.i] then dist[e.to.i], prev[e.to.i] = nd, { u, e }; Push(nd, e.to.i) end
+        end
       end
     end
   end
