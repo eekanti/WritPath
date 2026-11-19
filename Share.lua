@@ -261,11 +261,14 @@ ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
   if event == "PLAYER_LOGIN" then
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end
-    -- the random id's seed: the clock plus a hash of this character's name and realm (two players logging in at the
-    -- same moment still get different ids; the name itself never leaves this PC)
-    local salt = 0
-    for c in ((UnitName and UnitName("player") or "") .. (GetRealmName and GetRealmName() or "")):gmatch(".") do salt = (salt * 31 + c:byte()) % 2147483647 end
-    math.randomseed(math.floor(((time and time() or 0) + (GetTime and GetTime() or 0) * 1000 + salt) % 2147483647))
+    -- the random id's seed. The game's math.random is already seeded randomly and it has no math.randomseed (calling
+    -- it errored here and stopped everything below: no asking around). Outside the game (the tests), seed with the
+    -- clock plus a hash of this character's name and realm, so two players logging in at once get different ids.
+    if math.randomseed then
+      local salt = 0
+      for c in ((UnitName and UnitName("player") or "") .. (GetRealmName and GetRealmName() or "")):gmatch(".") do salt = (salt * 31 + c:byte()) % 2147483647 end
+      math.randomseed(math.floor(((time and time() or 0) + (GetTime and GetTime() or 0) * 1000 + salt) % 2147483647))
+    end
     MyId()
     Prune(Relay())
     -- ask around a little after logging in (spread out, so a whole guild logging in doesn't ask at once), then every
