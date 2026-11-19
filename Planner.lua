@@ -1176,6 +1176,74 @@ end
 
 
 
+---------------------------------------------------------------- room in your bags and quest log
+-- A big plan can need more bag spaces and quest log slots than you have: say so in red before you buy.
+local function StackOf(id, default)
+  local st = C_Item and C_Item.GetItemMaxStackByID and C_Item.GetItemMaxStackByID(id)
+  if not st and GetItemInfo then st = select(8, GetItemInfo(id)) end
+  return (type(st) == "number" and st > 0) and st or default
+end
+-- the new bag spaces `extra` more of an item takes (a part stack you have fills up first)
+local function NewSlots(id, extra, default)
+  if extra <= 0 then return 0 end
+  local have, st = Count(id), StackOf(id, default)
+  return math.ceil((have + extra) / st) - math.ceil(have / st)
+end
+local function FreeBagSlots()
+  local get = (C_Container and C_Container.GetContainerNumFreeSlots) or GetContainerNumFreeSlots
+  if not get then return nil end
+  local free = 0
+  for bag = 0, NUM_BAG_SLOTS or 4 do
+    local n, family = get(bag)
+    if n and (family or 0) == 0 then free = free + n end   -- a profession bag won't take writs or crates
+  end
+  return free
+end
+local function FreeQuestSlots()
+  local max = (C_QuestLog.GetMaxNumQuestsCanAccept and C_QuestLog.GetMaxNumQuestsCanAccept())
+    or MAX_QUESTLOG_QUESTS or MAX_QUESTS or 20
+  local quests
+  if C_QuestLog.GetNumQuestLogEntries then quests = select(2, C_QuestLog.GetNumQuestLogEntries())
+  elseif GetNumQuestLogEntries then quests = select(2, GetNumQuestLogEntries()) end
+  if not quests then return nil end
+  return math.max(0, max - quests)
+end
+-- bag spaces and quest log slots a plan still needs: writ scrolls you buy and the items to fill them, quests
+-- you haven't accepted yet; for Favor, crates and fillings (a crate is handed in as soon as it's accepted)
+local function Room(plan)
+  local bags, quests, want = 0, 0, {}
+  local CRATE = {}
+  if plan.favor then
+    for _, c in ipairs(WritPath_Crates or {}) do CRATE[c[1]] = true end
+    for id, n in pairs(plan.used or {}) do want[id] = n end
+  else
+    for _, p in ipairs(plan.route or {}) do
+      if not p.have then want[p.id] = (want[p.id] or 0) + 1 end
+      if p.w.req then want[p.w.req] = (want[p.w.req] or 0) + (p.w.n or 1) end
+      if not InLog(p.w.q) then quests = quests + 1 end
+    end
+  end
+  for id, n in pairs(want) do
+    local extra = (plan.favor and plan.noBags) and n or (n - Count(id))
+    local writ = WritPath_Writs[id] ~= nil
+    bags = bags + NewSlots(id, extra, (writ or CRATE[id]) and 1 or 20)
+  end
+  return bags, quests
+end
+local lastRoom
+local function WarnRoom(plan)
+  if not plan or not ((plan.route and #plan.route > 0) or (plan.picks and #plan.picks > 0)) then return end
+  local bags, quests = Room(plan)
+  local freeBags, freeQuests = FreeBagSlots(), FreeQuestSlots()
+  local short = {}
+  if freeBags and bags > freeBags then short[#short + 1] = ("%d bag spaces (you have %d free)"):format(bags, freeBags) end
+  if freeQuests and quests > freeQuests then short[#short + 1] = ("%d quest log slots (you have %d free)"):format(quests, freeQuests) end
+  local msg = #short > 0 and ("|cFFFF3333This plan needs " .. table.concat(short, " and ") .. "!|r") or nil
+  if msg and msg ~= lastRoom then Print(msg) end
+  lastRoom = msg
+end
+
+
 local function ShortText(plan)
   local sh = plan.short or {}
   local t = ("Short of %d: %d rep is the most you can do today. Each customer takes one writ a day"):format(plan.target, sh.max or plan.rep)
@@ -1241,6 +1309,7 @@ end
 local lastTop = -62
 local function Show(plan, top)
   current, lastTop = plan, top
+  WarnRoom(plan)
   ageText:SetText(PriceAge(plan))
   local y = 0
   local entries, prev = {}, plan.start
@@ -1908,7 +1977,7 @@ function WritPath_DropFromPlan(ids, why)
 end
 
 -- exposed for the test harness
-WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn }
+WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn, Room = Room, WarnRoom = WarnRoom }
 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
