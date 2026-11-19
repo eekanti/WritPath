@@ -41,6 +41,12 @@ Trips taken in game with WritPath's recorder and shipped as a starting point (20
 both ways (Powderfuse Port <-> Steamwheedle Port), the Thunder Bluff - Undercity and Orgrimmar - Badlands zeppelins, road crossings (Barrens <-> Thousand Needles, Mulgore <->
 Thunder Bluff, Undercity -> Tirisfal) and three flight times. Nothing in this file is copied from another addon.
 
+## Map roads (WritPathRoads.lua)
+
+Roads and trails for 43 outdoor zones, traced by hand (2026-11-19) from the classic zone maps as Wowhead serves them
+(wow.zamimg.com), and for Forever's own zones from guildorder.com's WoW: Forever maps. Only the positions along each
+road are kept, as map coordinates; no map images ship with WritPath.
+
 ## Flight points (WritPathData.lua, `flightNodes`)
 
 Every flight point by taxi node id, with its zone and exact spot: ids, names and factions from public node lists

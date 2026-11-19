@@ -162,6 +162,9 @@ list after asking. What WritPath has learned stays.
   its turns are saved. Once two of your rides agree, routes follow it, with a guide step at each turn
   (`/writs travel` shows how many it knows).
 - **Your hearthstone's spot**, when you set it at an innkeeper or land from it.
+- **Map roads**: WritPath ships the roads and trails of every outdoor zone, traced from the zone maps, so routes
+  follow the drawn roads from the start instead of riding a straight line through the mountains. Route times use
+  your own mount's speed once WritPath has seen you mounted.
 - **Roads**: while you follow a writ route, WritPath notes the roads you take (50-yard hexes), how
   fast you could ride them, and where players died or had to swim. A road taken on 3 or more runs (through a hex or right next to it) is used in routes,
   with a guide step at each bend; in zones with learned roads, routes prefer them to riding cross-country.

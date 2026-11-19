@@ -17,7 +17,13 @@ local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, 
 -- flight when it's clearly faster (the ride's estimate is straight lines between borders; real roads wind,
 -- and a flight needs no steering). A Felwood -> Desolace route once rode two zones to save a minute on paper.
 local RIDE_BIAS = 1.25
-RIDE = RIDE / RIDE_BIAS
+-- Riding speed: your own mount's, when WritPath has seen you mounted (GetUnitSpeed's run speed while mounted,
+-- saved per character in WritPathChar.mountSpeed, so planning on foot in town still uses it); otherwise RIDE.
+local DEFAULT_RIDE = RIDE
+local function MountSpeed() local v = WritPathChar and WritPathChar.mountSpeed; return (type(v) == "number" and v > 7) and v or nil end
+local builtSpeed
+local function SetRide() builtSpeed = MountSpeed() or DEFAULT_RIDE; RIDE = builtSpeed / RIDE_BIAS end
+SetRide()
 local LEARN_FP = 20     -- seconds to talk to a new flight master before taking off
 local FLY_GUESS, FLIGHT_GUESS_OVERHEAD = 20.9, 36   -- a flight with no known time: straight yards/s, s (fitted)
 local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
@@ -585,6 +591,7 @@ end
 
 function T.Build()
   builtLevel = PlayerLevel()
+  SetRide()
   hostileCity = UnitFactionGroup("player") == "Horde" and ALLIANCE_CITIES or HORDE_CITIES
   nodes, byZone, cache, roads = {}, {}, {}, {}
   local L = WritPathLearned or {}
@@ -808,6 +815,39 @@ function T.Build()
     end
     for k in pairs(step) do if not Interior(k) then Walk(k) end end
   end
+  -- roads traced from the zone maps (WritPathRoads.lua): every player starts with them, so routes follow the drawn
+  -- roads instead of a straight line through the mountains. Each point is a road spot; lines that meet at the same
+  -- point share it (a junction). Trails count a little slower. Learned roads (above) are timed by real rides, so a
+  -- shortcut players use wins wherever it's faster.
+  local TRAIL = 1.15
+  for m, z in pairs(WritPath_MapRoads or {}) do
+    local spot = {}
+    local function Spot(x, y)
+      local k = ("%.1f:%.1f"):format(x, y)
+      if spot[k] == nil then
+        local p = T.Point(m, x, y)
+        spot[k] = p and Add({ zone = m, p = p, kind = "road" }) or false
+      end
+      return spot[k]
+    end
+    local any = false
+    for _, kind in ipairs({ "roads", "trails" }) do
+      local f = kind == "trails" and TRAIL or 1
+      for _, line in ipairs(z[kind] or {}) do
+        local prev
+        for i = 1, #line - 1, 2 do
+          local n = Spot(line[i], line[i + 1])
+          if n and prev and n ~= prev and n.p.inst == prev.p.inst then
+            local c = Dist(prev.p, n.p) / RIDE * f
+            Edge(prev, n, c, "road", nil, { prev.p, n.p }); Edge(n, prev, c, "road", nil, { n.p, prev.p })
+            any = true
+          end
+          if n then prev = n end
+        end
+      end
+    end
+    if any then roadZone[m] = true end
+  end
   -- riding between any two places in the same zone (learned road spots join only their nearby places)
   for _, list in pairs(byZone) do
     for _, a in ipairs(list) do
@@ -902,6 +942,7 @@ end
 function Time(a, b)
   if not (a and b) then return 600 end
   if nodes and builtLevel ~= PlayerLevel() then T.Reset() end   -- a new level: danger is judged afresh
+  if nodes and math.abs((MountSpeed() or DEFAULT_RIDE) - builtSpeed) > 0.3 then T.Reset() end   -- a faster (or slower) mount
   if not nodes then T.Build() end
   -- straight there, or over the known roads, ships and flights and then straight to the stop
   local best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil
@@ -1460,6 +1501,14 @@ local function Poll()
     REC.flight = nil
   end
   REC.onTaxi = taxi
+  -- your mount's speed, while you're on it: GetUnitSpeed's second value is the run speed with the mount included
+  if not taxi and WritPath_Open(IsMounted) and GetUnitSpeed then
+    local _, run = GetUnitSpeed("player")
+    if not (issecretvalue and issecretvalue(run)) and type(run) == "number" and run > 7.1 and run < 30 then
+      WritPathChar = WritPathChar or {}
+      WritPathChar.mountSpeed = math.floor(run * 10 + 0.5) / 10   -- the latest mount you rode
+    end
+  end
   -- a tunnel (Timbermaw Hold's Moonglade end, for one): the game gives no map position inside. Keep the last spot
   -- before it went missing; reappearing in another zone close by soon after is a crossing from that spot.
   if not p and last and not taxi and not dead and not inside then REC.lost = REC.lost or { at = last, t = now } end
