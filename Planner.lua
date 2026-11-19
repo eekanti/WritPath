@@ -897,6 +897,9 @@ local function Steps(plan)
     if warn then lines[#lines + 1] = warn end
     lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
     if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
+    -- a customer who walks a patrol: where to look
+    local base = WritPath_Customers and WritPath_Customers[p.w.c]
+    if base and base.patrol then lines[#lines + 1] = GREY_ .. base.patrol .. "|r" end
     -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when
     -- the flight master is nearer to where you come from than the customer is, otherwise right after
     local fp = Travel.UnlearnedNear and Travel.UnlearnedNear(p.pos, FP_DETOUR)
