@@ -552,13 +552,13 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs accept|r  turn off (or back on) accepting writs, handing them in, and handing in Sealed crates")
     Print("  |cFFFFD100/writs travel|r  which flight paths, roads and ships WritPath knows (for a route that walks everywhere)")
     Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
-    Print("  |cFFFFD100/writs share|r  turn off (or back on) sharing the roads and spots you learn with WritPath's author"
+    Print("  |cFFFFD100/writs share|r  turn off (or back on) sharing the roads and spots you learn (anonymously, player to player)"
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
   elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "share" then
     WritPathNav.noShare = not WritPathNav.noShare or nil
-    Print(WritPathNav.noShare and "No longer sharing what you learn with WritPath's author."
-      or "Sharing what you learn (roads, paths, boats, flight times, customer spots) with WritPath's author when asked.")
+    Print(WritPathNav.noShare and "No longer sharing what you learn, or passing on what others learned."
+      or "Sharing what you learn (roads, paths, boats, flight times, customer spots) anonymously, player to player.")
   elseif msg == "plan" then WritPath_OpenPlanner()
   elseif msg == "accept" then
     WritPathNav.noAutoAccept = not WritPathNav.noAutoAccept or nil

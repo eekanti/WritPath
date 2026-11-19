@@ -203,13 +203,21 @@ Clear (red X). The commands that are left (`/writs help` lists them in game):
 
 ## Sharing what you learn
 
-When WritPath's author is online and in your guild, party or raid, instance group or on your in-game friends list,
-their copy may ask yours for what you've learned while travelling: road crossings you rode, winding paths, boat and
-zeppelin trips, flight times, writ customers' spots from your hand-ins, and the roads your writ routes take
-(50-yard hexes, and how many runs used them). It's sent as hidden addon messages, once
-per record. Nothing else is sent: no gold, items or anything about your character beyond its name, which comes with
-any whisper. The author checks the records and ships the good ones to every player in later versions.
-`/writs share` turns this off (and back on).
+WritPath players help each other's routes get better. What your copy learns while travelling (road crossings you
+rode, winding paths, boat and zeppelin trips, flight times, writ customers' spots from your hand-ins, the roads your
+writ routes take, and trouble spots on them) is passed from player to player until it reaches the author, who checks
+it and ships the good parts to everyone in later versions.
+
+- **Anonymous:** your records travel under a random id your copy makes once, never under your character's name. No
+  gold, items or anything else about your character is sent.
+- **Player to player:** every half hour your copy asks the WritPath players it can reach (guild, party or raid,
+  instance group, online in-game friends) for what they have, and keeps it to pass on when asked. Records are checked
+  before they're kept, and anything malformed is dropped.
+- **Limited:** what's passed on to others is at most 40 hidden messages at a time, at most once every 15 minutes per
+  player and to at most 4 players in 10 minutes, sent at the pace most addons keep to. Your copy keeps at most 5,000
+  records from others, each for 3 weeks, and accepts at most 2,000 a day from any one player.
+
+`/writs share` turns all of this off (and back on).
 
 ## License
 
