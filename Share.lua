@@ -66,14 +66,17 @@ local function Records()
 end
 WritPath_ShareRecords = Records   -- for tests
 
--- sending: queued, a few messages a second (slower inside instances, where whispers are throttled)
+-- sending: queued at about 800 characters a second, the pace ChatThrottleLib (used by most addons) keeps to stay
+-- clear of the server's flood limits; much slower inside instances, where whispers are throttled. One answer
+-- carries at most MAXMSG messages; the rest goes with the collector's next ask.
+local MAXMSG, CPS = 100, 800
 local queue, sending = {}, false
 local function Pump()
   local m = table.remove(queue, 1)
   if not m then sending = false; return end
   if C_ChatInfo and C_ChatInfo.SendAddonMessage then pcall(C_ChatInfo.SendAddonMessage, PREFIX, m.text, "WHISPER", m.to) end
   local inside = IsInInstance and IsInInstance()
-  C_Timer.After(inside and 1.5 or 0.25, Pump)
+  C_Timer.After(inside and 1.5 or math.max(0.3, (#m.text + #PREFIX) / CPS), Pump)
 end
 local function Queue(to, text)
   queue[#queue + 1] = { to = to, text = text }
@@ -88,17 +91,20 @@ local function Answer(to)
   if pending[to] and GetTime() - (pendingAt[to] or 0) < 120 then return end   -- an answer is already on its way
   WritPathNav.sharedTo = WritPathNav.sharedTo or {}
   local done = WritPathNav.sharedTo[to] or {}
-  local new = {}
+  local new, sent, msg, msgs = {}, {}, "", 0
   for _, r in ipairs(Records()) do if not done[r] then new[#new + 1] = r end end
   if #new == 0 then return end
-  pending[to], pendingAt[to] = new, GetTime()
-  local msg = ""
   for _, r in ipairs(new) do
-    if #msg + #r + 1 > MAXLEN then Queue(to, "D:" .. msg); msg = "" end
+    if #msg + #r + 1 > MAXLEN then
+      Queue(to, "D:" .. msg); msg = ""; msgs = msgs + 1
+      if msgs >= MAXMSG - 1 then break end   -- enough for one answer
+    end
     msg = msg == "" and r or (msg .. ";" .. r)
+    sent[#sent + 1] = r
   end
   if msg ~= "" then Queue(to, "D:" .. msg) end
-  Queue(to, "E:" .. #new)
+  pending[to], pendingAt[to] = sent, GetTime()
+  Queue(to, "E:" .. #sent)
 end
 
 local ev = CreateFrame("Frame")

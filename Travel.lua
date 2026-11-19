@@ -1338,7 +1338,7 @@ local function Poll()
   local clean = not taxi and not dead and not (last and last.taxi) and now - REC.teleport > 30
   -- the breadcrumb trail (reset by anything that isn't riding: a flight, a teleport, dying, a big jump). Only kept
   -- while a writ route is under way: then you're travelling on purpose, not questing or wandering about town, so a
-  -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time.
+  -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time, except in capitals.
   local onRoute = WritPath_RouteActive and WritPath_RouteActive()
   if not clean or not onRoute or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
     REC.trail, REC.cell = nil, nil   -- the next checkpoint starts afresh (no step across a flight or a jump)
@@ -1353,7 +1353,10 @@ local function Poll()
     end
     while tr[1] and now - tr[1].t > TRAIL_SECS do table.remove(tr, 1) end
   end
-  if last and clean and p.map ~= last.map then
+  -- in a capital (or just leaving one) nothing is noted unless a writ route is under way: cities are where people
+  -- live and wander, not where they travel on purpose
+  local city = ALLIANCE_CITIES[p.map] or HORDE_CITIES[p.map] or (last and (ALLIANCE_CITIES[last.map] or HORDE_CITIES[last.map]))
+  if last and clean and p.map ~= last.map and (onRoute or not city) then
     if p.inst == last.inst then
       if Dist(p, last) < NEAR_CROSS and now - last.t < 5 then
         RecordCrossing(last, p)
@@ -1369,7 +1372,9 @@ local function Poll()
   end
 
   -- where you last stood still for ten seconds (waiting at a dock looks like this)
-  if last and Dist(p, last) < 2 then
+  if city and not onRoute then
+    REC.stillSince, REC.still = nil, nil
+  elseif last and Dist(p, last) < 2 then
     REC.stillSince = REC.stillSince or now
     if now - REC.stillSince >= 10 then REC.still = { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now } end
   else
