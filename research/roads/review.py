@@ -1,6 +1,6 @@
 # Draws traced.json on the zone maps for review: one image per zone plus index.html, in review/ next to this file.
 # python -I review.py [uiMapID ...]   (no ids: every traced zone)
-import json, os, sys, html, time
+import json, os, sys, html, time, base64, io
 from PIL import Image, ImageDraw
 here = os.path.dirname(os.path.abspath(__file__))
 MAPS = r'C:\dev\WritPath_Collector\review\maps'
@@ -10,6 +10,7 @@ AREA = {1411:14,1412:215,1413:17,1416:36,1417:45,1418:3,1419:4,1420:85,1421:130,
 data = json.load(open(os.path.join(here, 'traced.json'), encoding='utf-8'))
 out = os.path.join(here, 'review'); os.makedirs(os.path.join(out, 'img'), exist_ok=True)
 only = [a for a in sys.argv[1:]]
+embedded = {}   # every image inside the page itself, so it opens anywhere (a single-file snapshot too)
 def base(m):
     a = AREA.get(int(m))
     p = os.path.join(MAPS, f'{a}.jpg') if a else os.path.join(MAPS, 'forever', f'{m}.jpg')
@@ -24,12 +25,14 @@ for m, z in data.items():
             d.line(pts, fill=col + (230,), width=4)
             for q in pts: d.ellipse([q[0] - 3, q[1] - 3, q[0] + 3, q[1] + 3], fill=(255, 255, 255, 255), outline=col + (255,))
     im.save(os.path.join(out, 'img', f'{m}.jpg'), quality=85)
+    small = im.resize((W * 3 // 4, H * 3 // 4)); buf = io.BytesIO(); small.save(buf, 'JPEG', quality=78)
+    embedded[m] = 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
 secs = []
 for m in sorted(data, key=lambda k: data[k]['name']):
     z = data[m]
     n = sum(len(l) for l in z.get('roads', [])) , sum(len(l) for l in z.get('trails', []))
     note = f"<p class=note>{html.escape(z['note'])}</p>" if z.get('note') else ''
-    secs.append(f'<section id="z{m}"><h2>{html.escape(z["name"])} <small>{m} · {len(z.get("roads", []))} roads, {len(z.get("trails", []))} trails</small></h2>{note}<img src="img/{m}.jpg?v={int(time.time())}" loading="lazy"></section>')
+    secs.append(f'<section id="z{m}"><h2>{html.escape(z["name"])} <small>{m} · {len(z.get("roads", []))} roads, {len(z.get("trails", []))} trails</small></h2>{note}<img src="{embedded.get(m) or ('img/' + m + '.jpg')}" alt="{html.escape(z['name'])}"></section>')
 nav = ' '.join(f'<a href="#z{m}">{html.escape(data[m]["name"])}</a>' for m in sorted(data, key=lambda k: data[k]['name']))
 open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(f'''<!doctype html><meta charset=utf-8><title>Traced roads review</title>
 <style>body{{background:#15161a;color:#e8e8ea;font:14px/1.45 system-ui,sans-serif;max-width:1060px;margin:24px auto;padding:0 16px}}
