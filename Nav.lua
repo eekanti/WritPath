@@ -137,6 +137,66 @@ local function SetWaypoint(s)
   end)
 end
 
+---------------------------------------------------------------- Polestar
+-- With Polestar installed, the way to each customer is Polestar's, through its public journey API
+-- (Polestar.Nav.API, docs/ARCHITECTURE.md "Nav API" in Polestar's repository): its arrow follows real walking
+-- paths, and it plans the flights, boats and hearthstone itself. WritPath still decides which writs and in what
+-- order; its own arrow and travel steps step aside. When Polestar's own guide takes the arrow back, WritPath's
+-- arrow returns until the next customer. /writs polestar turns it off (or back on).
+local PS_OWNER, PS_ETA_EVERY = "WritPath", 5
+local ps = { key = nil, eta = nil, etaAt = 0 }   -- the customer Polestar guides to, and its time from here
+local function PolestarAPI()
+  local api = Polestar and Polestar.Nav and Polestar.Nav.API
+  return api and api.Navigate and api.Cancel and api.Active and api or nil
+end
+local function NextCustomer(cur)
+  for i = cur, #ROUTE do local s = ROUTE[i]; if s.done and s.done.quests and s.at then return s, i end end
+end
+-- true while Polestar is showing the way to our customer: not after its guide took the arrow back, and not
+-- while its arrow is hidden (Polestar's window hidden without "Keep the arrow when hidden", its arrow turned
+-- off, a taxi): then WritPath's own arrow and travel steps show the way
+local function PolestarShowing()
+  local api = ps.key and PolestarAPI()
+  if not api then return false end
+  local ok, active, owner = pcall(api.Active)
+  if not (ok and active and owner == PS_OWNER) then return false end
+  local arrowFrame = _G.PolestarNavArrow
+  return not (arrowFrame and arrowFrame.IsShown) or arrowFrame:IsShown()
+end
+local function PolestarStop()
+  local api = PolestarAPI()
+  if ps.key and api then pcall(api.Cancel, PS_OWNER) end
+  ps.key, ps.eta = nil, nil
+end
+-- hand Polestar the next customer, once per customer: not while you're still buying at the auction house
+local function PolestarSync(cur)
+  local api = PolestarAPI()
+  if not api then return end
+  local now = ROUTE[cur]
+  local s = not WritPathNav.noPolestar and WritPathNav.shown and now and not (now.done and now.done.ready)
+    and NextCustomer(cur) or nil
+  local key = s and (s.at[1] .. ":" .. s.at[2] .. ":" .. s.at[3]) or nil
+  if key == ps.key then return end
+  PolestarStop()
+  if not s then return end
+  local ok, done = pcall(api.Navigate, PS_OWNER, s.at[1], s.at[2] / 100, s.at[3] / 100, s.at[4])
+  if ok and done then ps.key, ps.etaAt = key, 0 end   -- refused (a spot Polestar can't place): WritPath's own arrow
+end
+-- Polestar's travel time to the customer, asked every few seconds (it answers nil while busy)
+local function PolestarEta()
+  local api = PolestarAPI()
+  if not (api and api.Estimate and PolestarShowing()) then return nil end
+  if GetTime() - ps.etaAt >= PS_ETA_EVERY then
+    ps.etaAt = GetTime()
+    local s = NextCustomer(WritPathNav.step or 1)
+    if s then
+      local ok, secs = pcall(api.Estimate, nil, nil, nil, s.at[1], s.at[2] / 100, s.at[3] / 100)
+      if ok and secs then ps.eta = secs end
+    end
+  end
+  return ps.eta
+end
+
 ---------------------------------------------------------------- guide window
 local WIDTH, SHOWN = 310, 12   -- up to 12 rows, as many as fit in STEPS_H
 local STEPS_H = 360            -- the step list grows to this height, then the mouse wheel scrolls it
@@ -297,9 +357,16 @@ function Refresh(announce)
     end
   end
   WritPathNav.step = cur
+  PolestarSync(cur)
+  -- Polestar shows the way: the travel steps before the next customer are its business, so only the stops show
+  local polestar = PolestarShowing()
+  local function Hidden(i) return polestar and i >= cur and ROUTE[i] and TravelStep(ROUTE[i]) end
+  local hl = cur   -- the row that reads as current: the next customer while the travel steps are hidden
+  while Hidden(hl) do hl = hl + 1 end
   title:SetText(WritPathNav.title or "Writs")
   scroll = math.max(1 - cur, math.min(scroll, #ROUTE - cur))
-  count:SetText(math.min(cur, #ROUTE) .. "/" .. #ROUTE .. (scroll ~= 0 and " |cFFAAAAAA(scrolled)|r" or ""))
+  count:SetText(math.min(cur, #ROUTE) .. "/" .. #ROUTE .. (polestar and " |cFFAAAAAA· Polestar|r" or "")
+    .. (scroll ~= 0 and " |cFFAAAAAA(scrolled)|r" or ""))
 
   if cur ~= lastStep then
     lastStep, scroll = cur, 0   -- the route moved on: back to the current step
@@ -325,18 +392,24 @@ function Refresh(announce)
     hint:Hide()
   end
   local top, full = y, false
+  local i = cur + scroll
+  local eta = polestar and PolestarEta()
   for r = 1, SHOWN do
-    local row, i = rows[r], cur + scroll + r - 1
+    while Hidden(i) do i = i + 1 end
+    local row = rows[r]
     local s = not full and ROUTE[i]
     row.index = s and i or nil
     if s then
       row:Show()
-      row:SetBackdropColor(unpack(i == cur and THEME.current or THEME.step))
+      row:SetBackdropColor(unpack(i == hl and THEME.current or THEME.step))
       row.num:SetText(i)
       local t = {}
       for _, l in ipairs(s.lines) do t[#t + 1] = Icons(l) end
+      if i == hl and polestar then
+        t[#t + 1] = "|cFFAAAAAAPolestar shows the way" .. (eta and (", ~%d min"):format(math.max(1, math.floor(eta / 60 + 0.5))) or "") .. "|r"
+      end
       row.text:SetText(table.concat(t, "\n"))
-      row.text:SetAlpha(i == cur and 1 or (i < cur and 0.45 or 0.7))
+      row.text:SetAlpha(i == hl and 1 or (i < cur and 0.45 or 0.7))
       row.check:SetNormalTexture(WritPathNav.manual[i] and TEX.checked or TEX.box)
       row.text:SetWidth(WIDTH - 62)
       local h = math.max(26, row.text:GetStringHeight() + 12)
@@ -350,6 +423,7 @@ function Refresh(announce)
     else
       row:Hide()
     end
+    i = i + 1
   end
 
   if not ROUTE[cur] then
@@ -385,6 +459,7 @@ arrow:SetScript("OnUpdate", function(self, e)
   if poll > 0.5 then poll = 0; Refresh(true) end
   if tick < 0.03 then return end; tick = 0
   local s = ROUTE[WritPathNav.step]; if not s then return end
+  if PolestarShowing() then self.tex:SetAlpha(0); self.text:SetText(""); return end   -- Polestar's arrow shows the way
   local g = s.at
   if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
   local dist, angle = Vector(g)
@@ -406,7 +481,7 @@ guide:SetScript("OnUpdate", function(_, e) if not arrow:IsShown() then poll = po
 ---------------------------------------------------------------- show/hide, events, slash
 local function Show(on)
   WritPathNav.shown = on
-  if on then guide:Show(); arrow:Show(); Refresh() else guide:Hide(); arrow:Hide() end
+  if on then guide:Show(); arrow:Show(); Refresh() else guide:Hide(); arrow:Hide(); PolestarStop() end
 end
 close:SetScript("OnClick", function() Show(false) end)
 
@@ -539,6 +614,16 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
     Print("  |cFFFFD100/writs share|r  turn off (or back on) sharing the roads and spots you learn with WritPath's author"
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
+    if PolestarAPI() then
+      Print("  |cFFFFD100/writs polestar|r  let Polestar show the way to each customer, or WritPath's own arrow"
+        .. (WritPathNav.noPolestar and " |cFFAAAAAA(WritPath's arrow now)|r" or ""))
+    end
+  elseif msg == "polestar" then
+    if not PolestarAPI() then Print("Polestar isn't installed (or its navigation is off): WritPath shows the way itself."); return end
+    WritPathNav.noPolestar = not WritPathNav.noPolestar or nil
+    PolestarStop(); Refresh()   -- also hands the current customer back to Polestar after its guide took the arrow
+    Print(WritPathNav.noPolestar and "WritPath's own arrow and travel steps show the way."
+      or "Polestar shows the way to each customer; WritPath keeps the order.")
   elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "share" then
     WritPathNav.noShare = not WritPathNav.noShare or nil

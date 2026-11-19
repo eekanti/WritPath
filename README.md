@@ -34,6 +34,9 @@ Everything WritPath needs is in this folder. Optional addons it uses when you ha
 - **Auctionator**: not needed (WritPath scans writ prices itself). If you have it, its prices are used when its
   scan is newer (only for items WritPath's own scan didn't see).
 - **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
+- **Polestar**: when it's installed, Polestar's arrow shows the way to each customer (real walking paths, its flights,
+  boats and hearthstone) and WritPath's guide lists just the stops. WritPath still picks the writs and their order.
+  While Polestar's arrow is hidden, WritPath's own arrow and travel steps take over; `/writs polestar` turns it off.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
 Roads, boats and flight times you use are learned as you travel.
