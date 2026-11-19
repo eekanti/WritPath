@@ -27,7 +27,7 @@ jobs:
           LUA_VER="$(sed -n 's/^WritPath_VERSION = "\(.*\)".*/\1/p' WritPath.lua | tr -d '\r')"
           if [ "$VER" != "$LUA_VER" ]; then echo "Tag $GITHUB_REF_NAME doesn't match WritPath_VERSION $LUA_VER in WritPath.lua"; exit 1; fi
           mkdir -p build/WritPath
-          rsync -a --exclude '.git*' --exclude '.github' --exclude 'mockups' --exclude 'build' ./ build/WritPath/
+          rsync -a --exclude '.git*' --exclude '.github' --exclude 'mockups' --exclude 'research' --exclude 'build' ./ build/WritPath/
           (cd build && zip -qr "WritPath-$VER.zip" WritPath)
           # CurseForge rejects archives with .git folders or scripts
           if unzip -l "build/WritPath-$VER.zip" | grep -E '\.git|\.bat|\.ps1|\.exe'; then echo "The zip has files CurseForge rejects"; exit 1; fi
