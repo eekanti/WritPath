@@ -13,6 +13,11 @@
 local T = {}
 WritPath_Travel = T
 local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, yards/s, s, s, s
+-- Prefer flights: riding counts RIDE_BIAS times as long when routes are compared, so a long ride only beats a
+-- flight when it's clearly faster (the ride's estimate is straight lines between borders; real roads wind,
+-- and a flight needs no steering). A Felwood -> Desolace route once rode two zones to save a minute on paper.
+local RIDE_BIAS = 1.25
+RIDE = RIDE / RIDE_BIAS
 local LEARN_FP = 20     -- seconds to talk to a new flight master before taking off
 local FLY_GUESS, FLIGHT_GUESS_OVERHEAD = 20.9, 36   -- a flight with no known time: straight yards/s, s (fitted)
 local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
