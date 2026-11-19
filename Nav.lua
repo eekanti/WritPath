@@ -303,6 +303,7 @@ function Refresh(announce)
 
   if cur ~= lastStep then
     lastStep, scroll = cur, 0   -- the route moved on: back to the current step
+    WritPathNav.stepSince = GetTime()   -- when this step became the current one (the road recorder's clock)
     SetWaypoint(ROUTE[cur])
     if PlaySound and SOUNDKIT and announce then PlaySound(SOUNDKIT.IG_QUEST_LOG_OPEN or 875) end
   end
@@ -420,6 +421,11 @@ end
 function WritPath_CurrentRoute() return ROUTE end
 -- a writ route with steps still to do (a finished one doesn't count)
 function WritPath_RouteActive() return #ROUTE > 0 and (WritPathNav.step or 1) <= #ROUTE end
+-- where the guide is taking you now ({ map, x, y } or nil) and since when
+function WritPath_RouteTarget()
+  local s = ROUTE[WritPathNav.step or 1]
+  return s and s.at, WritPathNav.stepSince or 0, WritPathNav.step or 1
+end
 function WritPath_Refresh() if WritPathNav then Refresh() end end
 
 local mini = CreateFrame("Button", "WritPathMinimapButton", Minimap)

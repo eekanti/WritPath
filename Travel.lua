@@ -1308,13 +1308,44 @@ local function RecordFlight(a, b, secs)
   T.Reset()
 end
 
+-- Travelling on purpose, or questing with a route open? Road steps are only noted when all of these hold:
+--  * not fighting;
+--  * the route isn't stale: a guide step was done in the last STALE seconds;
+--  * you're getting closer to the guide's current stop: at least HEAD_GAIN yards nearer than HEAD_SECS ago
+--    (the first HEAD_SECS after a step changes count as heading out).
+-- Questing wanders around a hub and gets nowhere; riding to a customer closes in on it.
+local STALE, HEAD_SECS, HEAD_GAIN = 900, 30, 40
+local function Heading(p, now)
+  local function No() if REC.heading then REC.heading.log = {} end; return false end   -- start the history afresh
+  if UnitAffectingCombat and UnitAffectingCombat("player") then return No() end
+  if not WritPath_RouteTarget then return true end
+  local at, since, step = WritPath_RouteTarget()
+  if not at then return No() end
+  if now - (since or 0) > STALE then return No() end
+  local goal = T.Point(at[1], at[2], at[3])
+  local d = goal and goal.inst == p.inst and Dist(p, goal)
+  if not d then return true end   -- the stop is on another continent: nothing to judge by
+  local h = REC.heading
+  if not h or h.step ~= step then h = { step = step, t0 = since or now, log = {} }; REC.heading = h end
+  local log = h.log
+  if log[#log] and now - log[#log].t > 5 then log = {}; h.log = log end   -- a gap (a flight, a pause): no old samples
+  log[#log + 1] = { t = now, d = d }
+  while log[2] and now - log[2].t >= HEAD_SECS do table.remove(log, 1) end   -- keep the sample about HEAD_SECS old
+  if now - h.t0 < HEAD_SECS then return true end
+  local old = log[1]
+  return old and (now - old.t >= HEAD_SECS * 0.5) and (old.d - d >= HEAD_GAIN * (now - old.t) / HEAD_SECS) or false
+end
+T.Heading = Heading
+
 local function Poll()
   if not WritPathLearned then return end
   local now = GetTime()
   local p = T.PlayerPoint()
   local taxi = UnitOnTaxi("player") and true or false
   local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
-  if dead and not REC.dead and p and not p.sea and WritPath_RouteActive and WritPath_RouteActive() then RecordDeath(p) end
+  -- a death counts on a route only if you were heading to the stop just before the fight (not while questing)
+  if dead and not REC.dead and p and not p.sea and WritPath_RouteActive and WritPath_RouteActive()
+     and now - (REC.headingAt or -1e9) < 60 then RecordDeath(p) end
   REC.dead = dead
   local inside = IsInInstance and IsInInstance()
   local last = REC.last
@@ -1340,9 +1371,11 @@ local function Poll()
   -- while a writ route is under way: then you're travelling on purpose, not questing or wandering about town, so a
   -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time, except in capitals.
   local onRoute = WritPath_RouteActive and WritPath_RouteActive()
-  if not clean or not onRoute or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
+  local heading = onRoute and Heading(p, now)
+  if heading then REC.headingAt = now end
+  if not clean or not heading or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
     REC.trail, REC.cell = nil, nil   -- the next checkpoint starts afresh (no step across a flight or a jump)
-    if clean and onRoute then RecordStep(p, now) end
+    if clean and heading then RecordStep(p, now) end
   else
     RecordStep(p, now)
     REC.trail = REC.trail or {}
