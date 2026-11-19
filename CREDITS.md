@@ -10,6 +10,10 @@ Zone crossings, boat and zeppelin routes, flight point positions and flight time
 among them RestedXP's free WoW: Forever guides and flight data (https://www.restedxp.com/). RestedXP does not
 endorse WritPath. What you learn in your own game always wins over this file.
 
+`networkTimes` (50 flight times RestedXP's list lacks) were worked out by deanyo from the lengths of the game's flight
+paths in **Polestar**'s WoW: Forever data (GPL-3.0, https://github.com/fitzforge/polestar, `data/forever/travel.json`),
+2026-11-18. Only these facts were used; no Polestar code or files are included.
+
 ## Writ customers (WritDB.lua)
 
 Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-11-14 and 2026-11-15 from:
@@ -24,6 +28,9 @@ Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-1
   were used; no QuestieDB code or files are included.
 - **QuestieDB** again for where each flight master stands (WritPathData.lua, `flightMasters`), used to place
   the flight points you know when the game can't (2026-11-16).
+- **Polestar** (GPL-3.0, https://github.com/fitzforge/polestar): which NPC five writ quests end at and where that
+  NPC stands, from its WoW: Forever quest and NPC data, contributed by deanyo on 2026-11-18 (customers marked
+  `src = "polestar"`). Only these facts were used; no Polestar code or files are included.
 - **Bind on Forever** (https://bindonforever.com/), quest pages built from a newer QuestieDB build, for a few
   writs the installed QuestieDB didn't have yet.
 - Your own game: map pins of writs you accepted (WritPathLearned).

@@ -165,7 +165,7 @@ WritPath_Data = {
     [77] = { 1413, 44.5, 59.1, "H", "Camp Taurajo, The Barrens" },   -- Omusa Thunderhorn
     [79] = { 1449, 45.2, 5.8, "AH", "Marshal's Refuge, Un'Goro Crater" },   -- Gryfe
     [80] = { 1413, 63.1, 37.2, "AH", "Ratchet, The Barrens" },   -- Bragok
-    [3203] = { 2548, 59.6, 45.1, "H", "Rog'mar, Riverglades" },
-    [3276] = { 2548, 60.6, 81.6, "A", "Farholde Keep, Riverglades" },   -- (Forever); spot from the player's flight map 2026-11-18   -- Grakna (Forever); spot from the player 2026-11-16 (57.9, 44.8 was the innkeeper)
+    [3203] = { 2548, 59.6, 45.1, "H", "Rog'mar, Riverglades" },   -- Grakna (Forever); spot from the player 2026-11-16 (57.9, 44.8 was the innkeeper)
+    [3276] = { 2548, 60.6, 81.6, "A", "Farholde Keep, Riverglades" },   -- (Forever); spot from deanyo's flight map 2026-11-18
   },
 }
