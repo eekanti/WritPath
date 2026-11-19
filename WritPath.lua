@@ -3,6 +3,16 @@
 
 local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. msg) end
 
+-- The game can hand an addon a "secret" value (a speed, a level, a reaction) that may not be compared, added or
+-- tested; touching one is an error. WritPath_Open(fn, ...) calls fn and gives back its first result, or nil when
+-- that result is secret (or fn is missing), so callers treat it as "not known".
+function WritPath_Open(fn, ...)
+  if type(fn) ~= "function" then return nil end
+  local v = fn(...)
+  if issecretvalue and issecretvalue(v) then return nil end
+  return v
+end
+
 ---------------------------------------------------------------- what's in your bags
 -- How many of an item are IN your bags: not what you're wearing, and not the bags themselves (a quiver or ammo
 -- pouch is a bag in a bag slot, and the game's item count includes it). Read once per bag change, then looked up.
@@ -144,7 +154,7 @@ WritPath_Scan = Run   -- reads the map pins of accepted writs (done by itself as
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
-WritPath_VERSION = "1.14.10"
+WritPath_VERSION = "1.14.11"
 local MINE = WritPath_VERSION
 local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
 local function Newer(a, b)   -- is version a newer than version b?

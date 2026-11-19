@@ -118,7 +118,7 @@ local function StepDone(i)
       if not QuestDone(it[3]) and Count(it[1]) < it[2] then hit = false end
     end
   end
-  if d.taxi and UnitOnTaxi("player") then hit = true end
+  if d.taxi and WritPath_Open(UnitOnTaxi, "player") then hit = true end
   if d.arrive and InZone(ArriveZones(s)) then hit = true end
   -- a waypoint on the way (a road crossing) is done once you're close to it; a flight master only once you've
   -- taken the flight (or landed), a boat or zeppelin once you land, a writ customer only when you've handed it in
@@ -310,7 +310,7 @@ function Refresh(announce)
 
   local y = -4
   -- not while flying: passing over a zone isn't being in it
-  local fp = not (UnitOnTaxi and UnitOnTaxi("player")) and FlightHint() or nil
+  local fp = not WritPath_Open(UnitOnTaxi, "player") and FlightHint() or nil
   if fp then
     local town = (fp.name or "a flight master"):match("^([^,]+)") or fp.name
     hint.text:SetText(("%s You don't have this zone's flight path: |cFF00FF25%s|r (%.0f, %.0f). Talk to the flight master to learn it."):format(
@@ -397,7 +397,7 @@ arrow:SetScript("OnUpdate", function(self, e)
   if dist < 10 then
     self.tex:SetAlpha(0); self.text:SetText(g[4] .. "\n|cFF00FF25here|r"); return
   end
-  local facing = GetPlayerFacing()
+  local facing = WritPath_Open(GetPlayerFacing)
   if facing and angle then self.tex:SetAlpha(1); self.tex:SetRotation(angle - facing) else self.tex:SetAlpha(0) end
   self.text:SetText(("%s\n(%dyd)"):format(g[4], math.floor(dist)))
 end)

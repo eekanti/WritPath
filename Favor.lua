@@ -55,7 +55,7 @@ end
 -- own (free). Returns the planner's view of it.
 function WritPath_FavorPlan(target, noBags)   -- noBags: plan as if your bags were empty (buy everything)
   local Price = WritPath_Price
-  local level = UnitLevel and UnitLevel("player") or 60
+  local level = WritPath_Open(UnitLevel, "player") or 60
   local used, owned = {}, {}
   local function Own(id) if owned[id] == nil then owned[id] = noBags and 0 or Count(id) end; return owned[id] end
   local function Buy(id, want)   -- cost of having `want` of it: buy what you don't own

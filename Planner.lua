@@ -1870,7 +1870,7 @@ local zoneWatch = CreateFrame("Frame")
 zoneWatch:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 zoneWatch:SetScript("OnEvent", function()
   C_Timer.After(2, function()
-    if UnitOnTaxi("player") or GetTime() - lastZoneReplan < 20 then return end
+    if WritPath_Open(UnitOnTaxi, "player") or GetTime() - lastZoneReplan < 20 then return end
     lastZoneReplan = GetTime()
     Reroute(nil, "new zone", true)
   end)

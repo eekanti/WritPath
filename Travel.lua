@@ -469,7 +469,7 @@ T.HexKey, T.HexNeighbours = HexKey, HexNeighbours
 -- dangerous for you when it has mobs DANGER_LEVELS or more above you (or a skull, or an elite at your level or
 -- above), or when someone of about your level or higher died there.
 local DANGER_LEVELS = 3
-local function PlayerLevel() return (UnitLevel and UnitLevel("player")) or 60 end
+local function PlayerLevel() return WritPath_Open(UnitLevel, "player") or 60 end
 local function Dangerous(cell, lvl)
   if not cell then return false end
   if cell.s then return true end
@@ -1279,9 +1279,9 @@ local function RecordStep(p, now)
     end
   end
   -- swimming here (once per run per spot)
-  if IsSwimming and IsSwimming() and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
+  if WritPath_Open(IsSwimming) and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
   -- the speed you're moving at, sampled while in this spot
-  local speed = GetUnitSpeed and GetUnitSpeed("player") or 0
+  local speed = WritPath_Open(GetUnitSpeed, "player")   -- nil when the game keeps it secret
   if speed and speed > 0 then REC.speedSum, REC.speedN = (REC.speedSum or 0) + speed, (REC.speedN or 0) + 1 end
   local prev = REC.cell
   if prev == key then return end
@@ -1380,7 +1380,7 @@ local STALE, HEAD_SECS, HEAD_GAIN = 900, 30, 40
 local TUNNEL_SECS, TUNNEL_YDS = 180, 1500   -- a crossing through a stretch with no map position: at most this long and far
 local function Heading(p, now)
   local function No() if REC.heading then REC.heading.log = {} end; return false end   -- start the history afresh
-  if UnitAffectingCombat and UnitAffectingCombat("player") then return No() end
+  if WritPath_Open(UnitAffectingCombat, "player") then return No() end
   if not WritPath_RouteTarget then return true end
   local at, since, step = WritPath_RouteTarget()
   if not at then return No() end
@@ -1408,11 +1408,12 @@ local function RecordMobs(p, now)
   local lo, hi, skull, elite
   for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
     local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-    if u and UnitExists(u) and not UnitIsPlayer(u) and UnitCanAttack("player", u) and not UnitIsDead(u)
-       and (UnitReaction(u, "player") or 4) <= 3 and (not UnitCreatureType or UnitCreatureType(u) ~= "Critter") then
-      local lv = UnitLevel(u)
+    local O = WritPath_Open   -- any of these can be secret: then the mob is skipped
+    if u and O(UnitExists, u) and not O(UnitIsPlayer, u) and O(UnitCanAttack, "player", u) and not O(UnitIsDead, u)
+       and (O(UnitReaction, u, "player") or 4) <= 3 and O(UnitCreatureType, u) ~= "Critter" then
+      local lv = O(UnitLevel, u)
       if lv == -1 then skull = true elseif lv and lv > 0 then lo, hi = math.min(lo or lv, lv), math.max(hi or lv, lv) end
-      local cl = UnitClassification and UnitClassification(u)
+      local cl = O(UnitClassification, u)
       if cl == "elite" or cl == "rareelite" or cl == "worldboss" then elite = true end
     end
   end
@@ -1431,8 +1432,8 @@ local function Poll()
   if not WritPathLearned then return end
   local now = GetTime()
   local p = T.PlayerPoint()
-  local taxi = UnitOnTaxi("player") and true or false
-  local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
+  local taxi = WritPath_Open(UnitOnTaxi, "player") and true or false
+  local dead = WritPath_Open(UnitIsDeadOrGhost, "player")
   -- a death counts on a route only if you were heading to the stop just before the fight (not while questing)
   if dead and not REC.dead and p and not p.sea and WritPath_RouteActive and WritPath_RouteActive()
      and now - (REC.headingAt or -1e9) < 60 then RecordDeath(p) end
