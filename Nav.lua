@@ -403,6 +403,15 @@ arrow:SetScript("OnUpdate", function(self, e)
 end)
 -- the poll lives on the arrow; keep it running while only the window is shown
 guide:SetScript("OnUpdate", function(_, e) if not arrow:IsShown() then poll = poll + e; if poll > 0.5 then poll = 0; Refresh(true) end end end)
+-- with the window closed, the guide still keeps track of where you are on the route (once a second), so the road
+-- recorder always judges your riding against the right stop
+local behind, bgPoll = CreateFrame("Frame"), 0
+behind:SetScript("OnUpdate", function(_, e)
+  bgPoll = bgPoll + e
+  if bgPoll < 1 then return end
+  bgPoll = 0
+  if not guide:IsVisible() and #ROUTE > 0 then Refresh() end   -- closed, or the whole UI hidden (Alt+Z)
+end)
 
 ---------------------------------------------------------------- show/hide, events, slash
 local function Show(on)
