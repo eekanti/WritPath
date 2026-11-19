@@ -192,6 +192,8 @@ ver:RegisterEvent("GROUP_ROSTER_UPDATE")
 ver:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
   if event == "PLAYER_LOGIN" then
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end
+    -- one line at every login and /reload: which version is running
+    C_Timer.After(2, function() Print("v" .. MINE .. " |cFFAAAAAA· /writs help|r") end)
     C_Timer.After(15, Announce)
     -- heard about a newer version before and still don't have it
     if WritPathNav and WritPathNav.latest and Newer(WritPathNav.latest, MINE) then
