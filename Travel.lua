@@ -1377,6 +1377,7 @@ end
 --    (the first HEAD_SECS after a step changes count as heading out).
 -- Questing wanders around a hub and gets nowhere; riding to a customer closes in on it.
 local STALE, HEAD_SECS, HEAD_GAIN = 900, 30, 40
+local TUNNEL_SECS, TUNNEL_YDS = 180, 1500   -- a crossing through a stretch with no map position: at most this long and far
 local function Heading(p, now)
   local function No() if REC.heading then REC.heading.log = {} end; return false end   -- start the history afresh
   if UnitAffectingCombat and UnitAffectingCombat("player") then return No() end
@@ -1453,7 +1454,17 @@ local function Poll()
     REC.flight = nil
   end
   REC.onTaxi = taxi
+  -- a tunnel (Timbermaw Hold's Moonglade end, for one): the game gives no map position inside. Keep the last spot
+  -- before it went missing; reappearing in another zone close by soon after is a crossing from that spot.
+  if not p and last and not taxi and not dead and not inside then REC.lost = REC.lost or { at = last, t = now } end
   if not p or inside or p.sea then return end
+  local lost = REC.lost
+  REC.lost = nil
+  if lost and not taxi and not dead and not lost.at.taxi and lost.at.map ~= p.map and lost.at.inst == p.inst
+     and now - lost.t <= TUNNEL_SECS and now - REC.teleport > 30 and Dist(lost.at, p) < TUNNEL_YDS then
+    local cityGap = ALLIANCE_CITIES[p.map] or HORDE_CITIES[p.map] or ALLIANCE_CITIES[lost.at.map] or HORDE_CITIES[lost.at.map]
+    if not cityGap or (WritPath_RouteActive and WritPath_RouteActive()) then RecordCrossing(lost.at, p) end
+  end
 
   local clean = not taxi and not dead and not (last and last.taxi) and now - REC.teleport > 30
   -- the breadcrumb trail (reset by anything that isn't riding: a flight, a teleport, dying, a big jump). Only kept
