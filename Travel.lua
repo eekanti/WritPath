@@ -430,6 +430,7 @@ end
 
 ---------------------------------------------------------------- the graph
 local nodes, byZone, cache, roads
+local builtLevel   -- the player level the route map was built for (dangerous roads depend on it)
 local roadZone = {}       -- zones with learned roads (checkpoints): off-road riding there counts OFFROAD slower
 local ROAD_RUNS, OFFROAD, ROAD_ACCESS = 3, 1.3, 5   -- runs before a step is road; off-road penalty; access every 5 spots
 
@@ -462,6 +463,54 @@ local function HexNeighbours(key)
   return out
 end
 T.HexKey, T.HexNeighbours = HexKey, HexNeighbours
+
+-- Dangerous stretches, for your level. Each hex remembers the hostile mobs seen from it on writ routes (l/h: lowest
+-- and highest level, s: a "??" mob, e: an elite) and the levels of players who died there (dl/dh). A hex is
+-- dangerous for you when it has mobs DANGER_LEVELS or more above you (or a skull, or an elite at your level or
+-- above), or when someone of about your level or higher died there.
+local DANGER_LEVELS = 3
+local function PlayerLevel() return (UnitLevel and UnitLevel("player")) or 60 end
+local function Dangerous(cell, lvl)
+  if not cell then return false end
+  if cell.s then return true end
+  if cell.h and (cell.h >= lvl + DANGER_LEVELS or (cell.e and cell.h >= lvl)) then return true end
+  if (cell.d or 0) > 0 and cell.dh and cell.dh >= lvl - 2 then return true end
+  return false
+end
+T.Dangerous = Dangerous
+-- the danger along a straight ride from a to b (same continent): a warning line for the guide, or nil
+local function DangerAlong(a, b)
+  local R = WritPathLearned and WritPathLearned.roads
+  if not (a and b and a.wx and b.wx and R and R.v == 2 and R.cells and a.inst == b.inst) then return nil end
+  local lvl = PlayerLevel()
+  local len = math.sqrt((b.wx - a.wx) ^ 2 + (b.wy - a.wy) ^ 2)
+  local n = math.max(1, math.floor(len / 25))
+  local seen, hi, elite, skull, deaths, count = {}, nil, false, false, 0, 0
+  for i = 0, n do
+    local t = i / n
+    local k = HexKey({ inst = a.inst, wx = a.wx + (b.wx - a.wx) * t, wy = a.wy + (b.wy - a.wy) * t })
+    if not seen[k] then
+      seen[k] = true
+      local c = R.cells[k]
+      if Dangerous(c, lvl) then
+        count = count + 1
+        if c.h and c.h >= lvl then hi = math.max(hi or 0, c.h) end
+        elite = elite or (c.e and true) or false
+        skull = skull or (c.s and true) or false
+        if (c.d or 0) > 0 and c.dh and c.dh >= lvl - 2 then deaths = deaths + c.d end
+      end
+    end
+  end
+  if count == 0 then return nil end
+  local what = {}
+  if skull then what[#what + 1] = "mobs far above your level"
+  elseif hi then what[#what + 1] = ("mobs up to level %d"):format(hi) end
+  if elite then what[#what + 1] = "elites" end
+  if deaths > 0 then what[#what + 1] = ("%d %s near your level"):format(deaths, deaths == 1 and "death" or "deaths") end
+  if #what == 0 then what[1] = "trouble" end
+  return ("|cFFFF5555Careful:|r %s on the way (you're %d)"):format(table.concat(what, ", "), lvl)
+end
+T.DangerAlong = DangerAlong
 
 -- riding straight from one zone into another is only allowed when WritPath knows no roads for one of them:
 -- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
@@ -530,6 +579,7 @@ local function Edge(a, b, cost, kind, legs, pts)
 end
 
 function T.Build()
+  builtLevel = PlayerLevel()
   hostileCity = UnitFactionGroup("player") == "Horde" and ALLIANCE_CITIES or HORDE_CITIES
   nodes, byZone, cache, roads = {}, {}, {}, {}
   local L = WritPathLearned or {}
@@ -715,6 +765,7 @@ function T.Build()
             local c, cell = base, R.cells[to]
             if (cell.d or 0) > 0 then c = c + 20 * math.min(cell.d, 3) end   -- deaths here: mobs worth avoiding
             if (cell.w or 0) > 0 then c = c * 1.3 end                        -- swimming
+            if Dangerous(cell, builtLevel) then c = c + 60 end               -- too dangerous for your level
             return c
           end
           local oneWay = (nab >= 3 and nba == 0) and "ab" or ((nba >= 3 and nab == 0) and "ba" or nil)
@@ -845,6 +896,7 @@ function T.Time(a, b)
 end
 function Time(a, b)
   if not (a and b) then return 600 end
+  if nodes and builtLevel ~= PlayerLevel() then T.Reset() end   -- a new level: danger is judged afresh
   if not nodes then T.Build() end
   -- straight there, or over the known roads, ships and flights and then straight to the stop
   local best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil
@@ -905,6 +957,7 @@ function T.Legs(a, b)
   local legs = {}
   if not via then
     if a and b and a.inst ~= b.inst then legs[1] = { kind = "unknown", into = b.map } end
+    legs.finalWarn = DangerAlong(a, b)   -- riding straight there
     return legs
   end
   local chain, i = {}, via.i
@@ -946,18 +999,18 @@ function T.Legs(a, b)
       legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.to.zone,
                           text = "{goto} Ride into |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
     elseif k == "sail" then
-      legs[#legs + 1] = { kind = "sail", at = c.from.p, into = c.to.zone,
+      legs[#legs + 1] = { kind = "sail", at = c.from.p, into = c.to.zone, land = c.to.p,
                           text = ShipText(c.from.zone, c.to.zone) }
     elseif k == "fly" then
       local secs = FlightTime(c.from.fpid, c.to.fpid)
       local town = function(n) return (n or ""):match("^([^,]+)") or n end
       local mins = secs and (" (" .. math.floor(secs / 60 + 0.5) .. " min)") or ""
       if c.from.unlearned then   -- a flight path you don't have yet: learn it, then take off
-        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, learn = true,
+        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, learn = true, land = c.to.p,
                             text = "{fp} Learn the flight path at |cFF00FF25" .. (town(c.from.name) or "the flight master") .. "|r, then fly to |cFF00FF25"
                                    .. (town(c.to.name) or ZoneName(c.to.zone)) .. "|r" .. mins }
       else
-        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid,
+        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, land = c.to.p,
                             text = "{fly} Fly from |cFF00FF25" .. (c.from.name or "here") .. "|r to |cFF00FF25" .. (c.to.name or ZoneName(c.to.zone)) .. "|r" .. mins }
       end
     end
@@ -967,6 +1020,13 @@ function T.Legs(a, b)
   for j = #legs, 2, -1 do
     if legs[j].kind == "cross" and legs[j - 1].kind == "cross" and Dist(legs[j].at, legs[j - 1].at) < 30 then table.remove(legs, j - 1) end
   end
+  -- the stretch you ride to reach each step (after a flight or a boat, from where you land), and the last one to b
+  local from = a
+  for _, l in ipairs(legs) do
+    if l.at then l.warn = DangerAlong(from, l.at) end
+    from = (l.kind == "fly" or l.kind == "sail") and l.land or l.at
+  end
+  legs.finalWarn = DangerAlong(from, b)
   return legs
 end
 
@@ -1248,6 +1308,8 @@ local function RecordDeath(p)
   local key = CellKey(p)
   local cell = R.cells[key] or { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }
   cell.d = (cell.d or 0) + 1
+  local lvl = PlayerLevel()
+  cell.dl, cell.dh = math.min(cell.dl or lvl, lvl), math.max(cell.dh or lvl, lvl)   -- the levels of those who died here
   R.cells[key] = cell
 end
 T.RoadEdge = Edge0
@@ -1337,6 +1399,33 @@ local function Heading(p, now)
 end
 T.Heading = Heading
 
+-- the hostile mobs around you (enemy nameplates), noted on the hex you're in: lowest and highest level, a "??"
+-- mob, an elite. Only while heading to a stop on a route, at most once a second.
+local function RecordMobs(p, now)
+  if not (C_NamePlate and C_NamePlate.GetNamePlates) or now - (REC.mobsAt or 0) < 1 then return end
+  REC.mobsAt = now
+  local lo, hi, skull, elite
+  for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
+    local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+    if u and UnitExists(u) and not UnitIsPlayer(u) and UnitCanAttack("player", u) and not UnitIsDead(u)
+       and (UnitReaction(u, "player") or 4) <= 3 and (not UnitCreatureType or UnitCreatureType(u) ~= "Critter") then
+      local lv = UnitLevel(u)
+      if lv == -1 then skull = true elseif lv and lv > 0 then lo, hi = math.min(lo or lv, lv), math.max(hi or lv, lv) end
+      local cl = UnitClassification and UnitClassification(u)
+      if cl == "elite" or cl == "rareelite" or cl == "worldboss" then elite = true end
+    end
+  end
+  if not (lo or skull) then return end
+  local R = Roads()
+  local key = CellKey(p)
+  local cell = R.cells[key]
+  if not cell then cell = { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }; R.cells[key] = cell end
+  if lo then cell.l, cell.h = math.min(cell.l or lo, lo), math.max(cell.h or hi, hi) end
+  if skull then cell.s = true end
+  if elite then cell.e = true end
+end
+T.RecordMobs = RecordMobs
+
 local function Poll()
   if not WritPathLearned then return end
   local now = GetTime()
@@ -1372,7 +1461,7 @@ local function Poll()
   -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time, except in capitals.
   local onRoute = WritPath_RouteActive and WritPath_RouteActive()
   local heading = onRoute and Heading(p, now)
-  if heading then REC.headingAt = now end
+  if heading then REC.headingAt = now; if clean then RecordMobs(p, now) end end
   if not clean or not heading or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
     REC.trail, REC.cell = nil, nil   -- the next checkpoint starts afresh (no step across a flight or a jump)
     if clean and heading then RecordStep(p, now) end

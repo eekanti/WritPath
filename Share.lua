@@ -54,10 +54,12 @@ local function Records()
         out[#out + 1] = ("H,%s,%s,%d,%s,%d,%s,%s,%d,%s,%s"):format(a, b, bucket, slow, A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y))
       end
     end
-    -- spots where someone died or swam on a route
+    -- spots where someone died or swam on a route, or hostile mobs were seen from the road:
+    -- Q,hex,deaths,swims,map,x,y,mob lowest,mob highest,flags (s: a "??" mob, e: an elite),died lowest,died highest
     for key, c in pairs(R.cells) do
-      if (c.d or 0) > 0 or (c.w or 0) > 0 then
-        out[#out + 1] = ("Q,%s,%d,%d,%d,%s,%s"):format(key, c.d or 0, c.w or 0, c.m, Round(c.x), Round(c.y))
+      if (c.d or 0) > 0 or (c.w or 0) > 0 or c.h or c.s then
+        out[#out + 1] = ("Q,%s,%d,%d,%d,%s,%s,%d,%d,%s,%d,%d"):format(key, c.d or 0, c.w or 0, c.m, Round(c.x), Round(c.y),
+          c.l or 0, c.h or 0, (c.s and "s" or "") .. (c.e and "e" or "") .. "-", c.dl or 0, c.dh or 0)
       end
     end
   end

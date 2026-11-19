@@ -847,7 +847,8 @@ end
 
 -- guide steps for the way from one place to the next
 local function TravelSteps(steps, from, to, suggested)
-  for _, leg in ipairs(Travel.Legs(from, to)) do
+  local legs = Travel.Legs(from, to)
+  for _, leg in ipairs(legs) do
     if leg.learn and suggested then suggested[leg.fpid] = true end   -- learned on the way: no separate suggestion
     if leg.kind == "unknown" then
       steps[#steps + 1] = { lines = { Crossing(to.inst) }, done = { arrive = { leg.into } } }
@@ -857,9 +858,10 @@ local function TravelSteps(steps, from, to, suggested)
       -- a flight is done once you take off, a boat or zeppelin once you land (not on reaching the dock)
       local done = leg.kind == "fly" and { taxi = true, arrive = { leg.into } }
                 or leg.kind == "sail" and { sail = true, arrive = { leg.into } } or { arrive = { leg.into } }
-      steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, lines = { leg.text }, done = done, fpid = leg.fpid }
+      steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, lines = { leg.text, leg.warn }, done = done, fpid = leg.fpid }
     end
   end
+  return legs.finalWarn   -- danger on the last stretch, to the stop itself
 end
 
 local FP_DETOUR, GREY_ = 1e9, "|cFFAAAAAA"   -- any flight path you lack in a zone the route takes you to
@@ -882,15 +884,17 @@ local function Steps(plan)
   local prev = plan.start
   for ri, p in ipairs(plan.route) do
     local tl = plan.tele and plan.tele[ri]
+    local warn
     if tl and p.pos then
       local tp = tl.tp
       steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
                               GREY_, math.floor(tl.save / 60 + 0.5)) },
                             done = { arrive = { tp.dest.map } }, teleport = tp.key }
-      TravelSteps(steps, tp.dest, p.pos, suggested)
-    elseif prev and p.pos then TravelSteps(steps, prev, p.pos, suggested) end
+      warn = TravelSteps(steps, tp.dest, p.pos, suggested)
+    elseif prev and p.pos then warn = TravelSteps(steps, prev, p.pos, suggested) end
     local zone, lines = MapName(p.c.map), {}
     lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
+    if warn then lines[#lines + 1] = warn end
     lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
     if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
     -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when

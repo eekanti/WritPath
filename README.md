@@ -165,6 +165,10 @@ list after asking. What WritPath has learned stays.
 - **Roads**: while you follow a writ route, WritPath notes the roads you take (50-yard hexes), how
   fast you could ride them, and where players died or had to swim. A road taken on 3 or more runs (through a hex or right next to it) is used in routes,
   with a guide step at each bend; in zones with learned roads, routes prefer them to riding cross-country.
+- **Dangerous stretches**: on a route, WritPath also notes the hostile mobs around you (from enemy nameplates, so turn
+  those on) and the level of anyone who dies. A guide step warns in red when the way ahead has mobs 3 or more levels
+  above you, elites at your level, "??" mobs, or deaths of players near your level, and routes go round those roads
+  when they can.
 - **Flight paths you know**, each time you open a flight master's map.
 
 It starts from what ships with it (customer spots from community sources and QuestieDB, RestedXP's roads, boats
