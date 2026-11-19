@@ -56,7 +56,8 @@ WritPath_Customers = {
   ["Petra Grossen"] = { npc = "Petra Grossen", map = 1449, x = 43.7, y = 7.2, src = "questie" },
   ["Plucky Johnson"] = { npc = "Plucky Johnson", map = 1441, x = 79.61, y = 75.63, src = "wowforever" },
   ["Razzeric"] = { npc = "Razzeric", map = 1441, x = 80.33, y = 76.09, src = "wowforever" },
-  ["Rhapsody Shindigger"] = { npc = "Rhapsody Shindigger", map = 1425, x = 26.9, y = 48.6, src = "game" },
+  ["Rhapsody Shindigger"] = { npc = "Rhapsody Shindigger", map = 1425, x = 26.9, y = 48.6, src = "game",
+    via = { 20.7, 47.9, "Follow the path between the mountains from here." } },   -- the way in, from the player 2026-11-19
   ["Rigglefuzz"] = { npc = "Rigglefuzz", map = 1418, x = 42.4, y = 52.9, src = "questie" },
   ["Rizzle Brassbolts"] = { npc = "Rizzle Brassbolts", map = 1441, x = 77.22, y = 77.4, src = "wowforever" },
   ["Scooty"] = { npc = "Scooty", map = 1434, x = 27.6, y = 77.48, src = "wowforever" },

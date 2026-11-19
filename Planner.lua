@@ -885,20 +885,28 @@ local function Steps(plan)
   for ri, p in ipairs(plan.route) do
     local tl = plan.tele and plan.tele[ri]
     local warn
+    -- a customer with a way in (a ramp, a gap in a wall): the route goes to that spot first, then on foot to them
+    local base = WritPath_Customers and WritPath_Customers[p.w.c]
+    local via = base and base.via and p.pos and Travel.Point(p.pos.map, base.via[1], base.via[2])
+    local dest = via or p.pos
     if tl and p.pos then
       local tp = tl.tp
       steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
                               GREY_, math.floor(tl.save / 60 + 0.5)) },
                             done = { arrive = { tp.dest.map } }, teleport = tp.key }
-      warn = TravelSteps(steps, tp.dest, p.pos, suggested)
-    elseif prev and p.pos then warn = TravelSteps(steps, prev, p.pos, suggested) end
+      warn = TravelSteps(steps, tp.dest, dest, suggested)
+    elseif prev and p.pos then warn = TravelSteps(steps, prev, dest, suggested) end
+    if via then
+      steps[#steps + 1] = { at = { via.map, via.x, via.y, "The way in" }, done = { via = true },
+                            lines = { ("{goto} Ride to %s%.1f, %.1f|r first: the way in to %s"):format(G, via.x, via.y, p.c.npc or "the customer"),
+                                      base.via[3] and (GREY_ .. base.via[3] .. "|r") or nil } }
+    end
     local zone, lines = MapName(p.c.map), {}
     lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
     if warn then lines[#lines + 1] = warn end
     lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
     if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
     -- a customer who walks a patrol: where to look
-    local base = WritPath_Customers and WritPath_Customers[p.w.c]
     if base and base.patrol then lines[#lines + 1] = GREY_ .. base.patrol .. "|r" end
     -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when
     -- the flight master is nearer to where you come from than the customer is, otherwise right after
