@@ -204,7 +204,7 @@ local function HeadButton(icon, tip, anchor, onClick)
 end
 local clearBtn = HeadButton("Interface/Buttons/UI-GroupLoot-Pass-Up", { "Clear", "Clear the route, the planner and its shopping list (asks first)." },
   count, function() WritPath_AskClear() end)
-local moneyBtn = HeadButton("Interface/Icons/INV_Misc_Bag_10", { "Writ money", "Every turn-in: what the writ and its item cost and what its pouch paid (in chat)." },
+local moneyBtn = HeadButton("Interface/Icons/INV_Misc_Bag_10", { "Report", "In chat: every writ you've handed in with what the writ and its item cost and what its pouch paid, then your lifetime total: writs, rep earned, pouches, spent, net and cost per rep." },
   clearBtn, function() WritPath_MoneyReport() end)
 local planHeadBtn = HeadButton("Interface/Icons/INV_Misc_Map_01", { "Plan", "Plan writs: a rep target gives the cheapest and the fastest writs to reach it, starting from the ones you have; no target plans just the writs you have." },
   moneyBtn, function() WritPath_TogglePlanner() end)
@@ -575,7 +575,7 @@ SlashCmdList.WRITPATH = function(msg)
   msg = (msg or ""):lower():match("^%s*(.-)%s*$")
   local cur = WritPathNav.step or 1
   if msg == "help" or msg == "?" then
-    Print("Commands (the buttons on the guide window and the minimap button do the rest):")
+    Print(("Version |cFF00FF25%s|r. Commands (the buttons on the guide window and the minimap button do the rest):"):format(WritPath_VERSION or "?"))
     Print("  |cFFFFD100/writs|r  show or hide the guide")
     Print("  |cFFFFD100/writs plan|r  open the planner (writs for a rep target, or Merchant's Favor)")
     Print("  |cFFFFD100/writs runs|r  your last runs: the planner's time estimate against your real time")

@@ -1257,7 +1257,14 @@ local function WarnRoom(plan)
   if freeBags and bags > freeBags then short[#short + 1] = ("%d bag spaces (you have %d free)"):format(bags, freeBags) end
   if freeQuests and quests > freeQuests then short[#short + 1] = ("%d quest log slots (you have %d free)"):format(quests, freeQuests) end
   local msg = #short > 0 and ("|cFFFF3333This plan needs " .. table.concat(short, " and ") .. "!|r") or nil
-  if msg and msg ~= lastRoom then Print(msg) end
+  if msg and msg ~= lastRoom then
+    Print(msg)
+    -- and across the middle of the screen as a raid warning (WritPath's colours, as in chat), with its sound
+    if RaidNotice_AddMessage and RaidWarningFrame then
+      RaidNotice_AddMessage(RaidWarningFrame, "|cff33ff99WritPath|r " .. msg, ChatTypeInfo and ChatTypeInfo["RAID_WARNING"] or { r = 1, g = 1, b = 1 })
+      if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then PlaySound(SOUNDKIT.RAID_WARNING) end
+    end
+  end
   lastRoom = msg
 end
 

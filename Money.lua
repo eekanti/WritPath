@@ -247,7 +247,7 @@ ev:SetScript("OnEvent", function(_, event, a1, _, a3)
 end)
 
 function WritPath_MoneyReport()
-  Print("Writ money:")
+  Print("Writ report:")
   for _, e in ipairs(WritPathMoney.log) do
     local paid = e.paid and Coins(e.paid) or "|cFFFCDC00not opened|r"
     local cost = e.cost and Coins(e.cost) or "?"
@@ -258,5 +258,9 @@ function WritPath_MoneyReport()
     Print(("  %s (%s): cost %s, pouch %s%s"):format(e.name, e.tier, cost, paid, net))
   end
   local got, spent, net = Totals()
-  Print(("Total: pouches %s, spent %s, net %s"):format(Coins(got), Coins(spent), Coins(net, true)))
+  -- lifetime: every writ hand-in WritPath has seen, and the rep it earned
+  local n, rep = 0, 0
+  for _, e in ipairs(WritPathMoney.log) do if e.turnedIn then n, rep = n + 1, rep + (REP[e.tier] or 0) end end
+  local per = rep > 0 and (" (%s%.1fc per rep)"):format(net >= 0 and "+" or "", net / rep) or ""
+  Print(("Total: %d writs, |cFF00FF25%d rep|r · pouches %s, spent %s, net %s%s"):format(n, rep, Coins(got), Coins(spent), Coins(net, true), per))
 end

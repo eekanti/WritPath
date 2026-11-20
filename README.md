@@ -55,7 +55,7 @@ version is out (it hears it from friends, guild or group members who already hav
 2. **Open a flight master's map once on each continent.** That's how WritPath learns which flight paths you know.
    Until then routes can't use flights (`/writs travel` shows what it knows).
 3. Find the **minimap button** (a note icon). Left-click shows or hides the guide window; right-click opens the
-   planner. The guide window's header has the same buttons: map icon = Plan, bag icon = money report,
+   planner. The guide window's header has the same buttons: map icon = Plan, bag icon = Report,
    red X = Clear.
 
 ### The daily limit: each writ once a day
@@ -146,7 +146,7 @@ the current step when that one is done.
 
 The footer under the guide shows the running plan's money: **cost** (what you actually paid once you've bought,
 plus anything still to buy; the planned cost is shown next to it), **pouches** from turn-ins so far, and **net**.
-The bag icon prints every turn-in's cost and pouch in chat.
+The bag icon (**Report**) prints every turn-in's cost and pouch in chat, then your lifetime total: writs, rep earned, spent, net and cost per rep.
 
 Every route is timed: when its last writ is in, chat compares your real travel time (and buying time) with
 the planner's estimate. After three finished runs, the planner's minutes are scaled to your pace.
@@ -180,7 +180,7 @@ and flight points, and trips other WritPath players recorded), and what you lear
 
 ### Slash commands
 
-Most things are buttons: the minimap button, and on the guide window's header Plan (map), Writ money (bag) and
+Most things are buttons: the minimap button, and on the guide window's header Plan (map), Report (bag) and
 Clear (red X). The commands that are left (`/writs help` lists them in game):
 
 | Command | What it does |
