@@ -126,7 +126,10 @@ The guide window shows the next steps, and an arrow on screen points to the curr
 Scroll over the steps with the mouse wheel to see the rest of the route (or the finished steps); it jumps back to
 the current step when that one is done.
 
-- **Fly** steps finish when you take the flight.
+- **Fly** steps finish when you take the flight. At that step's flight master, the flight map rings the stop to
+  fly to in green. Tick **Auto-fly** at the bottom of the planner (or type `/writs autofly`) and talking to that
+  flight master takes the flight for you. It only does this on the fly step itself, at the flight master the step
+  names; hold Shift as you talk to choose your flight yourself.
 - **Road crossings and docks** finish once you're within 200 yards. If you take another road and reach a later
   one first, the guide catches up.
 - **Hearthstone / teleport** steps: routes use your Hearthstone (to where it's bound), a shaman's Astral Recall, a
@@ -194,6 +197,7 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs plan` | Open the planner (writs for a rep target, or Merchant's Favor) |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs accept` | Turn off (or back on) accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
+| `/writs autofly` | Turn on (or off) taking the guide's flight when you talk to its flight master (the planner's Auto-fly box) |
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
 | `/writs discord` | The WritPath Discord's invite link, selected so Ctrl+C copies it |

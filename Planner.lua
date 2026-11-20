@@ -840,7 +840,8 @@ local function TravelSteps(steps, from, to, suggested)
         way = {}
         for _, q in ipairs(leg.way) do way[#way + 1] = { q.map, q.x, q.y, what } end
       end
-      steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, way = way, lines = { leg.text, leg.warn }, done = done, fpid = leg.fpid }
+      steps[#steps + 1] = { at = { leg.at.map, leg.at.x, leg.at.y, what }, way = way, lines = { leg.text, leg.warn }, done = done, fpid = leg.fpid,
+                              flyTo = leg.kind == "fly" and leg.toFp or nil, flyToName = leg.kind == "fly" and leg.toName or nil }
     end
   end
   return legs.finalWarn   -- danger on the last stretch, to the stop itself
@@ -1050,6 +1051,10 @@ local note = Text(content, "GameFontDisableSmall", LIST_W)
 local goBtn = Btn(f, "Start route"); goBtn:Disable()
 local clearBtn = Btn(f, "Clear")   -- clears the route, the plan and its shopping (asks first)
 clearBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", PAD, PAD)
+-- Auto-fly (off unless you tick it; WritPathNav.autoFly, also /writs autofly): see Nav.lua's WritPath_AutoFly
+local flyChk = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate"); flyChk:SetSize(22, 22)
+flyChk:SetPoint("LEFT", clearBtn, "RIGHT", 12, 0)
+local flyL = Text(f); flyL:SetPoint("LEFT", flyChk, "RIGHT", 2, 0); flyL:SetText("Auto-fly"); flyL:SetWordWrap(false)
 
 ---------------------------------------------------------------- the EllesmereUI look (or a plain fallback)
 local accent = { 1, 0.82, 0 }
@@ -1619,6 +1624,17 @@ end)
 hearthChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
 WritPath_HearthCheck = hearthChk   -- for tests
 if skin and skin.Checkbox then skin.Checkbox(hearthChk) end
+flyChk:SetScript("OnShow", function(self) self:SetChecked(WritPathNav and WritPathNav.autoFly and true or false) end)
+flyChk:SetScript("OnClick", function(self) WritPath_SetAutoFly(self:GetChecked() and true or false) end)
+flyChk:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Auto-fly")
+  GameTooltip:AddLine("On a \"fly from A to B\" step, talking to A's flight master takes the flight to B for you.", 1, 1, 1, true)
+  GameTooltip:AddLine("Only on that step and at that flight master. Hold Shift as you talk to choose yourself.", 1, 1, 1, true)
+  GameTooltip:Show()
+end)
+flyChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
+WritPath_AutoFlyCheck = flyChk
+if skin and skin.Checkbox then skin.Checkbox(flyChk) end
 modeBtn:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan for")
   GameTooltip:AddLine("Rep: the writs to reach a reputation target (empty: just the writs you have).", 1, 1, 1, true)

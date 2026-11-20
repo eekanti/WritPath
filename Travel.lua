@@ -1068,11 +1068,11 @@ function T.Legs(a, b)
       local town = function(n) return (n or ""):match("^([^,]+)") or n end
       local mins = secs and (" (" .. math.floor(secs / 60 + 0.5) .. " min)") or ""
       if c.from.unlearned then   -- a flight path you don't have yet: learn it, then take off
-        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, learn = true, land = c.to.p,
+        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, toFp = c.to.fpid, toName = c.to.name, learn = true, land = c.to.p,
                             text = "{fp} Learn the flight path at |cFF00FF25" .. (town(c.from.name) or "the flight master") .. "|r, then fly to |cFF00FF25"
                                    .. (town(c.to.name) or ZoneName(c.to.zone)) .. "|r" .. mins }
       else
-        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, land = c.to.p,
+        legs[#legs + 1] = { kind = "fly", at = c.from.p, into = c.to.zone, fp = c.from.name, fpid = c.from.fpid, toFp = c.to.fpid, toName = c.to.name, land = c.to.p,
                             text = "{fly} Fly from |cFF00FF25" .. (c.from.name or "here") .. "|r to |cFF00FF25" .. (c.to.name or ZoneName(c.to.zone)) .. "|r" .. mins }
       end
     end

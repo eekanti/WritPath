@@ -529,6 +529,98 @@ mini:SetScript("OnEnter", function(self)
 end)
 mini:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+-- The flight map rings the guide's next stop. Auto-fly (the planner's "Auto-fly" box, WritPathNav.autoFly; also /writs autofly): opening the flight map takes
+-- the flight the guide shows, but only on that very step: the current step is "fly from A to B", the flight map is
+-- A's (the node marked as where you are), and B is on it and reachable. Anything else, or holding Shift as you
+-- talk to the flight master, leaves the map to you.
+local function TaxiNames(id)   -- the names a flight point goes by on the flight map
+  local n = {}
+  local d = WritPath_Data and WritPath_Data.flightNodes and WritPath_Data.flightNodes[id]
+  if d and d[5] then n[d[5]:lower()] = true end
+  local f = WritPathLearned and WritPathLearned.fp and WritPathLearned.fp[id]
+  if type(f) == "table" and f.name then n[f.name:lower()] = true end
+  return n
+end
+local function TaxiSlots()   -- every node on the open flight map: { slot, id, name, here, reach }
+  local list = {}
+  local m = GetTaxiMapID and GetTaxiMapID()
+  if m and C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
+    local ok, nodes = pcall(C_TaxiMap.GetAllTaxiNodes, m)
+    local S = Enum and Enum.FlightPathState or { Current = 0, Reachable = 1, Unreachable = 2 }
+    for _, n in ipairs(ok and nodes or {}) do
+      if n.slotIndex then
+        list[#list + 1] = { slot = n.slotIndex, id = n.nodeID, name = n.name and n.name:lower(),
+                            here = n.state == S.Current, reach = n.state == S.Reachable }
+      end
+    end
+  end
+  if #list == 0 and NumTaxiNodes and TaxiNodeName and TaxiNodeGetType then
+    for i = 1, NumTaxiNodes() or 0 do
+      local name, kind = TaxiNodeName(i), TaxiNodeGetType(i)
+      list[#list + 1] = { slot = i, name = name and name:lower(), here = kind == "CURRENT", reach = kind == "REACHABLE" }
+    end
+  end
+  return list
+end
+local function Is(node, id, name)
+  if node.id and id then return node.id == id end
+  if not node.name then return false end
+  if name and node.name == name:lower() then return true end
+  return id and TaxiNames(id)[node.name] or false
+end
+-- the flight the step wants, on the open flight map: its node, or nil when this isn't the step's flight master
+local function StepFlight(s)
+  if not (WritPathNav and s) then return end
+  if ROUTE[WritPathNav.step] ~= s or (WritPathNav.manual or {})[WritPathNav.step] then return end   -- the guide moved on
+  if not (s.done and s.done.taxi and s.flyTo) then return end
+  if WritPath_Open(UnitOnTaxi, "player") then return end
+  local here, to
+  for _, n in ipairs(TaxiSlots()) do
+    if n.here then here = n end
+    if n.reach and Is(n, s.flyTo, s.flyToName) then to = n end
+  end
+  -- the flight master this step sends you to, and no other
+  if not (here and s.fpid and Is(here, s.fpid, s.at and s.at[4])) then return end
+  return to
+end
+-- a green ring around the step's next stop on the flight map (its node's button, else where the map puts it)
+local ring
+local function Ring(slot)
+  local map = TaxiFrame
+  if ring then ring:Hide() end
+  if not (slot and map) then return end
+  if not ring then
+    ring = CreateFrame("Frame", nil, map); ring:SetSize(30, 30)
+    local t = ring:CreateTexture(nil, "OVERLAY"); t:SetAllPoints(); t:SetTexture("Interface/AddOns/WritPath/Media/ring")
+    ring.tex = t
+  end
+  ring:SetParent(map); ring:SetFrameStrata("DIALOG"); ring:ClearAllPoints()
+  local btn = _G["TaxiButton" .. slot]
+  if btn and btn.IsShown and btn:IsShown() then
+    ring:SetPoint("CENTER", btn, "CENTER", 0, 0)
+  else
+    local area = TaxiRouteMap or TaxiMap or map
+    local x, y; if TaxiNodePosition then x, y = TaxiNodePosition(slot) end
+    if not (area and x and y) then return end
+    ring:SetPoint("CENTER", area, "TOPLEFT", x * area:GetWidth(), -y * area:GetHeight())
+  end
+  ring:Show()
+end
+WritPath_FlightRing = function() return ring end   -- for tests
+function WritPath_AutoFly(s)
+  local to = StepFlight(s)
+  Ring(to and to.slot)
+  if not (to and WritPathNav.autoFly) or (IsShiftKeyDown and IsShiftKeyDown()) then return end
+  local name = TaxiNodeName and TaxiNodeName(to.slot) or s.flyToName or "the next stop"
+  Print("Auto-fly: flying to |cFF00FF25" .. name .. "|r (hold Shift as you talk to the flight master to choose yourself)")
+  TakeTaxiNode(to.slot)
+end
+function WritPath_SetAutoFly(on)
+  WritPathNav = WritPathNav or {}
+  WritPathNav.autoFly = on and true or nil
+  if WritPath_AutoFlyCheck then WritPath_AutoFlyCheck:SetChecked(on and true or false) end
+end
+
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("QUEST_TURNED_IN")
@@ -562,6 +654,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
   if event == "TAXIMAP_OPENED" then   -- talking to a flight master completes a "learn the flight path" step
     local s = WritPathNav and ROUTE[WritPathNav.step]
     if s and s.done.taxiMap then WritPathNav.manual[WritPathNav.step] = true; Refresh(true) end
+    C_Timer.After(0.2, function() WritPath_AutoFly(s) end)   -- the ring (or none), and auto-fly
     return
   end
   if event == "PLAYER_LOGIN" then
@@ -588,6 +681,8 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs plan|r  open the planner (writs for a rep target, or Merchant's Favor)")
     Print("  |cFFFFD100/writs runs|r  your last runs: the planner's time estimate against your real time")
     Print("  |cFFFFD100/writs accept|r  turn off (or back on) accepting writs, handing them in, and handing in Sealed crates")
+    Print("  |cFFFFD100/writs autofly|r  turn on (or off) flying to the next stop when you talk to the guide's flight master"
+      .. (WritPathNav.autoFly and " |cFFAAAAAA(on now)|r" or ""))
     Print("  |cFFFFD100/writs travel|r  which flight paths, roads and ships WritPath knows (for a route that walks everywhere)")
     Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
     Print("  |cFFFFD100/writs discord|r  the WritPath Discord's invite link, selected so Ctrl+C copies it (help and news)")
@@ -601,6 +696,10 @@ SlashCmdList.WRITPATH = function(msg)
     if WritPath_SetHearth then WritPath_SetHearth(on and true or false) end
     Print(on and "Plans may use your Hearthstone again where it saves time."
       or "Plans no longer use your Hearthstone (Astral Recall and teleport spells still count).")
+  elseif msg == "autofly" then
+    WritPath_SetAutoFly(not WritPathNav.autoFly)
+    Print(WritPathNav.autoFly and "Auto-fly on: at the flight master the guide sends you to, you take off for its next stop (hold Shift to choose yourself)."
+      or "Auto-fly off: you choose your flights.")
   elseif msg == "discord" then WritPath_CopyDiscord()
   elseif msg == "share" then
     WritPathNav.noShare = not WritPathNav.noShare or nil
