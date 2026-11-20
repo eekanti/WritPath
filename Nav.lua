@@ -11,6 +11,7 @@ local TEX = {
   arrow   = "Interface/AddOns/WritPath/Media/arrow",
   flat    = "Interface/BUTTONS/WHITE8X8",
   icon    = "Interface/AddOns/WritPath/Media/icon",
+  discord = "Interface/AddOns/WritPath/Media/discord",
   box     = "Interface/Buttons/UI-CheckBox-Up",
   checked = "Interface/Buttons/UI-CheckBox-Check",
 }
@@ -190,10 +191,11 @@ local count = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
 local close = CreateFrame("Button", nil, header, "UIPanelCloseButton"); close:SetSize(20, 20); close:SetPoint("RIGHT", -2, 0)
 
 -- small buttons in the header, so nothing needs a slash command
-local function HeadButton(icon, tip, anchor, onClick)
+local function HeadButton(icon, tip, anchor, onClick, whole)   -- whole: our own texture, not a game icon to crop
   local b = CreateFrame("Button", nil, header)
   b:SetSize(16, 16); b:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
-  b:SetNormalTexture(icon); b:GetNormalTexture():SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  b:SetNormalTexture(icon)
+  if not whole then b:GetNormalTexture():SetTexCoord(0.08, 0.92, 0.08, 0.92) end
   b:SetHighlightTexture("Interface/Buttons/ButtonHilight-Square", "ADD")
   b:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(tip[1]); GameTooltip:AddLine(tip[2], 1, 1, 1, true); GameTooltip:Show()
@@ -204,8 +206,11 @@ local function HeadButton(icon, tip, anchor, onClick)
 end
 local clearBtn = HeadButton("Interface/Buttons/UI-GroupLoot-Pass-Up", { "Clear", "Clear the route, the planner and its shopping list (asks first)." },
   count, function() WritPath_AskClear() end)
+-- the WritPath Discord: its invite link, selected so Ctrl+C copies it
+local shareBtn = HeadButton(TEX.discord, { "Discord", "The WritPath Discord's invite link, selected: press Ctrl+C to copy it, then paste it in your browser. Help and news." },
+  clearBtn, function() WritPath_CopyDiscord() end, true)
 local moneyBtn = HeadButton("Interface/Icons/INV_Misc_Bag_10", { "Report", "In chat: every writ you've handed in with what the writ and its item cost and what its pouch paid, then your lifetime total: writs, rep earned, pouches, spent, net and cost per rep." },
-  clearBtn, function() WritPath_MoneyReport() end)
+  shareBtn, function() WritPath_MoneyReport() end)
 local planHeadBtn = HeadButton("Interface/Icons/INV_Misc_Map_01", { "Plan", "Plan writs: a rep target gives the cheapest and the fastest writs to reach it, starting from the ones you have; no target plans just the writs you have." },
   moneyBtn, function() WritPath_TogglePlanner() end)
 title:SetPoint("RIGHT", planHeadBtn, "LEFT", -4, 0); title:SetJustifyH("LEFT"); title:SetWordWrap(false)
@@ -510,12 +515,15 @@ mini:SetScript("OnDragStart", function(self)
 end)
 mini:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
 mini:SetScript("OnClick", function(_, button)
-  if button == "RightButton" then WritPath_TogglePlanner() else Show(not guide:IsShown()) end
+  if button == "RightButton" then WritPath_TogglePlanner()
+  elseif IsShiftKeyDown and IsShiftKeyDown() then WritPath_CopyDiscord()
+  else Show(not guide:IsShown()) end
 end)
 mini:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_LEFT"); GameTooltip:SetText("WritPath")
   GameTooltip:AddLine("Left-click: show or hide the guide", 1, 1, 1)
   GameTooltip:AddLine("Right-click: writ planner", 1, 1, 1)
+  GameTooltip:AddLine("Shift-click: the WritPath Discord's link", 1, 1, 1)
   GameTooltip:AddLine("Drag: move this button", 0.7, 0.7, 0.7)
   GameTooltip:Show()
 end)
@@ -582,6 +590,7 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs accept|r  turn off (or back on) accepting writs, handing them in, and handing in Sealed crates")
     Print("  |cFFFFD100/writs travel|r  which flight paths, roads and ships WritPath knows (for a route that walks everywhere)")
     Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
+    Print("  |cFFFFD100/writs discord|r  the WritPath Discord's invite link, selected so Ctrl+C copies it (help and news)")
     Print("  |cFFFFD100/writs share|r  turn off (or back on) sharing the roads and spots you learn (anonymously, player to player)"
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs hearth|r  turn off (or back on) using your Hearthstone in plans, for this character"
@@ -592,6 +601,7 @@ SlashCmdList.WRITPATH = function(msg)
     if WritPath_SetHearth then WritPath_SetHearth(on and true or false) end
     Print(on and "Plans may use your Hearthstone again where it saves time."
       or "Plans no longer use your Hearthstone (Astral Recall and teleport spells still count).")
+  elseif msg == "discord" then WritPath_CopyDiscord()
   elseif msg == "share" then
     WritPathNav.noShare = not WritPathNav.noShare or nil
     Print(WritPathNav.noShare and "No longer sharing what you learn, or passing on what others learned."

@@ -11,6 +11,8 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
 - **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
   flight paths you know.
 
+**Discord:** help and news: **https://discord.gg/8PJXe24u5V** (in game: the Discord logo on the guide window, or `/writs discord`).
+
 ## Screenshots
 
 Mockups with example data (open [mockups/writpath-mockup.html](mockups/writpath-mockup.html) in a browser to click
@@ -149,7 +151,10 @@ plus anything still to buy; the planned cost is shown next to it), **pouches** f
 The bag icon (**Report**) prints every turn-in's cost and pouch in chat, then your lifetime total: writs, rep earned, spent, net and cost per rep.
 
 Every route is timed: when its last writ is in, chat compares your real travel time (and buying time) with
-the planner's estimate. After three finished runs, the planner's minutes are scaled to your pace.
+the planner's estimate. The clock stops while you stand still for more than a minute (a break, a fight, a chat),
+but not while you wait for a boat or zeppelin. After three finished runs, the planner's minutes are scaled to your
+pace (the median of your last five). Only runs timed by the current planner count, so a planner update that changes
+its times starts your pace over.
 
 **Clear** (the button in the planner, or the red X in the guide header) clears the route, the plan and its shopping
 list after asking. What WritPath has learned stays.
@@ -180,8 +185,8 @@ and flight points, and trips other WritPath players recorded), and what you lear
 
 ### Slash commands
 
-Most things are buttons: the minimap button, and on the guide window's header Plan (map), Report (bag) and
-Clear (red X). The commands that are left (`/writs help` lists them in game):
+Most things are buttons: the minimap button (shift-click it for the Discord link), and on the guide
+window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). The commands that are left (`/writs help` lists them in game):
 
 | Command | What it does |
 |---|---|
@@ -191,6 +196,7 @@ Clear (red X). The commands that are left (`/writs help` lists them in game):
 | `/writs accept` | Turn off (or back on) accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
+| `/writs discord` | The WritPath Discord's invite link, selected so Ctrl+C copies it |
 | `/writs share` | Turn off (or back on) sharing what you learn with WritPath's author (see below) |
 | `/writs help` | This list, in game |
 

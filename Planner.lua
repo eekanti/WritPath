@@ -1072,6 +1072,7 @@ local function ApplySkin(S)
   if S.OnLooksChanged then S.OnLooksChanged(Accent) end
 end
 if EllesmereUI and EllesmereUI.RegisterSkin then EllesmereUI.RegisterSkin("WritPath", ApplySkin) end
+WritPath_Skin = function() return skin end   -- for windows made later (the Discord link box)
 
 local function PlainLook()   -- no EllesmereUI (or its skinning is off for WritPath): flat dark with thin borders
   if skin then return end
@@ -1092,10 +1093,12 @@ local function FmtMin(secs)
   return m .. " m"
 end
 -- a run counts toward your pace only when it was (nearly) finished: its estimate is for the whole route, so a
--- route cleared early would look far too quick
+-- route cleared early would look far too quick. And only when its estimate came from today's planner: PACE_V goes
+-- up whenever the planner's times change (1.15.6: runs before it were timed by older planners, and with breaks).
+local PACE_V = 2
 local function Counts(run)
   local done, writs = run.done or 0, run.writs or 0
-  return run.travel and run.est and run.est > 0 and done >= 3 and (writs == 0 or done >= 0.75 * writs)
+  return run.pv == PACE_V and run.travel and run.est and run.est > 0 and done >= 3 and (writs == 0 or done >= 0.75 * writs)
 end
 function WritPath_Pace()
   local r = {}
@@ -1116,7 +1119,8 @@ local function CloseRun(reason)
   if not run then return end
   WritPathNav.run = nil
   if (run.done or 0) == 0 then return end   -- nothing handed in: not a run worth keeping
-  run.travel = (run.last or run.start) - (run.boughtAt or run.start)
+  -- travel: from leaving the auction house (or the start) to the last hand-in, less the time you stood still
+  run.travel = math.max(0, (run.last or run.start) - (run.boughtAt or run.start) - (run.idleAtLast or 0))
   run.total = (run.last or run.start) - run.start
   WritPathNav.runs = WritPathNav.runs or {}
   table.insert(WritPathNav.runs, run)
@@ -1128,21 +1132,57 @@ WritPath_CloseRun = CloseRun
 
 local function StartRun(plan)
   CloseRun("a new route started")
-  WritPathNav.run = { start = time(), est = plan.secs or 0, writs = #plan.route, rep = 0, done = 0,
+  WritPathNav.run = { start = time(), est = plan.secs or 0, writs = #plan.route, rep = 0, done = 0, pv = PACE_V, idle = 0,
                       quick = plan.quick or nil, mode = plan.mine and "mine" or (WritPathNav.planChoice or "cheap"), ids = {} }
   for _, p in ipairs(plan.route) do WritPathNav.run.ids[p.w.q] = REP[p.w.tier] or 0 end
 end
 -- buying ends when you close the auction house
 function WritPath_RunBought()
   local run = WritPathNav and WritPathNav.run
-  if run and (run.done or 0) == 0 then run.boughtAt = time() end
+  if run and (run.done or 0) == 0 then run.boughtAt = time(); run.idle = 0 end   -- the clock starts now
 end
+
+-- the clock stops while you stand still: after 60 seconds without moving, until you move again. Not while the
+-- guide has you waiting for a boat or zeppelin (that's part of the trip), and not on a flight.
+local IDLE_AFTER = 60
+local stillFor, idleTick, lastPos = 0, 0, nil
+local function Where()
+  if UnitPosition then
+    local y, x, _, inst = UnitPosition("player")
+    if x then return x, y, inst, 1 end   -- yards
+  end
+  local p = Travel and Travel.PlayerPoint and Travel.PlayerPoint()
+  if p then return p.x, p.y, p.map, 0.02 end   -- zone percent
+end
+local function WaitingForShip()
+  local route = WritPath_CurrentRoute and WritPath_CurrentRoute()
+  local s = route and route[WritPathNav.step or 1]
+  return s and s.done and s.done.sail
+end
+local function IdleTick(dt)
+  local run = WritPathNav and WritPathNav.run
+  if not run then stillFor, lastPos = 0, nil; return end
+  local x, y, where, near = Where()
+  local moved = not (x and lastPos and lastPos[3] == where and math.abs(x - lastPos[1]) <= lastPos[4] and math.abs(y - lastPos[2]) <= lastPos[4])
+  if x then lastPos = { x, y, where, near } end
+  if moved or (UnitOnTaxi and UnitOnTaxi("player")) or WaitingForShip() then stillFor = 0; return end
+  stillFor = stillFor + dt
+  if stillFor > IDLE_AFTER then run.idle = (run.idle or 0) + math.min(dt, stillFor - IDLE_AFTER) end
+end
+WritPath_RunIdleTick = IdleTick   -- for tests
+local idleFrame = CreateFrame("Frame")
+idleFrame:SetScript("OnUpdate", function(_, e)
+  idleTick = idleTick + e
+  if idleTick < 1 then return end
+  IdleTick(idleTick); idleTick = 0
+end)
 local function RunTurnin(q)
   local run = WritPathNav and WritPathNav.run
   if not (run and run.ids and run.ids[q]) then return end
   run.done = (run.done or 0) + 1
   run.rep = (run.rep or 0) + run.ids[q]
   run.last = time()
+  run.idleAtLast = run.idle or 0   -- standing still after the last hand-in isn't part of the run
   run.ids[q] = nil
   if not next(run.ids) then CloseRun() end
 end
@@ -1152,11 +1192,13 @@ function WritPath_RunReport()
   if #runs == 0 then Print("No finished runs yet: start a route from the planner and hand its writs in."); return end
   for i = math.max(1, #runs - 9), #runs do
     local r = runs[i]
-    Print(("%s  %d%s writs, %d rep%s: travel %s (planner %s, x%.2f)%s%s"):format(date("%m-%d %H:%M", r.start), r.done or 0,
+    Print(("%s  %d%s writs, %d rep%s: travel %s (planner %s, x%.2f)%s%s%s"):format(date("%m-%d %H:%M", r.start), r.done or 0,
       (r.writs and r.writs ~= r.done) and (" of " .. r.writs) or "", r.rep or 0,
       r.quick and " (Quick)" or "", FmtMin(r.travel), FmtMin(r.est), (r.est or 0) > 0 and r.travel / r.est or 0,
       r.boughtAt and (", buying " .. FmtMin(r.boughtAt - r.start)) or "",
-      Counts(r) and "" or " |cFFAAAAAA(not finished: not used for your pace)|r"))
+      (r.idleAtLast or 0) >= 60 and (", " .. FmtMin(r.idleAtLast) .. " standing still left out") or "",
+      Counts(r) and "" or (r.pv ~= PACE_V and " |cFFAAAAAA(older planner: not used for your pace)|r"
+                                         or " |cFFAAAAAA(not finished: not used for your pace)|r")))
   end
   local pace, n = WritPath_Pace()
   Print(n >= 3 and ("Planner times are scaled x%.2f to your pace (median of your last %d runs)."):format(pace, n)
@@ -1614,7 +1656,7 @@ goBtn:SetScript("OnClick", function()
   local run = WritPathNav.run
   if again and run then
     local done = run.done or 0
-    run.est = (current.secs or 0) + (run.boughtAt and (time() - run.boughtAt) or 0)
+    run.est = (current.secs or 0) + (run.boughtAt and math.max(0, time() - run.boughtAt - (run.idle or 0)) or 0)
     run.writs, run.ids = #current.route + done, {}
     for _, p in ipairs(current.route) do run.ids[p.w.q] = REP[p.w.tier] or 0 end
   else
