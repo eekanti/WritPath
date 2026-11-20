@@ -584,7 +584,14 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
     Print("  |cFFFFD100/writs share|r  turn off (or back on) sharing the roads and spots you learn (anonymously, player to player)"
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
+    Print("  |cFFFFD100/writs hearth|r  turn off (or back on) using your Hearthstone in plans, for this character"
+      .. ((WritPathChar and WritPathChar.noHearth) and " |cFFAAAAAA(off now)|r" or ""))
   elseif msg == "runs" then WritPath_RunReport()
+  elseif msg == "hearth" then
+    local on = WritPathChar and WritPathChar.noHearth   -- off now: turn it on
+    if WritPath_SetHearth then WritPath_SetHearth(on and true or false) end
+    Print(on and "Plans may use your Hearthstone again where it saves time."
+      or "Plans no longer use your Hearthstone (Astral Recall and teleport spells still count).")
   elseif msg == "share" then
     WritPathNav.noShare = not WritPathNav.noShare or nil
     Print(WritPathNav.noShare and "No longer sharing what you learn, or passing on what others learned."

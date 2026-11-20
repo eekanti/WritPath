@@ -1745,7 +1745,8 @@ end
 function T.Teleports()
   local list = {}
   local hs, hsName = T.HearthSpot()
-  if hs and ItemCount(HEARTH) > 0 then
+  -- the Hearthstone only if you allow it (the planner's Hearth box, /writs hearth; per character)
+  if hs and ItemCount(HEARTH) > 0 and not (WritPathChar and WritPathChar.noHearth) then
     local left, d = ItemLeft(HEARTH)
     list[#list + 1] = { key = "hearth", text = "Use your Hearthstone", dest = hs, destName = hsName, ready = left,
                         cd = Cooldown("hearth", d, 3600), cast = 25 }

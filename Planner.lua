@@ -996,6 +996,16 @@ local bagsChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate")
 bagsChk:SetPoint("LEFT", planBtn, "RIGHT", 10, 0)
 local bagsL = Text(buyRow); bagsL:SetPoint("LEFT", bagsChk, "RIGHT", 2, 0); bagsL:SetText("Use my bags"); bagsL:SetWordWrap(false)
 bagsChk:Hide(); bagsL:Hide()
+-- plan with your Hearthstone or not (per character, WritPathChar.noHearth; also /writs hearth). Only the Hearthstone:
+-- Astral Recall and mage or druid teleports are still used.
+local hearthChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); hearthChk:SetSize(22, 22)
+local hearthL = Text(buyRow); hearthL:SetPoint("LEFT", hearthChk, "RIGHT", 2, 0); hearthL:SetText("Hearth"); hearthL:SetWordWrap(false)
+local function PlaceHearth()
+  hearthChk:ClearAllPoints()
+  if bagsChk:IsShown() then hearthChk:SetPoint("LEFT", bagsL, "RIGHT", 8, 0) else hearthChk:SetPoint("LEFT", planBtn, "RIGHT", 10, 0) end
+  hearthChk:SetChecked(not (WritPathChar and WritPathChar.noHearth))
+end
+PlaceHearth()
 for _, w in ipairs({ repBox, planBtn }) do
   w:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan")
@@ -1538,6 +1548,7 @@ local function SetMode(favor)
   modeBtn:SetText(favor and "Favor" or "Rep"); FitWidth(modeBtn)
   bagsChk:SetChecked(not WritPathNav.favorNoBags)
   if favor then bagsChk:Show(); bagsL:Show() else bagsChk:Hide(); bagsL:Hide() end
+  PlaceHearth()
   repBox:SetText("")   -- you type the target: nothing planned you didn't ask for
 end
 modeBtn:SetScript("OnClick", function()
@@ -1554,6 +1565,26 @@ end)
 bagsChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
 WritPath_BagsCheck = bagsChk   -- for tests
 if skin and skin.Checkbox then skin.Checkbox(bagsChk) end   -- EllesmereUI skinned the window before this existed
+-- the Hearthstone on or off: the shown plan (and a route under way) is planned again
+function WritPath_SetHearth(on)
+  WritPathChar = WritPathChar or {}
+  WritPathChar.noHearth = (not on) or nil
+  hearthChk:SetChecked(on)
+  if WritPath_RouteActive and WritPath_RouteActive() and WritPath_RerouteNow then WritPath_RerouteNow("hearthstone " .. (on and "on" or "off"), true) end
+end
+hearthChk:SetScript("OnClick", function(self)
+  WritPath_SetHearth(self:GetChecked() and true or false)
+  DoPlan()
+end)
+hearthChk:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Use your Hearthstone")
+  GameTooltip:AddLine("On: plans may use your Hearthstone where it saves the most time.", 1, 1, 1, true)
+  GameTooltip:AddLine("Off: never. Keep it for getting home. (Astral Recall and teleport spells are still used.)", 1, 1, 1, true)
+  GameTooltip:Show()
+end)
+hearthChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
+WritPath_HearthCheck = hearthChk   -- for tests
+if skin and skin.Checkbox then skin.Checkbox(hearthChk) end
 modeBtn:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan for")
   GameTooltip:AddLine("Rep: the writs to reach a reputation target (empty: just the writs you have).", 1, 1, 1, true)
