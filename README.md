@@ -3,8 +3,8 @@
 A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Logistics / merchant reputation).
 
 - **Plan:** set a rep target and get the cheapest and the fastest set of writs to reach it, starting from the
-  writs you have and priced from WritPath's own auction house scan (or Auctionator's), never two writs for the
-  same customer in one day. With no target, it plans just the writs you have, in the shortest hand-in order.
+  writs you have and priced from WritPath's own auction house scan (or Auctionator's), each writ once a day (the game's
+  limit). With no target, it plans just the writs you have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
 - **Buying help:** at the auction house a shopping panel buys the plan's list one click at a time, with a price cap.
 - **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
@@ -58,10 +58,11 @@ version is out (it hears it from friends, guild or group members who already hav
    planner. The guide window's header has the same buttons: map icon = Plan, bag icon = money report,
    red X = Clear.
 
-### The one rule: one writ per customer per day
+### The daily limit: each writ once a day
 
-Each customer takes one writ a day. Writs that go to the same customer count as one, so WritPath never plans
-two for the same customer on the same day; extra writs are listed as "Tomorrow" and kept for another day.
+The game lets you hand in each writ once a day. A customer takes as many *different* writs as you bring, so
+writs for the same customer are handed in at one stop. A second copy of a writ you've already handed in today
+waits for tomorrow.
 
 ### Plan
 

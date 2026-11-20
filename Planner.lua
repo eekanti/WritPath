@@ -2,7 +2,8 @@
 --  * customers: WritDB.lua, overridden by map pins learned in game (WritPathLearned)
 --  * prices:    Auctionator's last scan, read live (writ + requested items, minus what you already own)
 --  * picking:   cheapest gold per rep, plus travel time priced at "time worth" silver per minute;
---               one writ per customer per day, customers already used today are skipped
+--               each writ once a day (the game's daily limit is per writ: a customer takes any number of
+--               different writs, 2026-11-20)
 --  * route:     shortest order through the picked customers, then handed to the guide window
 -- /writs plan  opens the planner (a rep target plans what to buy; no target plans just the writs you have)
 
@@ -145,7 +146,7 @@ local function LearnTurnin(q)
       WritPathLearned.npcs = WritPathLearned.npcs or {}
       local key = w.c or ("npc:" .. turnin.npc)
       local known = WritPathLearned.npcs[key]
-      -- a writ handed to its own NPC (w.who) next to the customer it shares a daily limit with: that NPC's
+      -- a writ handed to its own NPC (w.who), standing next to another customer: that NPC's
       -- name and spot stay with this writ, not with every writ of the customer
       if not w.who then
         WritPathLearned.npcs[key] = { map = spot.map, x = spot.x, y = spot.y, npc = turnin.npc, t = spot.t }
@@ -161,7 +162,7 @@ local function LearnTurnin(q)
 end
 
 -- where a writ is turned in: your learned pin first, then the database; nil when nobody knows yet.
--- key identifies the customer (one writ per customer per day)
+-- key identifies the customer (their writs share one stop)
 function Customer(id)
   local w = DB[id]; if not w then return nil end
   local base = w.c and CUST[w.c]
@@ -184,7 +185,7 @@ function Customer(id)
     end
     return { key = key, npc = L.npc or (w.who and w.who.npc) or (base and base.npc), map = L.map, x = L.x, y = L.y, exact = true }
   end
-  -- a writ that goes to its own NPC while sharing another customer's daily limit
+  -- a writ that goes to its own NPC, standing right next to another customer (one stop for both)
   if w.who then return { key = w.c, npc = w.who.npc, map = w.who.map, x = w.who.x, y = w.who.y, exact = true } end
   -- this customer's spot learned at another writ's turn-in
   local N = w.c and LW.npcs and LW.npcs[w.c]
@@ -198,14 +199,6 @@ function Customer(id)
   end
   if not (base and base.map) then return nil end
   return { key = w.c, npc = base.npc, map = base.map, x = base.x or 50, y = base.y or 50, exact = base.x ~= nil }
-end
-
-local function UsedToday()
-  local used = {}
-  for id, w in pairs(DB) do
-    if Done(w.q) then local c = Customer(id); if c then used[c.key] = w.name end end
-  end
-  return used
 end
 
 ---------------------------------------------------------------- prices
@@ -379,14 +372,13 @@ local function QuickOK(c)
 end
 
 local function Candidates(zoneOnly)
-  local used, list, skipped = UsedToday(), {}, {}
+  local list, skipped = {}, {}
   for id, w in pairs(DB) do
     local rep = REP[w.tier]
     local c = Customer(id)
     local why
     if Done(w.q) then why = "done today"
     elseif not c then why = "customer unknown"
-    elseif used[c.key] then why = "customer used today (" .. used[c.key] .. ")"
     elseif not c.exact and not zoneOnly then why = "only the zone is known"
     elseif not QuickOK(c) then why = "not next to a flight path you have (Quick)" end
     local cost, have, need
@@ -512,18 +504,17 @@ local function BestOrder(start, stops, quick)
   return out
 end
 
--- writs in your bags or quest log; one per customer today, the rest wait for tomorrow
+-- writs in your bags or quest log (not yet handed in today), in the best order
 local function PlanOwned(only, skipQuest, planned, ready, priced)   -- priced: planning to buy (leave out what can't be had)   -- only: just these writ ids; skipQuest: a quest just handed in;
                                                      -- planned: the "only" writs count even if not bought yet;
                                                      -- ready: only writs you can hand in now (their item in your bags)
   Travel.Reset(); ResetMemo()
-  local used = UsedToday()
-  local stops, later, unknown, byCustomer = {}, {}, {}, {}
+  local stops, later, unknown = {}, {}, {}
   local owned = {}
   for id, w in pairs(DB) do
     if (planned or Count(id) > 0 or InLog(w.q)) and not Done(w.q) and w.q ~= skipQuest and (not only or only[id]) then owned[#owned + 1] = id end
   end
-  table.sort(owned, function(a, b)    -- higher rep first, so a shared customer gets the better writ today
+  table.sort(owned, function(a, b)    -- higher rep first
     local ra, rb = REP[DB[a].tier] or 0, REP[DB[b].tier] or 0
     if ra ~= rb then return ra > rb end
     return a < b
@@ -532,23 +523,18 @@ local function PlanOwned(only, skipQuest, planned, ready, priced)   -- priced: p
     local w, c = DB[id], Customer(id)
     if not c then
       unknown[#unknown + 1] = { id = id, w = w, why = InLog(w.q) and "map pin not read yet" or "accept it so its map pin shows where it goes" }
-    elseif used[c.key] then
-      later[#later + 1] = { id = id, w = w, why = "already handed in to this customer today (" .. used[c.key] .. ")" }
     elseif ready and math.max(0, (w.n or 1) - Count(w.req)) > 0 then
       later[#later + 1] = { id = id, w = w, why = "needs its item first (" .. (ItemName(w.req) or "the item") .. "): buy it, or plan with a rep target" }
     elseif priced and WritPathNav and WritPathNav.dropped and WritPathNav.dropped[id] then
       later[#later + 1] = { id = id, w = w, why = "dropped from this plan (its writ or item isn't on the auction house)" }
     elseif priced and math.max(0, (w.n or 1) - Count(w.req)) > 0 and Cost(id) == nil then
       later[#later + 1] = { id = id, w = w, why = "its item (" .. (ItemName(w.req) or "the item") .. ") isn't on the auction house" }
-    elseif byCustomer[c.key] then
-      later[#later + 1] = { id = id, w = w, why = "same customer as " .. byCustomer[c.key].w.name }
     elseif not QuickOK(c) then
       later[#later + 1] = { id = id, w = w, why = "not next to a flight path you have (Quick)" }
     else
       local cost, _, need = Cost(id)
       local stop = { id = id, w = w, rep = REP[w.tier] or 0, c = c, pos = Pos(c.map, c.x, c.y),
                      cost = cost or 0, have = Count(id) > 0 or InLog(w.q), need = need or math.max(0, (w.n or 1) - Count(w.req)) }
-      byCustomer[c.key] = stop
       stops[#stops + 1] = stop
     end
   end
@@ -561,10 +547,9 @@ local function PlanOwned(only, skipQuest, planned, ready, priced)   -- priced: p
 end
 
 -- what to buy for a rep target: your own writs first (already paid for, they count toward the target),
--- then writs to fill the rest; never two writs for one customer, never a customer used today; the whole
--- set in the best order.
---   Cheapest: exact. A knapsack in steps of 25 rep over the customers, at most one writ each, for the
---             least gold that reaches the target.
+-- then writs to fill the rest (each writ once: the game's daily limit is per writ, not per customer); the
+-- whole set in the best order.
+--   Cheapest: exact. A knapsack in steps of 25 rep over the writs for the least gold that reaches the target.
 --   Fastest:  starts from the quickest greedy pick (and from the cheapest set), then keeps swapping or
 --             dropping writs while the whole route gets shorter.
 --   PlanBoth makes sure the fastest is never slower than the cheapest, nor the cheapest dearer than the fastest.
@@ -573,12 +558,12 @@ local function RepOf(set) local r = 0; for _, c in ipairs(set) do r = r + c.rep 
 local function CostOf(set) local r = 0; for _, c in ipairs(set) do r = r + c.cost end; return r end
 local function Join(a, b) local t = {}; for _, x in ipairs(a) do t[#t + 1] = x end; for _, x in ipairs(b) do t[#t + 1] = x end; return t end
 
--- the writs you could buy, minus any whose customer one of your own writs already takes
-local function Buyable(zoneOnly, ownedKeys)
+-- the writs you could buy (not the ones you already have)
+local function Buyable(zoneOnly)
   local list = {}
   for _, c in ipairs((Candidates(zoneOnly))) do
     local gone = WritPathNav and WritPathNav.dropped and WritPathNav.dropped[c.id]
-    if c.pos and not gone and not (Count(c.id) > 0 or InLog(c.w.q)) and not ownedKeys[c.c.key] then list[#list + 1] = c end
+    if c.pos and not gone and not (Count(c.id) > 0 or InLog(c.w.q)) then list[#list + 1] = c end
   end
   return list
 end
@@ -588,8 +573,8 @@ local function CheapestSet(cands, need)
   local U = math.ceil(need / 25)
   local groups, keys = {}, {}
   for _, c in ipairs(cands) do
-    local g = groups[c.c.key]
-    if not g then g = {}; groups[c.c.key] = g; keys[#keys + 1] = c.c.key end
+    local g = groups[c.id]
+    if not g then g = {}; groups[c.id] = g; keys[#keys + 1] = c.id end
     g[#g + 1] = c
   end
   table.sort(keys)
@@ -626,8 +611,8 @@ local function GreedyFast(start, owned, cands, need, seed)
   for _, p in ipairs(owned) do route[#route + 1] = p end
   -- a starting set (the writs at your flight-path hubs): kept, and the quickest extras added to it
   for _, c in ipairs(seed or {}) do
-    if not keys[c.c.key] then
-      keys[c.c.key] = true; c.inGreedy = true
+    if not keys[c.id] then
+      keys[c.id] = true; c.inGreedy = true
       local _, at = InsertAt(start, route, c.pos)
       table.insert(route, at, c); set[#set + 1] = c; rep = rep + c.rep
     end
@@ -635,14 +620,14 @@ local function GreedyFast(start, owned, cands, need, seed)
   while rep < need do
     local best, bestScore, bestAt
     for _, c in ipairs(cands) do
-      if not keys[c.c.key] and not c.inGreedy then
+      if not keys[c.id] and not c.inGreedy then
         local dt, at = InsertAt(start, route, c.pos)
         local score = (dt + 20) / math.min(c.rep, need - rep) + c.cost * 1e-7
         if not bestScore or score < bestScore then best, bestScore, bestAt = c, score, at end
       end
     end
     if not best then break end
-    best.inGreedy, keys[best.c.key] = true, true
+    best.inGreedy, keys[best.id] = true, true
     table.insert(route, bestAt, best); set[#set + 1] = best; rep = rep + best.rep
   end
   for _, c in ipairs(cands) do c.inGreedy = nil end
@@ -672,15 +657,14 @@ local function Improve(start, owned, cands, need, seed)
       if t < bestT - 1 or (t < bestT + 1 and CostOf(set) < bestCost) then bestT, bestCost, bestSet = t, CostOf(set), set end
     end
     local have, total = {}, RepOf(cur)
-    for _, c in ipairs(cur) do have[c.c.key] = c end
+    for _, c in ipairs(cur) do have[c.id] = c end
     for i = 1, #cur do
       if total - cur[i].rep >= need then                  -- drop one
         local t = {}; for j, c in ipairs(cur) do if j ~= i then t[#t + 1] = c end end
         Try(t)
       end
       for _, c in ipairs(cands) do                        -- swap one for another
-        local holder = have[c.c.key]
-        if c ~= cur[i] and (not holder or holder == cur[i]) and total - cur[i].rep + c.rep >= need then
+        if not have[c.id] and total - cur[i].rep + c.rep >= need then
           local t = {}; for j, x in ipairs(cur) do t[j] = (j == i) and c or x end
           Try(t)
         end
@@ -762,14 +746,14 @@ function PlanBothInner(target, zoneOnly, seedIds)
   -- A writ WritPath bought for you in the last few hours is committed: you planned it, so every new plan keeps it
   -- and buys its item (planning again for a bigger target mustn't strand a writ you just paid for). Older spare
   -- writs still compete on price.
-  local start, owned, ownedKeys, paidOwned = mine.start, {}, {}, {}
+  local start, owned, paidOwned = mine.start, {}, {}
   local paid = WritPathNav and WritPathNav.paidFor or {}
   local function JustBought(id) local b = paid[id]; return b and (b.t or 0) > time() - COMMITTED_FOR end
   for _, p in ipairs(mine.route) do
     if (p.cost or 0) > 0 and not JustBought(p.id) then paidOwned[#paidOwned + 1] = p
-    else owned[#owned + 1] = p; ownedKeys[p.c.key] = true end
+    else owned[#owned + 1] = p end
   end
-  local cands = Buyable(zoneOnly, ownedKeys)
+  local cands = Buyable(zoneOnly)
   for _, p in ipairs(paidOwned) do cands[#cands + 1] = p end
   mine.paidOwned = paidOwned
   local need = target - RepOf(owned)
@@ -777,7 +761,7 @@ function PlanBothInner(target, zoneOnly, seedIds)
   local cheap = Finish(start, owned, cheapSet, target, mine, "cheap")
   local fast
   if RepOf(cheapSet) < need then
-    -- the target is out of reach today: every customer has to be used, so there's nothing to choose
+    -- the target is out of reach today: every writ has to be used, so there's nothing to choose
     -- between and the fastest plan is the same trip
     fast = cheap
   else
@@ -800,15 +784,8 @@ function PlanBothInner(target, zoneOnly, seedIds)
     cheap.route, cheap.secs, fast.route, fast.secs = best.route, best.secs, best.route, best.secs
   end
   -- when the target can't be reached: the most rep today, and what holds it back
-  local function Ceiling(list)
-    local best = {}
-    for _, c in ipairs(list) do best[c.c.key] = math.max(best[c.c.key] or 0, c.rep) end
-    local r = RepOf(owned); for _, v in pairs(best) do r = r + v end
-    return r
-  end
-  local usedCount = 0; for _ in pairs(UsedToday()) do usedCount = usedCount + 1 end
-  local short = { max = Ceiling(cands), usedToday = usedCount,
-                  withZone = (not zoneOnly) and Ceiling(Buyable(true, ownedKeys)) or nil }
+  local function Ceiling(list) return RepOf(owned) + RepOf(list) end
+  local short = { max = Ceiling(cands), withZone = (not zoneOnly) and Ceiling(Buyable(true)) or nil }
   cheap.short, fast.short = short, short
   return { cheap = cheap, fast = fast }
 end
@@ -817,21 +794,20 @@ end
 local function Plan(target, mode, zoneOnly)
   if mode == "cheap" or mode == "fast" then return PlanBoth(target, zoneOnly)[mode] end
   local mine = PlanOwned()
-  local start, owned, ownedKeys = mine.start, mine.route, {}
-  for _, p in ipairs(owned) do ownedKeys[p.c.key] = true end
-  local cands = Buyable(zoneOnly, ownedKeys)
+  local start, owned = mine.start, mine.route
+  local cands = Buyable(zoneOnly)
   local route, rep, keys, set = Join(owned, {}), RepOf(owned), {}, {}
   while rep < target do
     local best, bestScore, bestAt
     for _, c in ipairs(cands) do
-      if not c.taken and not keys[c.c.key] then
+      if not c.taken and not keys[c.id] then
         local dt, at = InsertAt(start, route, c.pos)
         local score = (c.cost + mode * dt / 60) / math.min(c.rep, target - rep)
         if not bestScore or score < bestScore then best, bestScore, bestAt = c, score, at end
       end
     end
     if not best then break end
-    best.taken, keys[best.c.key] = true, true
+    best.taken, keys[best.id] = true, true
     table.insert(route, bestAt, best); set[#set + 1] = best; rep = rep + best.rep
   end
   return Finish(start, owned, set, target, mine, mode)
@@ -887,52 +863,63 @@ local function Steps(plan)
   if #buy == 0 then first = { "{buy} You have every writ and item: right-click each writ to accept it" } end
   steps[1] = { lines = first, done = { ready = { quests = quests, items = items } } }
 
-  local prev = plan.start
+  local prev, last = plan.start, nil
   for ri, p in ipairs(plan.route) do
     local tl = plan.tele and plan.tele[ri]
-    local warn
-    -- a customer with a way in (a ramp, a gap in a wall): the route goes to that spot first, then on foot to them
-    local base = WritPath_Customers and WritPath_Customers[p.w.c]
-    local via = base and base.via and p.pos and Travel.Point(p.pos.map, base.via[1], base.via[2])
-    local dest = via or p.pos
-    if tl and p.pos then
-      local tp = tl.tp
-      steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
-                              GREY_, math.floor(tl.save / 60 + 0.5)) },
-                            done = { arrive = { tp.dest.map } }, teleport = tp.key }
-      warn = TravelSteps(steps, tp.dest, dest, suggested)
-    elseif prev and p.pos then warn = TravelSteps(steps, prev, dest, suggested) end
-    if via then
-      steps[#steps + 1] = { at = { via.map, via.x, via.y, "The way in" }, done = { via = true },
-                            lines = { ("{goto} Ride to %s%.1f, %.1f|r first: the way in to %s"):format(G, via.x, via.y, p.c.npc or "the customer"),
-                                      base.via[3] and (GREY_ .. base.via[3] .. "|r") or nil } }
+    -- the next writ for the customer you're already at (the game's limit is per writ, not per customer):
+    -- no travel, just hand it in too
+    local same = last and not tl and last.c.key == p.c.key and last.c.map == p.c.map
+                 and math.abs(last.c.x - p.c.x) < 0.5 and math.abs(last.c.y - p.c.y) < 0.5
+    if same then
+      steps[#steps + 1] = { at = { p.c.map, p.c.x, p.c.y, p.c.npc or p.w.name },
+                            lines = { "{turnin} Also hand in " .. Y .. p.w.name .. "|r to " .. G .. (p.c.npc or "the same customer") .. "|r" },
+                            done = { quests = { p.w.q } }, writ = p.id }
+    else
+      local warn
+      -- a customer with a way in (a ramp, a gap in a wall): the route goes to that spot first, then on foot to them
+      local base = WritPath_Customers and WritPath_Customers[p.w.c]
+      local via = base and base.via and p.pos and Travel.Point(p.pos.map, base.via[1], base.via[2])
+      local dest = via or p.pos
+      if tl and p.pos then
+        local tp = tl.tp
+        steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
+                                GREY_, math.floor(tl.save / 60 + 0.5)) },
+                              done = { arrive = { tp.dest.map } }, teleport = tp.key }
+        warn = TravelSteps(steps, tp.dest, dest, suggested)
+      elseif prev and p.pos then warn = TravelSteps(steps, prev, dest, suggested) end
+      if via then
+        steps[#steps + 1] = { at = { via.map, via.x, via.y, "The way in" }, done = { via = true },
+                              lines = { ("{goto} Ride to %s%.1f, %.1f|r first: the way in to %s"):format(G, via.x, via.y, p.c.npc or "the customer"),
+                                        base.via[3] and (GREY_ .. base.via[3] .. "|r") or nil } }
+      end
+      local zone, lines = MapName(p.c.map), {}
+      lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
+      if warn then lines[#lines + 1] = warn end
+      lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
+      if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
+      -- a customer who walks a patrol: where to look
+      if base and base.patrol then lines[#lines + 1] = GREY_ .. base.patrol .. "|r" end
+      -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when
+      -- the flight master is nearer to where you come from than the customer is, otherwise right after
+      local fp = Travel.UnlearnedNear and Travel.UnlearnedNear(p.pos, FP_DETOUR)
+      local fpStep
+      if fp and not suggested[fp.id] then
+        suggested[fp.id] = true
+        local town = (fp.name or "the flight master"):match("^([^,]+)") or fp.name
+        fpStep = { at = { fp.map, fp.x, fp.y, "Flight master" },
+                   lines = { "{fp} Learn the flight path at " .. G .. town .. "|r while you're here",
+                             GREY_ .. "Talk to the flight master. Not needed? Tick the box to skip it.|r" },
+                   done = { taxiMap = true }, fpid = fp.id }
+      end
+      local fpPoint = fpStep and Travel.Point(fp.map, fp.x, fp.y)
+      local before = fpPoint and prev and p.pos and prev.inst == fpPoint.inst
+                     and Travel.Dist(prev, fpPoint) < Travel.Dist(prev, p.pos)
+      if fpStep and before then steps[#steps + 1] = fpStep end
+      steps[#steps + 1] = { at = { p.c.map, p.c.x, p.c.y, p.c.npc or p.w.name }, lines = lines,
+                            done = { quests = { p.w.q } }, writ = p.id }
+      if fpStep and not before then steps[#steps + 1] = fpStep end
     end
-    local zone, lines = MapName(p.c.map), {}
-    lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
-    if warn then lines[#lines + 1] = warn end
-    lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
-    if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
-    -- a customer who walks a patrol: where to look
-    if base and base.patrol then lines[#lines + 1] = GREY_ .. base.patrol .. "|r" end
-    -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when
-    -- the flight master is nearer to where you come from than the customer is, otherwise right after
-    local fp = Travel.UnlearnedNear and Travel.UnlearnedNear(p.pos, FP_DETOUR)
-    local fpStep
-    if fp and not suggested[fp.id] then
-      suggested[fp.id] = true
-      local town = (fp.name or "the flight master"):match("^([^,]+)") or fp.name
-      fpStep = { at = { fp.map, fp.x, fp.y, "Flight master" },
-                 lines = { "{fp} Learn the flight path at " .. G .. town .. "|r while you're here",
-                           GREY_ .. "Talk to the flight master. Not needed? Tick the box to skip it.|r" },
-                 done = { taxiMap = true }, fpid = fp.id }
-    end
-    local fpPoint = fpStep and Travel.Point(fp.map, fp.x, fp.y)
-    local before = fpPoint and prev and p.pos and prev.inst == fpPoint.inst
-                   and Travel.Dist(prev, fpPoint) < Travel.Dist(prev, p.pos)
-    if fpStep and before then steps[#steps + 1] = fpStep end
-    steps[#steps + 1] = { at = { p.c.map, p.c.x, p.c.y, p.c.npc or p.w.name }, lines = lines,
-                          done = { quests = { p.w.q } }, writ = p.id }
-    if fpStep and not before then steps[#steps + 1] = fpStep end
+    last = p
     prev = p.pos or prev
   end
   return steps
@@ -1277,9 +1264,7 @@ end
 
 local function ShortText(plan)
   local sh = plan.short or {}
-  local t = ("Short of %d: %d rep is the most you can do today. Each customer takes one writ a day"):format(plan.target, sh.max or plan.rep)
-  if (sh.usedToday or 0) > 0 then t = t .. (", and you've already handed in to %d of them today"):format(sh.usedToday) end
-  t = t .. "."
+  local t = ("Short of %d: %d rep is the most you can do today (each writ once a day, only writs with a price and a known customer)."):format(plan.target, sh.max or plan.rep)
   if sh.withZone and sh.withZone > (sh.max or 0) then
     t = t .. (" Tick \"Include customers known by zone only\" to reach up to %d."):format(sh.withZone)
   end
@@ -1357,7 +1342,7 @@ local function Show(plan, top)
     local right = plan.mine and (p.need > 0 and (Y .. Coins(p.cost) .. "|r") or "") or (p.have and (GREY .. "yours|r") or (Y .. Coins(p.cost) .. "|r"))
     entries[#entries + 1] = { left, right }
   end
-  for _, l in ipairs(plan.later or {}) do entries[#entries + 1] = { W_ .. "Tomorrow:|r " .. l.w.name .. "\n" .. GREY .. l.why .. "|r", "" } end
+  for _, l in ipairs(plan.later or {}) do entries[#entries + 1] = { W_ .. "Left out:|r " .. l.w.name .. "\n" .. GREY .. l.why .. "|r", "" } end
   for _, l in ipairs(plan.unknown or {}) do entries[#entries + 1] = { W_ .. "Not placed yet:|r " .. l.w.name .. "\n" .. GREY .. l.why .. "|r", "" } end
   for i = 1, math.max(#entries, #rowPool) do
     local r = Row(i)
@@ -1394,7 +1379,7 @@ local function Show(plan, top)
   note:ClearAllPoints(); note:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
   local roads, ships = Travel.Learned()
   if plan.intro then note:SetText(plan.introNote or "") elseif plan.favor then note:SetText(favorNote) else
-  note:SetText((plan.mine and "Shortest order from where you stand, one writ per customer per day. "
+  note:SetText((plan.mine and "Shortest order from where you stand. "
     or "Prices from your last auction house scan; times are estimates. ")
     .. (select(2, WritPath_Pace()) >= 3 and ("Times are scaled to your pace (x%.2f). "):format((WritPath_Pace())) or "")
     .. ("WritPath knows %d road crossings and %d ships from your travels; more as you ride. "):format(roads, ships)
@@ -1630,7 +1615,7 @@ goBtn:SetScript("OnClick", function()
   end
   f:Hide()
   Print(("Route set: %d writs, %d rep, ~%d min."):format(#current.route, current.rep, Minutes(current.secs))
-        .. (current.later and #current.later > 0 and (" " .. #current.later .. " wait for tomorrow.") or ""))
+        .. (current.later and #current.later > 0 and (" " .. #current.later .. " left out.") or ""))
 end)
 
 -- Clear everything a plan set up: the guide's route, the money session, the buy list at the auction house and the
@@ -1779,7 +1764,7 @@ ev:SetScript("OnEvent", function(_, event, a1)
     return
   end
   if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then
-    -- a customer's window lists quests: open the finished writ (only one per customer per day anyway)
+    -- a customer's window lists quests: open a finished writ (talk again for the next one)
     if WritPathNav and WritPathNav.noAutoAccept then return end
     if event == "GOSSIP_SHOW" and C_GossipInfo and C_GossipInfo.GetActiveQuests then
       local camp = AtCamp()
@@ -1965,7 +1950,7 @@ function WritPath_ReplanFromBags()
   if #dropped > 0 then msg = msg .. " Dropped (writ not bought): " .. table.concat(dropped, ", ") .. "." end
   if #short > 0 then msg = msg .. " Still missing the item for: " .. table.concat(short, ", ") .. " (on the shopping list)." end
   if #added > 0 then msg = msg .. " Added (writs you have): " .. table.concat(added, ", ") .. "." end
-  if plan.later and #plan.later > 0 then msg = msg .. " " .. #plan.later .. " writs wait for another day (same customer)." end
+  if plan.later and #plan.later > 0 then msg = msg .. " " .. #plan.later .. " writs left out (see the planner)." end
   Print(msg)
 end
 
