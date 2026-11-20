@@ -130,11 +130,41 @@ end
 local function SetWaypoint(s)
   pcall(function()
     if not (s and s.at) then C_Map.ClearUserWaypoint(); return end
-    local g = s.at
+    local g = (s.way and s.way[s.wayI or 1]) or s.at
     if C_Map.CanSetUserWaypointOnMap and not C_Map.CanSetUserWaypointOnMap(g[1]) then return end
     C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(g[1], g[2] / 100, g[3] / 100))
     if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
   end)
+end
+
+-- A road or path step ("Follow the road") carries its waypoints (s.way); the arrow and the map pin point to one at a
+-- time. A waypoint is passed once you're within WAY_NEAR yards of it, or nearer the next one than it is (a corner
+-- cut). The step itself is done at its end (s.at), like any step on the way.
+local WAY_NEAR = 60
+local function WorldYds(g)
+  local hbd = Lib()
+  if hbd then local x, y, i = hbd:GetWorldCoordinatesFromZone(g[2] / 100, g[3] / 100, g[1]); return i, x, y end
+  return World(g[1], g[2] / 100, g[3] / 100)
+end
+local function Gap(a, b)
+  local ac, ax, ay = WorldYds(a)
+  local bc, bx, by = WorldYds(b)
+  if not (ac and bc and ax and bx) or ac ~= bc then return nil end
+  return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
+end
+local function Target(s)
+  local w = s and s.way
+  if not w then return s and s.at end
+  local i = math.min(s.wayI or 1, #w)
+  local moved = false
+  while i < #w do
+    local d = Vector(w[i])
+    if not d then break end
+    local n, gap = Vector(w[i + 1]), Gap(w[i], w[i + 1])
+    if d <= WAY_NEAR or (n and gap and n < gap) then i, moved = i + 1, true else break end
+  end
+  if moved then s.wayI = i; SetWaypoint(s) end
+  return w[i]
 end
 
 ---------------------------------------------------------------- guide window
@@ -386,7 +416,7 @@ arrow:SetScript("OnUpdate", function(self, e)
   if poll > 0.5 then poll = 0; Refresh(true) end
   if tick < 0.03 then return end; tick = 0
   local s = ROUTE[WritPathNav.step]; if not s then return end
-  local g = s.at
+  local g = Target(s)   -- a road's next waypoint, or the step's spot
   if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
   local dist, angle = Vector(g)
   if not dist then
@@ -433,7 +463,7 @@ function WritPath_RouteActive() return #ROUTE > 0 and (WritPathNav.step or 1) <=
 -- where the guide is taking you now ({ map, x, y } or nil) and since when
 function WritPath_RouteTarget()
   local s = ROUTE[WritPathNav.step or 1]
-  return s and s.at, WritPathNav.stepSince or 0, WritPathNav.step or 1
+  return s and s.at, WritPathNav.stepSince or 0, WritPathNav.step or 1   -- the step's end, not a road's next bend
 end
 function WritPath_Refresh() if WritPathNav then Refresh() end end
 

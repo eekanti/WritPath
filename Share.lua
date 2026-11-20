@@ -49,7 +49,9 @@ local function Records()
       local e = type(v) == "number" and { n = v } or v
       local a, b = step:match("^(.-)>(.+)$")
       local A, B = a and R.cells[a], b and R.cells[b]
-      if A and B then
+      -- only steps ridden under 1.15.2's rules (e.g): older ones may be questing with a route open, so they stay on
+      -- this player's own map but aren't passed on
+      if A and B and e.g then
         local n = e.n or 0
         local bucket = n >= 10 and 10 or (n >= 3 and 3 or 1)
         local slow = (e.k or 0) > 0 and Round(e.r / e.k) or 0   -- 1.0 open riding, 2.0 twice as slow (0: not measured)

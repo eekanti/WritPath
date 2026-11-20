@@ -16,7 +16,7 @@ local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, 
 -- Prefer flights: riding counts RIDE_BIAS times as long when routes are compared, so a long ride only beats a
 -- flight when it's clearly faster (the ride's estimate is straight lines between borders; real roads wind,
 -- and a flight needs no steering). A Felwood -> Desolace route once rode two zones to save a minute on paper.
-local RIDE_BIAS = 1.25
+local RIDE_BIAS = 1.05   -- 1.15.2: was 1.25 before the traced roads and your own mount speed made ride times honest
 -- Riding speed: your own mount's, when WritPath has seen you mounted (GetUnitSpeed's run speed while mounted,
 -- saved per character in WritPathChar.mountSpeed, so planning on foot in town still uses it); otherwise RIDE.
 local DEFAULT_RIDE = RIDE
@@ -641,17 +641,23 @@ function T.Build()
       local len = 0; for i = 2, #all do len = len + Dist(all[i - 1], all[i]) end
       local cost = CROSS + len / RIDE
       local into, back = ZoneName(c.to), ZoneName(c.from)
-      local function Way(q, i, n) return { at = q, into = c.from, text = ("{goto} Follow the path (%d of %d): |cFF00FF25%.1f, %.1f|r"):format(i, n, q.x, q.y) } end
+      -- the path's waypoints are one step, "Follow the path"; the arrow points to each in turn (1.15.2)
+      local function Way(list, zone)
+        if #list == 0 then return nil end
+        return { at = list[#list], way = list, into = zone, text = "{goto} Follow the path" }
+      end
       -- there: the waypoints, then over the border
       local there = {}
-      for i = 2, #pts do there[#there + 1] = Way(pts[i], i, #pts) end
+      local fwd = {}; for i = 2, #pts do fwd[#fwd + 1] = pts[i] end
+      there[#there + 1] = Way(fwd, c.from)
       there[#there + 1] = { at = cross, into = c.to, cross = true, text = "{goto} Ride into |cFF00FF25" .. into .. "|r" }
       local a = Add({ zone = c.from, p = all[1], kind = "exit", peer = c.to, path = true })
       local b = Add({ zone = c.to, p = cross, kind = "entry", peer = c.from, path = true })
       Edge(a, b, cost, "cross", there)
       -- back: over the border, then the waypoints the other way round
       local backLegs = { { at = cross, into = c.from, cross = true, text = "{goto} Ride into |cFF00FF25" .. back .. "|r" } }
-      for i = #pts, 1, -1 do backLegs[#backLegs + 1] = Way(pts[i], #pts - i + 1, #pts) end
+      local rev = {}; for i = #pts, 1, -1 do rev[#rev + 1] = pts[i] end
+      backLegs[#backLegs + 1] = Way(rev, c.from)
       local a2 = Add({ zone = c.to, p = cross, kind = "exit", peer = c.from, path = true })
       local b2 = Add({ zone = c.from, p = all[1], kind = "entry", peer = c.to, path = true })
       Edge(a2, b2, cost, "cross", backLegs)
@@ -1015,12 +1021,20 @@ function T.Legs(a, b)
     local into = first.kind == "exit" and first.peer or first.zone
     legs[#legs + 1] = { kind = "cross", at = first.p, into = into, text = "{goto} Ride into |cFF00FF25" .. ZoneName(into) .. "|r" }
   end
+  -- a road is one step, "Follow the road": its start and bends are waypoints (way) the arrow points to in turn,
+  -- not steps of their own (1.15.2; they were listed one by one with their coordinates)
   local roadPts, roadZoneOf
   local function FlushRoad()
     if not roadPts then return end
-    for _, q in ipairs(Bends(roadPts)) do
-      legs[#legs + 1] = { kind = "cross", road = true, at = q, into = roadZoneOf,
-                          text = ("{goto} Follow the road: |cFF00FF25%.1f, %.1f|r"):format(q.x, q.y) }
+    local way = { roadPts[1] }
+    for _, q in ipairs(Bends(roadPts)) do way[#way + 1] = q end
+    local prev = legs[#legs]
+    if prev and prev.road and prev.at.inst == way[1].inst then
+      -- a road straight after another (a short ride between them): one "Follow the road", its waypoints run on
+      for _, q in ipairs(way) do prev.way[#prev.way + 1] = q end
+      prev.at = way[#way]
+    else
+      legs[#legs + 1] = { kind = "cross", road = true, at = way[#way], way = way, into = roadZoneOf, text = "{goto} Follow the road" }
     end
     roadPts = nil
   end
@@ -1030,17 +1044,19 @@ function T.Legs(a, b)
     if k == "road" and c.e.pts then      -- a learned road: gathered piece by piece, then its bends (below)
       if not roadPts then
         roadPts, roadZoneOf = {}, c.from.zone
-        legs[#legs + 1] = { kind = "cross", road = true, at = c.e.pts[1], into = c.from.zone,
-                            text = ("{goto} Ride to the road at |cFF00FF25%.1f, %.1f|r"):format(c.e.pts[1].x, c.e.pts[1].y) }
-        roadPts[1] = c.e.pts[1]
+        roadPts[1] = c.e.pts[1]   -- where you join the road: the step's first waypoint
       end
       for i = 2, #c.e.pts do roadPts[#roadPts + 1] = c.e.pts[i] end
     elseif k == "cross" and c.e.legs then   -- a mountain path: start of the path, its waypoints, the border
-      if not c.e.legs[1].cross then
-        legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.from.zone,
-                            text = ("{goto} Go to the start of the path: |cFF00FF25%.1f, %.1f|r"):format(c.from.p.x, c.from.p.y) }
+      for j, l in ipairs(c.e.legs) do
+        local way = l.way
+        -- the start of the path is the first waypoint of "Follow the path" (not a step of its own)
+        if j == 1 and way then way = { c.from.p }; for _, q in ipairs(l.way) do way[#way + 1] = q end end
+        legs[#legs + 1] = { kind = "cross", at = l.at, way = way, into = l.into, text = l.text }
       end
-      for _, l in ipairs(c.e.legs) do legs[#legs + 1] = { kind = "cross", at = l.at, into = l.into, text = l.text } end
+      if not c.e.legs[1].cross and not c.e.legs[1].way then
+        table.insert(legs, #legs - #c.e.legs + 1, { kind = "cross", at = c.from.p, into = c.from.zone, text = "{goto} Go to the start of the path" })
+      end
     elseif k == "cross" then
       legs[#legs + 1] = { kind = "cross", at = c.from.p, into = c.to.zone,
                           text = "{goto} Ride into |cFF00FF25" .. ZoneName(c.to.zone) .. "|r" }
@@ -1069,7 +1085,10 @@ function T.Legs(a, b)
   -- the stretch you ride to reach each step (after a flight or a boat, from where you land), and the last one to b
   local from = a
   for _, l in ipairs(legs) do
-    if l.at then l.warn = DangerAlong(from, l.at) end
+    if l.way then   -- along the waypoints: the first dangerous stretch
+      local p = from
+      for _, q in ipairs(l.way) do l.warn = l.warn or DangerAlong(p, q); p = q end
+    elseif l.at then l.warn = DangerAlong(from, l.at) end
     from = (l.kind == "fly" or l.kind == "sail") and l.land or l.at
   end
   legs.finalWarn = DangerAlong(from, b)
@@ -1307,6 +1326,7 @@ local function Roads()
   return WritPathLearned.roads
 end
 local function Edge0(v) if type(v) == "number" then return { n = v } end; return v end   -- older saves: a bare count
+-- p: a spot of a leg being saved (with the speed and swimming seen there when it was ridden)
 local function RecordStep(p, now)
   local run = WritPathNav and WritPathNav.run
   local runId = run and run.start or 0
@@ -1325,9 +1345,9 @@ local function RecordStep(p, now)
     end
   end
   -- swimming here (once per run per spot)
-  if WritPath_Open(IsSwimming) and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
-  -- the speed you're moving at, sampled while in this spot
-  local speed = WritPath_Open(GetUnitSpeed, "player")   -- nil when the game keeps it secret
+  if p.swim and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
+  -- the speed you were moving at, sampled while in this spot
+  local speed = p.speed   -- nil when the game kept it secret
   if speed and speed > 0 then REC.speedSum, REC.speedN = (REC.speedSum or 0) + speed, (REC.speedN or 0) + 1 end
   local prev = REC.cell
   if prev == key then return end
@@ -1339,6 +1359,7 @@ local function RecordStep(p, now)
   REC.runSteps[step] = true
   local e = Edge0(R.edges[step] or { n = 0 })
   e.n = (e.n or 0) + 1
+  e.g = 1   -- ridden under 1.15.2's rules (a plan running, closing in on the stop): only these steps are shared
   -- how slow: the time it took against the time at the speed you were going (0.5 to 5)
   local d = prevP and Dist(prevP, p) or 0
   if prevT and now and cnt and cnt > 0 and d > 20 then
@@ -1420,21 +1441,23 @@ end
 --  * not fighting;
 --  * the route isn't stale: a guide step was done in the last STALE seconds;
 --  * you're getting closer to the guide's current stop: at least HEAD_GAIN yards nearer than HEAD_SECS ago
---    (the first HEAD_SECS after a step changes count as heading out).
+--    (the first HEAD_SECS after a step changes count as heading out, and are noted);
+--  * the stop is on this continent (on another, there's nothing to judge by, so nothing is noted).
 -- Questing wanders around a hub and gets nowhere; riding to a customer closes in on it.
 local STALE, HEAD_SECS, HEAD_GAIN = 900, 30, 40
 local TUNNEL_SECS, TUNNEL_YDS = 180, 1500   -- a crossing through a stretch with no map position: at most this long and far
 local function Heading(p, now)
   local function No(why) REC.why = why; if REC.heading then REC.heading.log = {} end; return false end   -- start the history afresh
   if WritPath_Open(UnitAffectingCombat, "player") then return No("combat") end
-  if not WritPath_RouteTarget then return true end
+  if not WritPath_RouteTarget then return No("no route") end
   local at, since, step = WritPath_RouteTarget()
   REC.whyStep, REC.whyAt, REC.whyD = step, at, nil
   if not at then return No("no stop") end
   if now - (since or 0) > STALE then return No("stale") end
   local goal = T.Point(at[1], at[2], at[3])
   local d = goal and goal.inst == p.inst and Dist(p, goal)
-  if not d then REC.why = "other continent"; return true end   -- the stop is on another continent: nothing to judge by
+  -- the stop is on another continent: nothing to judge by, so nothing is noted (1.15.2: it used to be)
+  if not d then return No("other continent") end
   REC.whyD = d
   local h = REC.heading
   if not h or h.step ~= step then h = { step = step, t0 = since or now, log = {} }; REC.heading = h end
@@ -1442,6 +1465,8 @@ local function Heading(p, now)
   if log[#log] and now - log[#log].t > 5 then log = {}; h.log = log end   -- a gap (a flight, a pause): no old samples
   log[#log + 1] = { t = now, d = d }
   while log[2] and now - log[2].t >= HEAD_SECS do table.remove(log, 1) end   -- keep the sample about HEAD_SECS old
+  -- the first HEAD_SECS of a leg (after a hand-in, or landing from a flight) are noted: too soon to judge, and it's the
+  -- ride out of town that everyone takes. A few hexes of questing here don't become road (that takes 3 runs nearby).
   if now - h.t0 < HEAD_SECS then REC.why = "heading out"; return true end
   local old = log[1]
   local ready = old and now - old.t >= HEAD_SECS * 0.5
@@ -1479,6 +1504,69 @@ local function RecordMobs(p, now)
 end
 T.RecordMobs = RecordMobs
 
+---------------------------------------------------------------- road steps, saved at a writ hand-in (1.15.2)
+-- While a plan runs, the ride is kept as a leg (REC.leg: a spot a second since the last flight, hand-in, teleport,
+-- death or jump). Nothing becomes road until a writ is handed in, the proof that the ride led to a customer; a leg
+-- that never ends at one (questing, wandering) just goes. At a hand-in:
+--   * the approach, the last APPROACH_YDS, is saved: the way in to the customer, which no traced road knows;
+--   * the whole leg too if it was direct: no longer than DIRECT times the straight line (plus SLACK yards for the
+--     odd bend), with no stop over LEG_STOP seconds on the way. A detour to quest fails that; a shortcut passes.
+local LEG_MAX, APPROACH_YDS, DIRECT, SLACK, LEG_STOP = 3600, 500, 1.5, 150, 60
+local function LegAdd(p, now)
+  local leg = REC.leg
+  if not leg then leg = {}; REC.leg = leg end
+  local tail = leg[#leg]
+  if tail and now - tail.t < 1 then return end
+  local s = { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now,
+              speed = WritPath_Open(GetUnitSpeed, "player"), swim = WritPath_Open(IsSwimming) and true or nil }
+  -- standing about before setting off (at the mailbox, after a hand-in) isn't part of the leg
+  if #leg == 1 and Dist(tail, p) < 2 then leg[1] = s; return end
+  leg[#leg + 1] = s
+  if #leg > LEG_MAX then table.remove(leg, 1) end
+end
+-- how the last leg went: its length, the straight line, the longest stop (not counting the wait at its end)
+local function LegShape(leg)
+  local len, stop, still = 0, 0, nil
+  for i = 2, #leg do
+    local d = Dist(leg[i - 1], leg[i])
+    len = len + d
+    if d < 2 then still = still or leg[i - 1].t
+    else
+      if still then stop = math.max(stop, leg[i - 1].t - still) end
+      still = nil
+    end
+  end
+  return len, Dist(leg[1], leg[#leg]), stop
+end
+local function CommitLeg()
+  local leg = REC.leg
+  REC.leg = nil
+  if not (leg and #leg >= 2) then return 0, "none" end
+  local len, straight, stop = LegShape(leg)
+  local direct = len <= DIRECT * straight + SLACK and stop <= LEG_STOP
+  local first = 1
+  if not direct then   -- the approach only: back from the hand-in until APPROACH_YDS
+    local back = 0
+    first = #leg
+    while first > 1 and back < APPROACH_YDS do back = back + Dist(leg[first - 1], leg[first]); first = first - 1 end
+  end
+  REC.cell = nil
+  for i = first, #leg do RecordStep(leg[i], leg[i].t) end
+  REC.cell = nil
+  T.Reset()
+  return #leg - first + 1, direct and "leg" or "approach"
+end
+T.LegShape, T.CommitLeg = LegShape, CommitLeg
+-- a writ was handed in (Planner): save the ride that led here
+function T.WritHandedIn()
+  local n, how = CommitLeg()
+  REC.lastCommit = { n = n, how = how }
+  if WritPathNav then
+    local rl = WritPathNav.recLog or {}; WritPathNav.recLog = rl
+    rl[#rl + 1] = ("%s hand-in: saved %d spots (%s)"):format(date and date("%H:%M:%S") or "", n, how)
+  end
+end
+
 local function Poll()
   if not WritPathLearned then return end
   local now = GetTime()
@@ -1491,6 +1579,9 @@ local function Poll()
   REC.dead = dead
   local inside = IsInInstance and IsInInstance()
   local last = REC.last
+  -- a writ plan under way? Road steps and boat trips are only noted then (questing wanders; a summon once passed for
+  -- a boat). Crossings and flight times are facts whatever you're doing, so they're noted anyway (outside capitals).
+  local onRoute = WritPath_RouteActive and WritPath_RouteActive() or false
 
   -- flights: from the flight master you took off at to the one you landed at. You can only fly between flight
   -- paths you have, so both ends are yours.
@@ -1523,14 +1614,14 @@ local function Poll()
   if lost and not taxi and not dead and not lost.at.taxi and lost.at.map ~= p.map and lost.at.inst == p.inst
      and now - lost.t <= TUNNEL_SECS and now - REC.teleport > 30 and Dist(lost.at, p) < TUNNEL_YDS then
     local cityGap = ALLIANCE_CITIES[p.map] or HORDE_CITIES[p.map] or ALLIANCE_CITIES[lost.at.map] or HORDE_CITIES[lost.at.map]
-    if not cityGap or (WritPath_RouteActive and WritPath_RouteActive()) then RecordCrossing(lost.at, p) end
+    if not cityGap or onRoute then RecordCrossing(lost.at, p) end
   end
 
   local clean = not taxi and not dead and not (last and last.taxi) and now - REC.teleport > 30
   -- the breadcrumb trail (reset by anything that isn't riding: a flight, a teleport, dying, a big jump). Only kept
   -- while a writ route is under way: then you're travelling on purpose, not questing or wandering about town, so a
-  -- path is the way you meant to go. Crossings, boats and flight times are recorded all the time, except in capitals.
-  local onRoute = WritPath_RouteActive and WritPath_RouteActive()
+  -- path is the way you meant to go. Crossings and flight times are recorded all the time, except in capitals; boat
+  -- trips only on a route (1.15.2).
   local heading = onRoute and Heading(p, now)
   if heading then REC.headingAt = now; if clean then RecordMobs(p, now) end end
   -- why the recorder did or didn't note this spot, every 5 seconds on a route (WritPathNav.recLog, the last 300):
@@ -1542,15 +1633,17 @@ local function Poll()
     local at = REC.whyAt
     rl[#rl + 1] = ("%s %d %.1f,%.1f step %s -> %s %s d %s %s %s%s%s"):format(date and date("%H:%M:%S") or "", p.map, p.x, p.y,
       tostring(REC.whyStep), at and at[1] or "-", at and ("%.1f,%.1f"):format(at[2], at[3]) or "-",
-      REC.whyD and math.floor(REC.whyD) or "-", (heading and clean) and "REC" or "skip", tostring(REC.why),
+      REC.whyD and math.floor(REC.whyD) or "-", "leg " .. (REC.leg and #REC.leg or 0), tostring(REC.why),
       taxi and " taxi" or "", clean and "" or " notclean")
     while #rl > 300 do table.remove(rl, 1) end
   end
-  if not clean or not heading or (last and (p.inst ~= last.inst or Dist(p, last) > 300)) then
-    REC.trail, REC.cell = nil, nil   -- the next checkpoint starts afresh (no step across a flight or a jump)
-    if clean and heading then RecordStep(p, now) end
+  -- the leg: kept while a plan runs; a flight, teleport, death or jump starts a new one
+  local jump = last and (p.inst ~= last.inst or Dist(p, last) > 300)
+  if not onRoute or not clean or jump then REC.leg = nil end
+  if onRoute and clean then LegAdd(p, now) end
+  if not clean or not heading or jump then
+    REC.trail = nil   -- the next checkpoint starts afresh (no path across a flight or a jump)
   else
-    RecordStep(p, now)
     REC.trail = REC.trail or {}
     local tr = REC.trail
     local tail = tr[#tr]
@@ -1569,7 +1662,7 @@ local function Poll()
         RecordPath(REC.trail, last, p)
         REC.trail = { { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now } }
       end
-    elseif REC.still and now - REC.still.t < 600 and now - REC.still.t >= 45 then
+    elseif onRoute and REC.still and now - REC.still.t < 600 and now - REC.still.t >= 45 then
       -- a ship: from where you last stood waiting. A boat or zeppelin takes a minute or more to cross; landing
       -- on the other continent sooner was a summon, portal or teleport (a summon was once taken for an Orgrimmar -> Badlands
       -- zeppelin), not a ship
