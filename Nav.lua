@@ -244,11 +244,25 @@ for r = 1, SHOWN do
   row.check:SetSize(16, 16); row.check:SetPoint("TOPRIGHT", -6, -5)
   row.check:SetNormalTexture(TEX.box)
   row.check:SetScript("OnClick", function(self)
-    local i = row.index; if not i then return end
-    WritPathNav.manual[i] = not WritPathNav.manual[i] or nil
-    Refresh(true)
+    if row.index then WritPath_ToggleStep(row.index) end
   end)
   rows[r] = row
+end
+
+-- a step's box: ticked, the step is skipped (or done); unticked, it's back
+function WritPath_ToggleStep(i)
+  WritPathNav.manual[i] = not WritPathNav.manual[i] or nil
+  -- a skipped writ or flight path stays skipped when the rest of the trip is planned again (a new zone, a
+  -- hand-in): re-plans renumber the steps, so the skip is kept by writ and by flight point, not by step
+  local s = ROUTE[i]
+  if s and s.writ then
+    WritPathNav.skipWrit = WritPathNav.skipWrit or {}
+    WritPathNav.skipWrit[s.writ] = WritPathNav.manual[i] or nil
+  elseif s and s.fpid and s.done and s.done.taxiMap then
+    WritPathNav.skipFp = WritPathNav.skipFp or {}
+    WritPathNav.skipFp[s.fpid] = WritPathNav.manual[i] or nil
+  end
+  Refresh(true)
 end
 
 -- a line above the steps when the zone you're in has a flight path you don't have yet
@@ -460,6 +474,7 @@ function WritPath_SetRoute(route, titleText, doneText)
   WritPathNav.route, WritPathNav.title, WritPathNav.doneText, WritPathNav.doneRep = route, titleText, doneText, nil
   ROUTE = route or {}
   WritPathNav.manual, lastStep = {}, nil
+  if not route then WritPathNav.skipWrit, WritPathNav.skipFp = nil, nil end   -- cleared: skips go with the route
   Show(true)
 end
 function WritPath_CurrentRoute() return ROUTE end

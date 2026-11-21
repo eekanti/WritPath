@@ -904,7 +904,7 @@ local function Steps(plan)
       -- the flight master is nearer to where you come from than the customer is, otherwise right after
       local fp = Travel.UnlearnedNear and Travel.UnlearnedNear(p.pos, FP_DETOUR)
       local fpStep
-      if fp and not suggested[fp.id] then
+      if fp and not suggested[fp.id] and not (WritPathNav and WritPathNav.skipFp and WritPathNav.skipFp[fp.id]) then
         suggested[fp.id] = true
         local town = (fp.name or "the flight master"):match("^([^,]+)") or fp.name
         fpStep = { at = { fp.map, fp.x, fp.y, "Flight master" },
@@ -1659,6 +1659,7 @@ goBtn:SetScript("OnClick", function()
   for _, p in ipairs(current.route) do WritPathNav.plannedCost[p.w.q] = p.cost end
   -- the writs of this plan, so the route can be rebuilt without one that can't be bought
   WritPathNav.planIds, WritPathNav.dropped = {}, {}
+  WritPathNav.skipWrit, WritPathNav.skipFp = nil, nil   -- a new route: nothing skipped yet
   for _, p in ipairs(current.route) do WritPathNav.planIds[p.id] = true end
   WritPath_SetRoute(Steps(current), ("Writs: %d rep"):format(current.rep),
                     ("Planned writs handed in: |cFF00FF25%d rep|r"):format(current.rep))
@@ -1935,7 +1936,9 @@ local function Reroute(q, why, quiet)
         onRoute = true
         local nxt = WritPathNav.route[i + 1]
         if nxt and nxt.done and nxt.done.taxiMap then keep = nxt end
-      elseif not Done(DB[st.writ].q) then left[st.writ] = true end
+      elseif not Done(DB[st.writ].q) and not (WritPathNav.skipWrit and WritPathNav.skipWrit[st.writ]) then
+        left[st.writ] = true   -- a writ you ticked off stays off
+      end
     end
   end
   if not onRoute or not next(left) then return end
@@ -1982,7 +1985,9 @@ function WritPath_ReplanFromBags()
   local before = {}
   for _, st in ipairs(WritPathNav.route) do if st.writ then before[st.writ] = true end end
   -- writs dropped from the plan (nothing to buy for them) stay out, even if you have them
-  local gone = WritPathNav.dropped or {}
+  local gone = {}
+  for id in pairs(WritPathNav.dropped or {}) do gone[id] = true end
+  for id in pairs(WritPathNav.skipWrit or {}) do gone[id] = true end   -- and the ones you ticked off
   local only
   if next(gone) then only = {}; for id in pairs(DB) do if not gone[id] then only[id] = true end end end
   local plan = PlanOwned(only)

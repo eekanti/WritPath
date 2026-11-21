@@ -30,7 +30,7 @@ local function Records()
     out[#out + 1] = ("P,%d,%d,%s,%s,%d,%s"):format(p.from, p.to, Round(p.x), Round(p.y), p.n or 1, table.concat(via, " / "))
   end
   for _, s in ipairs(L.transports or {}) do
-    if not s.src then out[#out + 1] = ("S,%d,%s,%s,%d,%s,%s,%d"):format(s.from, Round(s.x), Round(s.y), s.to, Round(s.tx), Round(s.ty), s.n or 1) end
+    if not s.src and not (WritPath_Travel.NotShip and WritPath_Travel.NotShip(s.from, s.to)) then out[#out + 1] = ("S,%d,%s,%s,%d,%s,%s,%d"):format(s.from, Round(s.x), Round(s.y), s.to, Round(s.tx), Round(s.ty), s.n or 1) end
   end
   for a, row in pairs(L.flights or {}) do
     if type(row) == "table" then

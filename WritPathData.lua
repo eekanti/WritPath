@@ -9,10 +9,8 @@ WritPath_Data = {
     -- the Riverglades boat, both ways: Powderfuse Port (Riverglades) <-> Steamwheedle Port (Tanaris)
     { from = 2548, x = 80.5, y = 55.0, to = 1414, tx = 60.7, ty = 79.4 },
     { from = 1446, x = 68.5, y = 23.3, to = 1415, tx = 62.6, ty = 66.7 },
-    -- zeppelins: Thunder Bluff -> Undercity, and back (not ridden yet: same towers). (An Orgrimmar -> Badlands
-    -- "zeppelin" was a summon recorded by mistake: there is none, removed 2026-11-17.)
-    { from = 1456, x = 41.3, y = 55.9, to = 1458, tx = 84.6, ty = 16.3 },
-    { from = 1458, x = 84.6, y = 16.3, to = 1456, tx = 41.3, ty = 55.9 },
+    -- (No zeppelins here: an Orgrimmar -> Badlands one was a summon, removed 2026-11-17, and a Thunder Bluff ->
+    -- Undercity one was a portal, removed 2026-11-21. Neither exists.)
   },
   -- zone pairs with no road between them on Forever (later versions of the game added one): imported or guide
   -- data that says otherwise is ignored, unless you ride across yourself

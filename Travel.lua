@@ -29,11 +29,10 @@ local FLY_GUESS, FLIGHT_GUESS_OVERHEAD = 20.9, 36   -- a flight with no known ti
 local UNKNOWN = 1.3    -- riding straight through zones whose roads WritPath hasn't learned: assume 30% longer
 local HOSTILE = 1200   -- extra seconds for riding into the other faction's capital: only when the stop is inside
 -- zones whose dock is in a faction town (classic): Southshore, Menethil, Auberdine, Rut'theran, Theramore,
--- Stormwind / Orgrimmar's and the Undercity's zeppelin towers, Grom'gol, and the capitals themselves (Forever's
--- Thunder Bluff - Undercity zeppelin is recorded on the city maps)
+-- Stormwind / Orgrimmar's and the Undercity's zeppelin towers, Grom'gol, and the capitals themselves
 local ALLIANCE_DOCKS = { [1424] = true, [1437] = true, [1439] = true, [1438] = true, [1445] = true, [1453] = true,
                          [1455] = true, [1457] = true }
-local HORDE_DOCKS = { [1411] = true, [1420] = true, [1412] = true, [1454] = true, [1456] = true, [1458] = true }
+local HORDE_DOCKS = { [1411] = true, [1420] = true, [1412] = true, [1454] = true }
 -- the other faction's capitals: riding in costs HOSTILE (guards), so routes go round them unless the stop is inside
 local ALLIANCE_CITIES = { [1453] = true, [1455] = true, [1457] = true }   -- Stormwind, Ironforge, Darnassus
 local HORDE_CITIES = { [1454] = true, [1456] = true, [1458] = true }      -- Orgrimmar, Thunder Bluff, Undercity
@@ -556,11 +555,15 @@ local function PathShapeOK(c)
 end
 T.PathShapeOK = PathShapeOK
 local KNOWN_SHIPS = { ["1411>1434"] = true, ["1434>1411"] = true, ["1411>1420"] = true, ["1420>1411"] = true,
-  ["1420>1434"] = true, ["1434>1420"] = true, ["1434>1413"] = true, ["1413>1434"] = true, ["1456>1458"] = true,
-  ["1458>1456"] = true, ["2548>1446"] = true, ["1446>2548"] = true, ["2548>1414"] = true, ["1446>1415"] = true,
+  ["1420>1434"] = true, ["1434>1420"] = true, ["1434>1413"] = true, ["1413>1434"] = true,
+  ["2548>1446"] = true, ["1446>2548"] = true, ["2548>1414"] = true, ["1446>1415"] = true,
   ["1414>1446"] = true, ["1415>2548"] = true }
-local function ShipOK(t) return t.src or (t.n or 1) >= 2 or KNOWN_SHIPS[t.from .. ">" .. t.to] or false end
+-- trips once recorded as a boat or zeppelin that were a summon or portal: there's no such ship, whoever recorded it
+-- (Orgrimmar - Badlands, Thunder Bluff - Undercity)
+local NOT_SHIPS = { ["1454>1418"] = true, ["1418>1454"] = true, ["1456>1458"] = true, ["1458>1456"] = true }
+local function ShipOK(t) return not NOT_SHIPS[t.from .. ">" .. t.to] and (t.src or (t.n or 1) >= 2 or KNOWN_SHIPS[t.from .. ">" .. t.to]) or false end
 T.ShipOK = ShipOK
+function T.NotShip(from, to) return NOT_SHIPS[tostring(from) .. ">" .. tostring(to)] or false end
 
 local loose = false   -- set while looking for any way at all, when the known roads don't connect two places
 local function Direct(za, zb)
@@ -680,7 +683,7 @@ function T.Build()
   local hostile = UnitFactionGroup("player") == "Horde" and ALLIANCE_DOCKS or HORDE_DOCKS
   local sailed = {}   -- from..to pairs you've taken yourself: those win over the shipped routes
   local function Sail(from, dock, to, land)
-    if hostile[from] or hostile[to] then return end
+    if hostile[from] or hostile[to] or NOT_SHIPS[from .. ">" .. to] then return end
     Edge(Add({ zone = from, p = dock, kind = "dock" }), Add({ zone = to, p = land, kind = "land" }), SAIL, "sail")
   end
   -- a place recorded on a continent map (out at sea) -> the zone it's in
@@ -975,8 +978,6 @@ local SHIP_NAMES = {
              [1420] = { "zeppelin", "the Grom'gol zeppelin tower", "the Undercity zeppelin tower, Tirisfal Glades" },
              [1413] = { "boat", "the Booty Bay dock", "Ratchet, The Barrens" } },
   [1413] = { [1434] = { "boat", "the Ratchet dock", "Booty Bay, Stranglethorn Vale" } },
-  [1456] = { [1458] = { "zeppelin", "the Thunder Bluff zeppelin", "the Undercity" } },
-  [1458] = { [1456] = { "zeppelin", "the Undercity zeppelin", "Thunder Bluff" } },
   [2548] = { [1446] = { "boat", "the Powderfuse Port dock", "Steamwheedle Port, Tanaris" } },
   [1446] = { [2548] = { "boat", "the Steamwheedle Port dock", "Powderfuse Port, Riverglades" } },
 }
