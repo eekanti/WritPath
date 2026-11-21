@@ -11,7 +11,7 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
 - **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
   flight paths you know.
 
-**Discord:** help and news: **https://discord.gg/8PJXe24u5V** (in game: the Discord logo on the guide window, or `/writs discord`).
+**Discord:** help and news: **https://discord.gg/Rw7HnghnXh** (in game: the Discord logo on the guide window, or `/writs discord`).
 
 ## Screenshots
 

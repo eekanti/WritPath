@@ -4,7 +4,7 @@
 -- shift-click on the minimap button show the link already selected in a small box: Ctrl+C copies it. Enter or
 -- Escape closes the box. A chat line says the same, with the link, for anyone who'd rather copy it from chat.
 
-local DISCORD = "https://discord.gg/8PJXe24u5V"
+local DISCORD = "https://discord.gg/Rw7HnghnXh"
 WritPath_DISCORD = DISCORD
 
 local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. msg) end
