@@ -159,7 +159,7 @@ WritPath_Scan = Run   -- reads the map pins of accepted writs (done by itself as
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
-WritPath_VERSION = "1.15.12"
+WritPath_VERSION = "1.15.13"
 local MINE = WritPath_VERSION
 local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
 local function Newer(a, b)   -- is version a newer than version b?
@@ -184,6 +184,7 @@ local function Seen(v)
   Notice(WritPathNav.latest)
 end
 local function Send(dist, target)
+  if dist == "WHISPER" and WritPath_NoteWhisper then WritPath_NoteWhisper(target) end   -- its "no player named" line is hidden
   if C_ChatInfo and C_ChatInfo.SendAddonMessage then pcall(C_ChatInfo.SendAddonMessage, PREFIX, "V:" .. MINE, dist, target) end
 end
 local function ToGroup()

@@ -72,9 +72,13 @@ WritPath_ShareRecords = Records   -- for tests
 -- clear of the server's flood limits; much slower inside instances, where whispers are throttled.
 local CPS = 800
 local queue, sending = {}, false
+local whispered = {}   -- [name] = when WritPath last whispered them (its hidden addon messages)
+local function Short(name) return name and (Ambiguate and Ambiguate(name, "none") or name:match("^[^-]+")) or nil end
+function WritPath_NoteWhisper(to) if to then whispered[Short(to)] = GetTime() end end   -- the version check uses it too
 local function Pump()
   local m = table.remove(queue, 1)
   if not m then sending = false; return end
+  if (m.dist or "WHISPER") == "WHISPER" then WritPath_NoteWhisper(m.to) end
   if C_ChatInfo and C_ChatInfo.SendAddonMessage then pcall(C_ChatInfo.SendAddonMessage, PREFIX, m.text, m.dist or "WHISPER", m.to) end
   local inside = IsInInstance and IsInInstance()
   C_Timer.After(inside and 1.5 or math.max(0.3, (#m.text + #PREFIX) / CPS), Pump)
@@ -82,6 +86,32 @@ end
 local function Queue(to, text, dist)
   queue[#queue + 1] = { to = to, text = text, dist = dist }
   if not sending then sending = true; C_Timer.After(0.1, Pump) end
+end
+
+-- a player who logs off while an answer to them is still going out: drop the rest, or every remaining message
+-- prints "No player named X is currently playing." And those lines, for WritPath's own whispers, aren't shown.
+local function Pattern(fmt, fallback)
+  fmt = type(fmt) == "string" and fmt or fallback
+  return "^" .. fmt:gsub("[%(%)%.%+%-%*%?%[%]%^%$]", "%%%0"):gsub("%%s", "(.+)") .. "$"
+end
+local NOT_FOUND = Pattern(ERR_CHAT_PLAYER_NOT_FOUND_S, "No player named '%s' is currently playing.")
+local OFFLINE = Pattern(ERR_FRIEND_OFFLINE_S, "%s has gone offline.")
+local function Gone(name)
+  name = Short(name)
+  for i = #queue, 1, -1 do
+    local m = queue[i]
+    if (m.dist or "WHISPER") == "WHISPER" and Short(m.to) == name then table.remove(queue, i) end
+  end
+end
+local function Ours(msg)   -- a "no player named" line caused by WritPath's own whisper in the last minute
+  local who = type(msg) == "string" and msg:match(NOT_FOUND)
+  local at = who and whispered[Short(who)]
+  return at and GetTime() - at < 60, who
+end
+WritPath_ShareGone = Gone   -- for tests
+WritPath_ShareOurs = Ours
+if ChatFrame_AddMessageEventFilter then
+  ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(_, _, msg) return (Ours(msg)) end)
 end
 
 ---------------------------------------------------------------- limits
@@ -254,7 +284,14 @@ WritPath_ShareAsk = Ask   -- for tests
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("CHAT_MSG_ADDON")
+ev:RegisterEvent("CHAT_MSG_SYSTEM")
 ev:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
+  if event == "CHAT_MSG_SYSTEM" then
+    local text = type(prefix) == "string" and prefix or ""   -- a system line's text comes first
+    local who = text:match(NOT_FOUND) or text:match(OFFLINE)
+    if who then Gone(who) end
+    return
+  end
   if event == "PLAYER_LOGIN" then
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end
     -- the random id's seed. The game's math.random is already seeded randomly and it has no math.randomseed (calling

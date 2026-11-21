@@ -127,6 +127,23 @@ local function Build()
   title = Text(panel, "GameFontNormal", W - 40); title:SetPoint("TOPLEFT", 10, -9)
   closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton"); closeBtn:SetSize(20, 20); closeBtn:SetPoint("TOPRIGHT", -3, -3)
   closeBtn:SetScript("OnClick", function() panel:Hide() end)
+  -- the title bar is the grip: drag it to move the list, right-click it to put it back. It sits above the panel
+  -- (and any skin's layers), since the list and buttons cover the rest of the panel and take the clicks there.
+  local bar = CreateFrame("Button", nil, panel); panel.dragBar = bar
+  bar:SetPoint("TOPLEFT", 0, 0); bar:SetPoint("TOPRIGHT", -26, 0); bar:SetHeight(24)
+  bar:EnableMouse(true); bar:RegisterForDrag("LeftButton"); bar:RegisterForClicks("RightButtonUp")
+  bar:SetScript("OnDragStart", function() panel:StartMoving() end)
+  bar:SetScript("OnDragStop", function() Dragged() end)
+  bar:SetScript("OnClick", function(_, b) if b == "RightButton" and WritPathNav then WritPathNav.buyerAt = nil; Dock() end end)
+  bar.grip = bar:CreateTexture(nil, "OVERLAY"); bar.grip:SetSize(14, 14); bar.grip:SetPoint("RIGHT", -2, -1)
+  bar.grip:SetTexture("Interface/CURSOR/UI-Cursor-Move"); bar.grip:SetAlpha(0.6)
+  bar:SetScript("OnEnter", function(self)
+    bar.grip:SetAlpha(1)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Move")
+    GameTooltip:AddLine("Drag the title bar to move this list. It stays tied to the auction house window.", 1, 1, 1, true)
+    GameTooltip:AddLine("Right-click: back to its place beside it.", 0.5, 0.8, 1, true); GameTooltip:Show()
+  end)
+  bar:SetScript("OnLeave", function() bar.grip:SetAlpha(0.6); GameTooltip:Hide() end)
   totalsText = Text(panel, "GameFontHighlightSmall", W - 20); totalsText:SetPoint("TOPLEFT", 10, -28)
   -- the list: one row per writ or item, with what it costs on the auction house right now
   listTop = CreateFrame("Frame", nil, panel); listTop:SetSize(W - 16, ROWS * ROW_H)
@@ -182,9 +199,11 @@ local function Build()
     local flat = { bgFile = "Interface/BUTTONS/WHITE8X8", edgeFile = "Interface/BUTTONS/WHITE8X8", edgeSize = 1 }
     panel:SetBackdrop(flat); panel:SetBackdropColor(0.06, 0.06, 0.07, 0.96); panel:SetBackdropBorderColor(0, 0, 0, 1)
   end
+  panel.dragBar:SetFrameLevel(panel:GetFrameLevel() + 20)   -- above whatever the skin laid over the panel
+  closeBtn:SetFrameLevel(panel.dragBar:GetFrameLevel() + 1)
 end
 -- beside the auction house window, whichever one this client has: where you last dragged it (kept as an offset
--- from the AH window's top right, so it moves with the AH), else just to its right. Right-click the title puts it back.
+-- from the AH window's top right, so it moves with the AH), else just to its right. Right-click the title bar puts it back.
 function Dock()
   local ah = AHFrame()
   local o = WritPathNav and WritPathNav.buyerAt
