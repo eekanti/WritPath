@@ -12,6 +12,11 @@ function WritPath_Open(fn, ...)
   if issecretvalue and issecretvalue(v) then return nil end
   return v
 end
+-- an event's text, or nil when the game hid it as a secret (a chat line can be; comparing or matching one errors)
+function WritPath_Text(v)
+  if issecretvalue and issecretvalue(v) then return nil end
+  return type(v) == "string" and v or nil
+end
 
 ---------------------------------------------------------------- what's in your bags
 -- How many of an item are IN your bags: not what you're wearing, and not the bags themselves (a quiver or ammo
@@ -154,7 +159,7 @@ WritPath_Scan = Run   -- reads the map pins of accepted writs (done by itself as
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
-WritPath_VERSION = "1.15.7"
+WritPath_VERSION = "1.15.8"
 local MINE = WritPath_VERSION
 local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
 local function Newer(a, b)   -- is version a newer than version b?
@@ -212,7 +217,7 @@ ver:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
     end
   elseif event == "GROUP_ROSTER_UPDATE" then
     if GetTime() - lastGroup > 60 then lastGroup = GetTime(); C_Timer.After(5, ToGroup) end
-  elseif event == "CHAT_MSG_ADDON" and prefix == PREFIX and type(msg) == "string" then
+  elseif event == "CHAT_MSG_ADDON" and WritPath_Text(prefix) and WritPath_Text(msg) and WritPath_Text(sender) and prefix == PREFIX then
     local v = msg:match("^V:(.+)$")
     if not v then return end
     local who = Ambiguate and Ambiguate(sender or "", "none") or sender

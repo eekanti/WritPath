@@ -631,8 +631,8 @@ ev:RegisterEvent("CHAT_MSG_SYSTEM")
 local NEW_FP = ERR_NEWTAXIPATH or "New flight path discovered!"
 local function LearnedFlightPath(...)
   for i = 1, select("#", ...) do
-    local a = select(i, ...)
-    if type(a) == "string" and (a == NEW_FP or a:find(NEW_FP, 1, true)) then return true end
+    local a = WritPath_Text((select(i, ...)))
+    if a and (a == NEW_FP or a:find(NEW_FP, 1, true)) then return true end
   end
 end
 ev:SetScript("OnEvent", function(_, event, ...)

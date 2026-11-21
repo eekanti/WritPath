@@ -279,7 +279,7 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
     if C_Timer.NewTicker then C_Timer.NewTicker(ASK_EVERY + math.random(0, 300), Ask) end
     return
   end
-  if prefix ~= PREFIX or type(msg) ~= "string" or not sender then return end
+  if not (WritPath_Text(prefix) and WritPath_Text(msg) and WritPath_Text(sender)) or prefix ~= PREFIX then return end
   local me = UnitName("player")
   local short = Ambiguate and Ambiguate(sender, "none") or sender
   if short == me then return end

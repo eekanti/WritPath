@@ -711,7 +711,7 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     end
   elseif event == "CHAT_MSG_SYSTEM" then
     -- classic auction house only: "You won an auction for X", and only for the item on the button
-    if not MODERN and state.phase == "buying" and state.pick.kind == "classic" and type(a1) == "string" then
+    if not MODERN and state.phase == "buying" and state.pick.kind == "classic" and WritPath_Text(a1) then
       local name = a1:match(WON)
       if name and name == (ItemName(state.it.id) or state.it.name) then Bought(state.pick.qty) end
     end

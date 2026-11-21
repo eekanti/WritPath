@@ -1781,7 +1781,7 @@ rec:SetScript("OnEvent", function(_, event, unit, _, spellID)
   if event == "PLAYER_ENTERING_WORLD" then return end
   if event == "CHAT_MSG_SYSTEM" then
     -- "X is now your home.": you're standing at the innkeeper
-    if type(unit) == "string" and unit:match(HOME) then C_Timer.After(0.5, T.SaveHearth) end
+    if WritPath_Text(unit) and unit:match(HOME) then C_Timer.After(0.5, T.SaveHearth) end
     return
   end
   if unit ~= "player" then return end

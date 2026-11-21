@@ -108,13 +108,25 @@ end
 -- the planner's rows, summary and note for a Favor plan
 function WritPath_FavorView(plan)
   local rows = {}
+  -- what each pick takes from your bags (free), handed out in the plan's order
+  local left = {}
+  if not plan.noBags then for id, n in pairs(plan.owned or {}) do left[id] = n end end
+  local function FromBags(id, want) local n = math.min(left[id] or 0, want); left[id] = (left[id] or 0) - n; return n end
   for _, p in ipairs(plan.picks) do
     local net = p.cost - p.silver * p.count
     local per = net / (p.favor * p.count)
+    local mat = ItemName(p.mat) or ("item " .. p.mat)
+    local crates, mats = FromBags(p.crate, p.count), FromBags(p.mat, p.count * p.n)
+    local bags = {}
+    if crates > 0 then bags[#bags + 1] = crates == p.count and "the crates" or (crates .. " crates") end
+    if mats > 0 then bags[#bags + 1] = mats == p.count * p.n and ("the " .. mat) or (mats .. " " .. mat) end
+    local note = #bags > 0 and ("\n" .. GREY .. "from your bags (free): " .. table.concat(bags, " and ") .. "|r") or ""
+    -- the silver back pays for more than you spend: a profit, not a cost
+    local perText = per < 0 and (G .. Coins(-per) .. " profit per Favor|r") or (GREY .. Coins(per) .. " per Favor|r")
     rows[#rows + 1] = {
-      ("%s%dx|r Waylaid Crate: %s\n%sfill each with %d %s · %d Favor each|r"):format(G, p.count, p.name, GREY, p.n,
-        ItemName(p.mat) or ("item " .. p.mat), p.favor),
-      ("%s%s|r\n%s%s per Favor|r"):format(Y, Coins(p.cost), GREY, Coins(per)),
+      ("%s%dx|r Waylaid Crate: %s\n%sfill each with %d %s · %d Favor and %s back each|r%s"):format(G, p.count, p.name, GREY, p.n,
+        mat, p.favor, Coins(p.silver), note),
+      ("%s%s|r\n%s"):format(Y, Coins(p.cost), perText),
     }
   end
   local have = WritPath_FavorHave()
@@ -125,7 +137,8 @@ function WritPath_FavorView(plan)
     local net = plan.cost - plan.back
     summary = ("%s%d Merchant's Favor|r from %d crates · cost %s · %s back on hand-in · %s per Favor"):format(G, plan.earned,
       (function() local n = 0; for _, p in ipairs(plan.picks) do n = n + p.count end; return n end)(),
-      Coins(plan.cost), Coins(plan.back), Coins(net / math.max(1, plan.earned)))
+      Coins(plan.cost), Coins(plan.back),
+      net < 0 and (Coins(-net / math.max(1, plan.earned)) .. " profit") or Coins(net / math.max(1, plan.earned)))
     if plan.earned < plan.target then
       summary = summary .. "\n" .. W_ .. ("Only %d of %d: the auction house doesn't have enough crates or materials listed."):format(plan.earned, plan.target) .. "|r"
     end
