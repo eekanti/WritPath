@@ -278,9 +278,11 @@ local function PathSecs(start, route)
 end
 
 -- Hearthstone, Astral Recall, mage teleports, Teleport: Moonglade: each goes on the legs where it saves the most
--- (at least 90 s), when it's off cooldown by then, a cooldown apart, one per leg, as many as you have runes.
+-- (at least 3 minutes), when it's off cooldown by then, a cooldown apart, one per leg, as many as you have runes.
+-- (A mage teleport costs a Rune of Teleportation and the hearthstone's cooldown is long: neither is spent to
+-- save a minute or two.)
 -- Returns { [leg index] = { tp =, save = } } and the seconds saved.
-local TELE_MIN = 90
+local TELE_MIN = 180
 -- legs[i] = { t = start time, secs = travel time }; via(k, i) = seconds for leg i using teleport k
 local function AssignTeleports(legs, list, via)
   local cands = {}
@@ -312,6 +314,7 @@ local function AssignTeleports(legs, list, via)
   if total == 0 then return nil, 0 end
   return used, total
 end
+WritPath_AssignTeleports = AssignTeleports   -- for tests
 local function PlanTeleports(start, route)
   local list = Travel.Teleports and Travel.Teleports() or {}
   if #list == 0 or #route == 0 then return nil, 0 end
@@ -883,8 +886,8 @@ local function Steps(plan)
       local dest = via or p.pos
       if tl and p.pos then
         local tp = tl.tp
-        steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
-                                GREY_, math.floor(tl.save / 60 + 0.5)) },
+        steps[#steps + 1] = { lines = { ("{hs} %s to %s%s|r %s(saves ~%d min%s)|r"):format(tp.text, G, tp.destName or MapName(tp.dest.map),
+                                GREY_, math.floor(tl.save / 60 + 0.5), tp.rune and ", uses a Rune of Teleportation" or "") },
                               done = { arrive = { tp.dest.map } }, teleport = tp.key }
         warn = TravelSteps(steps, tp.dest, dest, suggested)
       elseif prev and p.pos then warn = TravelSteps(steps, prev, dest, suggested) end

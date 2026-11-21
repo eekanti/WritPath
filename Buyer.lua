@@ -110,6 +110,7 @@ local function Text(parent, template, width)
   return fs
 end
 local function AHFrame() return AuctionHouseFrame or AuctionFrame end
+local Dock, Dragged   -- below (the panel's handlers call them)
 local ROWS, ROW_H = 10, 20
 local rows, listTop, totalsText, scrollOff = {}, nil, nil, 0
 local seen = {}          -- [item id] = the best offer found this visit (or false: none on the auction house)
@@ -120,7 +121,9 @@ local function Build()
   panel = CreateFrame("Frame", "WritPathBuyer", UIParent, "BackdropTemplate")
   panel:SetWidth(W); panel:SetFrameStrata("HIGH"); panel:SetClampedToScreen(true)
   panel:SetMovable(true); panel:EnableMouse(true); panel:RegisterForDrag("LeftButton")
-  panel:SetScript("OnDragStart", panel.StartMoving); panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
+  panel:SetScript("OnDragStart", panel.StartMoving); panel:SetScript("OnDragStop", function() Dragged() end)
+  -- right-click: back to its place beside the AH window
+  panel:SetScript("OnMouseUp", function(_, b) if b == "RightButton" and WritPathNav then WritPathNav.buyerAt = nil; Dock() end end)
   title = Text(panel, "GameFontNormal", W - 40); title:SetPoint("TOPLEFT", 10, -9)
   closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton"); closeBtn:SetSize(20, 20); closeBtn:SetPoint("TOPRIGHT", -3, -3)
   closeBtn:SetScript("OnClick", function() panel:Hide() end)
@@ -180,11 +183,27 @@ local function Build()
     panel:SetBackdrop(flat); panel:SetBackdropColor(0.06, 0.06, 0.07, 0.96); panel:SetBackdropBorderColor(0, 0, 0, 1)
   end
 end
-local function Dock()   -- beside the auction house window, whichever one this client has
+-- beside the auction house window, whichever one this client has: where you last dragged it (kept as an offset
+-- from the AH window's top right, so it moves with the AH), else just to its right. Right-click the title puts it back.
+function Dock()
   local ah = AHFrame()
+  local o = WritPathNav and WritPathNav.buyerAt
   panel:ClearAllPoints()
-  if ah then panel:SetPoint("TOPLEFT", ah, "TOPRIGHT", 6, -24) else panel:SetPoint("LEFT", UIParent, "LEFT", 40, 0) end
+  if ah then panel:SetPoint("TOPLEFT", ah, "TOPRIGHT", o and o.x or 6, o and o.y or -24)
+  else panel:SetPoint("LEFT", UIParent, "LEFT", 40, 0) end
 end
+function Dragged()   -- keep the spot you dropped it at, still tied to the AH window
+  panel:StopMovingOrSizing()
+  local ah = AHFrame()
+  local l, t = panel:GetLeft(), panel:GetTop()
+  local r, at = ah and ah:GetRight(), ah and ah:GetTop()
+  if not (l and t and r and at) then return end
+  local k = (ah:GetEffectiveScale() or 1) / (panel:GetEffectiveScale() or 1)   -- the AH's points in the panel's scale
+  WritPathNav = WritPathNav or {}
+  WritPathNav.buyerAt = { x = math.floor(l - r * k + 0.5), y = math.floor(t - at * k + 0.5) }
+  Dock()
+end
+WritPath_BuyerDragged = function() Dragged() end   -- for tests
 if EllesmereUI and EllesmereUI.RegisterSkin then EllesmereUI.RegisterSkin("WritPathBuyer", function(S) skin = S end) end
 
 local Search
