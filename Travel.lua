@@ -561,6 +561,14 @@ local KNOWN_SHIPS = { ["1411>1434"] = true, ["1434>1411"] = true, ["1411>1420"] 
 -- trips once recorded as a boat or zeppelin that were a summon or portal: there's no such ship, whoever recorded it
 -- (Orgrimmar - Badlands, Thunder Bluff - Undercity)
 local NOT_SHIPS = { ["1454>1418"] = true, ["1418>1454"] = true, ["1456>1458"] = true, ["1458>1456"] = true }
+-- every boat, zeppelin and airship Polestar knows (TravelFacts.transports): a known route, and how long it takes
+local SHIP_SECS = {}   -- ["from>to"] = seconds riding plus the average wait at the dock
+for _, t in ipairs((WritPath_TravelFacts or {}).transports or {}) do
+  local k = t[1] .. ">" .. t[4]
+  KNOWN_SHIPS[k] = true
+  if not SHIP_SECS[k] or t[7] + t[8] < SHIP_SECS[k] then SHIP_SECS[k] = t[7] + t[8] end
+end
+T.ShipSecs = function(from, to) return SHIP_SECS[tostring(from) .. ">" .. tostring(to)] end
 local function ShipOK(t) return not NOT_SHIPS[t.from .. ">" .. t.to] and (t.src or (t.n or 1) >= 2 or KNOWN_SHIPS[t.from .. ">" .. t.to]) or false end
 T.ShipOK = ShipOK
 function T.NotShip(from, to) return NOT_SHIPS[tostring(from) .. ">" .. tostring(to)] or false end
@@ -682,9 +690,15 @@ function T.Build()
   -- zeppelin, 2026-11-18). Everyone keeps the neutral boats (Ratchet - Booty Bay, Riverglades).
   local hostile = UnitFactionGroup("player") == "Horde" and ALLIANCE_DOCKS or HORDE_DOCKS
   local sailed = {}   -- from..to pairs you've taken yourself: those win over the shipped routes
-  local function Sail(from, dock, to, land)
-    if hostile[from] or hostile[to] or NOT_SHIPS[from .. ">" .. to] then return end
-    Edge(Add({ zone = from, p = dock, kind = "dock" }), Add({ zone = to, p = land, kind = "land" }), SAIL, "sail")
+  local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
+  local function Sail(from, dock, to, land, faction)
+    if NOT_SHIPS[from .. ">" .. to] then return end
+    if faction then
+      if faction ~= "AH" and faction ~= mine then return end
+    elseif hostile[from] or hostile[to] then return end
+    -- the ride and the average wait for it (Polestar's timetables), else a flat guess
+    Edge(Add({ zone = from, p = dock, kind = "dock" }), Add({ zone = to, p = land, kind = "land" }),
+      SHIP_SECS[from .. ">" .. to] or SAIL, "sail")
   end
   -- a place recorded on a continent map (out at sea) -> the zone it's in
   local function OnZone(m, x, y)
@@ -698,6 +712,14 @@ function T.Build()
       local to, tx, ty = OnZone(t.to, t.tx, t.ty)
       local dock, land = from and T.Point(from, x, y), to and T.Point(to, tx, ty)
       if dock and land then Sail(from, dock, to, land); sailed[from .. ">" .. to] = true end
+    end
+  end
+  -- every boat, zeppelin and airship from Polestar's data: where each docks, for your faction or both
+  for _, t in ipairs(RXP.transports or {}) do
+    local k = t[1] .. ">" .. t[4]
+    if not sailed[k] then
+      local dock, land = T.Point(t[1], t[2], t[3]), T.Point(t[4], t[5], t[6])
+      if dock and land then Sail(t[1], dock, t[4], land, t[9]); sailed[k] = true end
     end
   end
   -- ships WritPath players have recorded (WritPathData.lua), then the ones RestedXP's guides take
@@ -981,10 +1003,17 @@ local SHIP_NAMES = {
   [2548] = { [1446] = { "boat", "the Powderfuse Port dock", "Steamwheedle Port, Tanaris" } },
   [1446] = { [2548] = { "boat", "the Steamwheedle Port dock", "Powderfuse Port, Riverglades" } },
 }
+-- the rest from Polestar's names: "the Menethil Harbor boat" to "Theramore"
+for _, t in ipairs((WritPath_TravelFacts or {}).transports or {}) do
+  SHIP_NAMES[t[1]] = SHIP_NAMES[t[1]] or {}
+  if not SHIP_NAMES[t[1]][t[4]] and t[11] then
+    SHIP_NAMES[t[1]][t[4]] = { t[10], ("the %s %s"):format(t[11], t[10] == "boat" and "dock" or "tower"), t[12] }
+  end
+end
 local function ShipText(from, to)
   local n = SHIP_NAMES[from] and SHIP_NAMES[from][to]
   if not n then return "{boat} Take the boat or zeppelin to |cFF00FF25" .. ZoneName(to) .. "|r" end
-  return ("{%s} Go to %s and take the %s to |cFF00FF25%s|r"):format(n[1] == "zeppelin" and "zeppelin" or "boat", n[2], n[1], n[3])
+  return ("{%s} Go to %s and take the %s to |cFF00FF25%s|r"):format(n[1] == "boat" and "boat" or "zeppelin", n[2], n[1], n[3])
 end
 T.ShipText = ShipText
 

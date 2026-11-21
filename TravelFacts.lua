@@ -1199,3 +1199,36 @@ WritPath_TravelFacts.networkTimes = {
     [63] = { [69] = 1056, [72] = 909, [77] = 620, [79] = 923, [80] = 740 },
   },
 }
+
+-- Boats, zeppelins and airships, one way each: { from zone, dock x, dock y, to zone, landing x, landing y,
+--   seconds riding, average seconds waiting at the dock, faction ("A", "H", "AH" for both), kind, dock, landing }.
+-- From Polestar (GPL-3.0, https://github.com/fitzforge/polestar, addon/Polestar/Nav/TravelData.lua, built from
+-- WoW Forever's TransportAnimation tables and sniffed transport periods). Added 2026-11-21.
+WritPath_TravelFacts.transports = {
+  { 1434, 26.35, 73.56, 1413, 63.35, 38.45, 124, 185, "AH", "boat", "Booty Bay", "Ratchet" },
+  { 1413, 63.35, 38.45, 1434, 26.35, 73.56, 107, 185, "AH", "boat", "Ratchet", "Booty Bay" },
+  { 1437, 4.74, 63.76, 1445, 71.73, 56.66, 104, 175, "A", "boat", "Menethil Harbor", "Theramore" },
+  { 1445, 71.73, 56.66, 1437, 4.74, 63.76, 106, 175, "A", "boat", "Theramore", "Menethil Harbor" },
+  { 1437, 4.49, 56.66, 1424, 50.67, 70.44, 142, 253, "A", "boat", "Menethil Harbor", "Southshore" },
+  { 1424, 50.67, 70.44, 1437, 4.49, 56.66, 224, 253, "A", "boat", "Southshore", "Menethil Harbor" },
+  { 1424, 50.67, 70.44, 1439, 32.34, 44.13, 85, 253, "A", "boat", "Southshore", "Auberdine" },
+  { 1439, 32.34, 44.13, 1424, 50.67, 70.44, 282, 253, "A", "boat", "Auberdine", "Southshore" },
+  { 1437, 4.49, 56.66, 1439, 32.34, 44.13, 287, 253, "A", "boat", "Menethil Harbor", "Auberdine" },
+  { 1439, 32.34, 44.13, 1437, 4.49, 56.66, 80, 253, "A", "boat", "Auberdine", "Menethil Harbor" },
+  { 1453, 21.78, 56.86, 1439, 30.53, 40.88, 60, 134, "A", "boat", "Stormwind Harbor", "Auberdine" },
+  { 1439, 30.53, 40.88, 1453, 21.78, 56.86, 67, 134, "A", "boat", "Auberdine", "Stormwind Harbor" },
+  { 1446, 67.6, 23.15, 2548, 79.45, 52.71, 77, 146, "AH", "boat", "Steamwheedle Port", "Powderfuse Port" },
+  { 2548, 79.45, 52.71, 1446, 67.6, 23.15, 75, 146, "AH", "boat", "Powderfuse Port", "Steamwheedle Port" },
+  { 1439, 33.31, 39.82, 1438, 54.79, 97.17, 92, 168, "A", "boat", "Auberdine", "Rut'theran Village" },
+  { 1438, 54.79, 97.17, 1439, 33.31, 39.82, 105, 168, "A", "boat", "Rut'theran Village", "Auberdine" },
+  { 1411, 50.82, 13.54, 1420, 60.74, 58.87, 131, 188, "H", "zeppelin", "Orgrimmar", "Undercity" },
+  { 1420, 60.74, 58.87, 1411, 50.82, 13.54, 105, 188, "H", "zeppelin", "Undercity", "Orgrimmar" },
+  { 1411, 50.69, 12.89, 1434, 31.43, 29.91, 78, 162, "H", "zeppelin", "Orgrimmar", "Grom'gol" },
+  { 1434, 31.43, 29.91, 1411, 50.69, 12.89, 105, 162, "H", "zeppelin", "Grom'gol", "Orgrimmar" },
+  { 1420, 61.78, 59.18, 1434, 31.54, 29.36, 96, 177, "H", "zeppelin", "Undercity", "Grom'gol" },
+  { 1434, 31.54, 29.36, 1420, 61.78, 59.18, 117, 177, "H", "zeppelin", "Grom'gol", "Undercity" },
+  { 2521, 65.75, 83.96, 1416, 12.9, 52.01, 131, 189, "A", "airship", "Valanaar Skydocks", "Dalaran" },
+  { 1416, 12.9, 52.01, 2521, 65.75, 83.96, 108, 189, "A", "airship", "Dalaran", "Valanaar Skydocks" },
+  { 2521, 58.03, 80.98, 1412, 34.25, 25.68, 147, 170, "H", "airship", "Valanaar Skydocks", "Mulgore" },
+  { 1412, 34.25, 25.68, 2521, 58.03, 80.98, 84, 170, "H", "airship", "Mulgore", "Valanaar Skydocks" },
+}

@@ -14,6 +14,10 @@ endorse WritPath. What you learn in your own game always wins over this file.
 paths in **Polestar**'s WoW: Forever data (GPL-3.0, https://github.com/fitzforge/polestar, `data/forever/travel.json`),
 2026-11-18. Only these facts were used; no Polestar code or files are included.
 
+`transports` in TravelFacts.lua (every boat, zeppelin and airship: where each docks, seconds riding each way and the
+average wait) is from Polestar's `addon/Polestar/Nav/TravelData.lua`, built from WoW: Forever's transport tables,
+2026-11-21. Again only the facts (dock spots, names, times) were used.
+
 ## Writ customers (WritDB.lua)
 
 Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-11-14 and 2026-11-15 from:

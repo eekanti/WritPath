@@ -29,14 +29,8 @@ local function Records()
     for _, v in ipairs(p.via or {}) do via[#via + 1] = Round(v[1]) .. " " .. Round(v[2]) end
     out[#out + 1] = ("P,%d,%d,%s,%s,%d,%s"):format(p.from, p.to, Round(p.x), Round(p.y), p.n or 1, table.concat(via, " / "))
   end
-  for _, s in ipairs(L.transports or {}) do
-    if not s.src and not (WritPath_Travel.NotShip and WritPath_Travel.NotShip(s.from, s.to)) then out[#out + 1] = ("S,%d,%s,%s,%d,%s,%s,%d"):format(s.from, Round(s.x), Round(s.y), s.to, Round(s.tx), Round(s.ty), s.n or 1) end
-  end
-  for a, row in pairs(L.flights or {}) do
-    if type(row) == "table" then
-      for b, secs in pairs(row) do if type(secs) == "number" then out[#out + 1] = ("F,%d,%d,%d"):format(a, b, secs) end end
-    end
-  end
+  -- boat trips and flight times aren't shared any more (2026-11-21): Polestar's timetables and the recorded
+  -- flight times WritPath ships are exact, and a portal or summon taken for a ship did harm
   for id, v in pairs(L) do   -- customer spots from hand-ins (writ pins are keyed by item id)
     if type(id) == "number" and type(v) == "table" and v.src == "turnin" and v.map then
       out[#out + 1] = ("N,%d,%d,%s,%s,%s"):format(id, v.map, Round(v.x), Round(v.y), Clean(v.npc))
@@ -123,8 +117,7 @@ local CHECK = {
   C = function(f) return #f == 6 and Map(f[2]) and Map(f[3]) and XY(f[4], f[5]) and N(f[6], 1, 999) end,
   P = function(f) return (#f == 6 or #f == 7) and Map(f[2]) and Map(f[3]) and XY(f[4], f[5]) and N(f[6], 1, 999)
                      and (f[7] or ""):match("^[%d%. /]*$") ~= nil end,
-  S = function(f) return #f == 8 and Map(f[2]) and XY(f[3], f[4]) and Map(f[5]) and XY(f[6], f[7]) and N(f[8], 1, 999) end,
-  F = function(f) return #f == 4 and N(f[2], 1, 9999) and N(f[3], 1, 9999) and N(f[4], 5, 3600) end,
+  -- S (boat trips) and F (flight times) from older versions are refused: not kept, not passed on
   N = function(f) return (#f == 5 or #f == 6) and N(f[2], 1, 999999) and Map(f[3]) and XY(f[4], f[5]) end,
   H = function(f)
     if #f ~= 11 then return false end
@@ -160,6 +153,7 @@ end
 local function Prune(R)
   local cut = time() - KEEP_DAYS * 86400
   local n, list, per = 0, {}, {}
+  for rec in pairs(R.recs) do if not Valid(rec) then R.recs[rec] = nil end end   -- kinds no longer shared
   for rec, e in pairs(R.recs) do
     for id, t in pairs(e.by) do if t < cut then e.by[id] = nil end end
     if next(e.by) == nil then R.recs[rec] = nil else n = n + 1; list[#list + 1] = { rec, e.last or e.t or 0 } end
