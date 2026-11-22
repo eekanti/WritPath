@@ -17,10 +17,16 @@ local RIDE, FLY, FLIGHT_OVERHEAD, CROSS, SAIL = 9, 28, 45, 5, 300   -- yards/s, 
 -- flight when it's clearly faster (the ride's estimate is straight lines between borders; real roads wind,
 -- and a flight needs no steering). A Felwood -> Desolace route once rode two zones to save a minute on paper.
 local RIDE_BIAS = 1.05   -- 1.15.2: was 1.25 before the traced roads and your own mount speed made ride times honest
--- Riding speed: your own mount's, when WritPath has seen you mounted (GetUnitSpeed's run speed while mounted,
--- saved per character in WritPathChar.mountSpeed, so planning on foot in town still uses it); otherwise RIDE.
+-- Riding speed: the fastest mount WritPath has seen you ride (GetUnitSpeed's run speed while mounted, saved per
+-- character in WritPathChar.mountBest, so planning on foot in town still uses it); otherwise RIDE. 1.16.4: it was
+-- the LAST mount you rode, so a slow mount, a slow or a short speed buff changed every plan. mountSpeed is that old
+-- value, used only until a best speed is known.
 local DEFAULT_RIDE = RIDE
-local function MountSpeed() local v = WritPathChar and WritPathChar.mountSpeed; return (type(v) == "number" and v > 7) and v or nil end
+local function MountSpeed()
+  local c = WritPathChar
+  local v = c and (c.mountBest or c.mountSpeed)
+  return (type(v) == "number" and v > 7) and v or nil
+end
 local builtSpeed
 local function SetRide() builtSpeed = MountSpeed() or DEFAULT_RIDE; RIDE = builtSpeed / RIDE_BIAS end
 SetRide()
@@ -1519,6 +1525,7 @@ end
 -- Questing wanders around a hub and gets nowhere; riding to a customer closes in on it.
 local STALE, HEAD_SECS, HEAD_GAIN = 900, 30, 40
 local TUNNEL_SECS, TUNNEL_YDS = 180, 1500   -- a crossing through a stretch with no map position: at most this long and far
+local SPEED_HOLD = 20   -- seconds a mounted speed must hold before it can become your best (outlasts potions and trinkets)
 local function Heading(p, now)
   local function No(why) REC.why = why; if REC.heading then REC.heading.log = {} end; return false end   -- start the history afresh
   if WritPath_Open(UnitAffectingCombat, "player") then return No("combat") end
@@ -1670,13 +1677,25 @@ local function Poll()
     REC.flight = nil
   end
   REC.onTaxi = taxi
-  -- your mount's speed, while you're on it: GetUnitSpeed's second value is the run speed with the mount included
-  if not taxi and WritPath_Open(IsMounted) and GetUnitSpeed then
-    local _, run = GetUnitSpeed("player")
-    if not (issecretvalue and issecretvalue(run)) and type(run) == "number" and run > 7.1 and run < 30 then
-      WritPathChar = WritPathChar or {}
-      WritPathChar.mountSpeed = math.floor(run * 10 + 0.5) / 10   -- the latest mount you rode
+  -- your mount's speed: GetUnitSpeed's second value is the run speed with the mount included. Read when you mount,
+  -- and once more SPEED_HOLD seconds later if you're still on it; the same speed both times becomes your best (it
+  -- only goes up). A slow never lowers it, and a speed potion or trinket (10-15 s) has worn off by the second read,
+  -- so that read becomes the new first one instead. An aura you always ride with counts: it's there both times.
+  local mounted = not taxi and WritPath_Open(IsMounted) and true or false
+  if not mounted then REC.speed, REC.speedAt = nil, nil
+  elseif not REC.speedAt or now - REC.speedAt >= SPEED_HOLD then
+    local run, r
+    if GetUnitSpeed then r = select(2, GetUnitSpeed("player")) end
+    if not (issecretvalue and issecretvalue(r)) and type(r) == "number" and r > 7.1 and r < 30 then
+      run = math.floor(r * 10 + 0.5) / 10
     end
+    local at = now
+    if run and run == REC.speed then
+      WritPathChar = WritPathChar or {}
+      if not WritPathChar.mountBest or run > WritPathChar.mountBest then WritPathChar.mountBest = run end
+      at = math.huge   -- known: no more reads until you mount again
+    end
+    REC.speed, REC.speedAt = run, at
   end
   -- a tunnel (Timbermaw Hold's Moonglade end, for one): the game gives no map position inside. Keep the last spot
   -- before it went missing; reappearing in another zone close by soon after is a crossing from that spot.
