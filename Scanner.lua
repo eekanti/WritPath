@@ -44,7 +44,7 @@ local function Ago(secs)
 end
 
 ---------------------------------------------------------------- the panel
-local panel, icon, title, status, bar, barText, scanBtn
+local panel, title, status, bar, barText, scanBtn
 local fonts, skin = {}, nil
 local phase = { kind = "idle" }   -- idle, wait, read, done, fail
 local accent = { 1, 0.82, 0 }
@@ -59,15 +59,17 @@ end
 local Render
 local function Build()
   if panel then return end
-  local W = 280
+  local W = 320
   panel = CreateFrame("Frame", "WritPathScanPanel", UIParent, "BackdropTemplate")
-  panel:SetSize(W, 74); panel:SetFrameStrata("HIGH"); panel:SetClampedToScreen(true); panel:Hide()
-  icon = panel:CreateTexture(nil, "ARTWORK"); icon:SetSize(30, 30); icon:SetPoint("TOPLEFT", 8, -8)
-  icon:SetTexture("Interface/AddOns/WritPath/Media/icon")
-  title = Text(panel, "GameFontNormal"); title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -1); title:SetText("WritPath prices")
-  status = Text(panel); status:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3); status:SetWidth(W - 46 - 96)
+  -- a title bar on top: the title on the left and the Scan button on the right, both centered in it; then the status
+  -- line and the progress bar
+  local BAR_H = 25   -- the height of EllesmereUI's black top bar (its window shells draw one 25 tall)
+  panel:SetSize(W, 72); panel:SetFrameStrata("HIGH"); panel:SetClampedToScreen(true); panel:Hide()
+  title = Text(panel, "GameFontNormal"); title:SetPoint("LEFT", panel, "TOPLEFT", 10, -BAR_H / 2); title:SetText("WritPath Scanner")
+  status = Text(panel); status:SetPoint("TOPLEFT", 10, -BAR_H - 7); status:SetWidth(W - 20)
+  status:SetWordWrap(false)
   scanBtn = CreateFrame("Button", "WritPathScanButton", panel, "UIPanelButtonTemplate")
-  scanBtn:SetSize(84, 22); scanBtn:SetPoint("TOPRIGHT", -8, -10); scanBtn:SetText("Scan")
+  scanBtn:SetSize(84, 19); scanBtn:SetPoint("RIGHT", panel, "TOPRIGHT", -4, -BAR_H / 2); scanBtn:SetText("Scan")
   scanBtn:SetScript("OnClick", function() S.Start() end)
   scanBtn:SetScript("OnEnter", function(self)
     -- beside the panel, not above it: the panel sits at the top of the screen, where a tooltip above it gets pushed
@@ -97,6 +99,22 @@ local function Build()
     panel:SetBackdrop(flat); panel:SetBackdropColor(0.06, 0.06, 0.07, 0.96); panel:SetBackdropBorderColor(0, 0, 0, 1)
   end
   bar:SetStatusBarColor(accent[1], accent[2], accent[3], 0.9)
+  -- drag anywhere on the panel to move it (it stays tied to the auction house window); right-click puts it back.
+  -- A layer over the whole panel, above any skin's, with the Scan button raised above that.
+  panel:SetMovable(true)
+  local grip = CreateFrame("Button", nil, panel); panel.grip = grip
+  grip:SetAllPoints(); grip:SetFrameLevel(panel:GetFrameLevel() + 20); scanBtn:SetFrameLevel(grip:GetFrameLevel() + 1)
+  grip:EnableMouse(true); grip:RegisterForDrag("LeftButton"); grip:RegisterForClicks("RightButtonUp")
+  grip:SetScript("OnDragStart", function() panel:StartMoving() end)
+  grip:SetScript("OnDragStop", function() S.Dragged() end)
+  grip:SetScript("OnClick", function(_, b) if b == "RightButton" then WritPathNav = WritPathNav or {}; WritPathNav.scanAt = nil; S.Dock() end end)
+  grip:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_NONE"); GameTooltip:ClearAllPoints()
+    GameTooltip:SetPoint("TOPRIGHT", panel, "TOPLEFT", -4, 0); GameTooltip:SetText("Move")
+    GameTooltip:AddLine("Drag to move this panel. It stays tied to the auction house window.", 1, 1, 1, true)
+    GameTooltip:AddLine("Right-click: back to its place above it.", 0.5, 0.8, 1, true); GameTooltip:Show()
+  end)
+  grip:SetScript("OnLeave", function() GameTooltip:Hide() end)
   -- the countdown and the waiting pulse
   local acc = 0
   panel:SetScript("OnUpdate", function(_, e)
@@ -151,6 +169,96 @@ end
 local busy, got, startedAt = false, false, 0
 local ev = CreateFrame("Frame")
 
+-- Auctionator: a detailed scan reads every auction on the house, so when Auctionator is installed all of it goes into
+-- Auctionator's price database too, as its own full scan would save it (same item keys, lowest price per unit and
+-- how many listed). It goes through Auctionator's internal Database:ProcessScan, since its API for other addons can
+-- only read prices: checked before use, so an Auctionator version without it just doesn't get the prices. (A summary
+-- scan needs none of this: Auctionator saves every browse result it sees on its own, WritPath's included.)
+local feed
+local function AtrReady()
+  local A = Auctionator
+  return A and A.Database and type(A.Database.ProcessScan) == "function" and A.Utilities
+    and type(A.Utilities.DBKeyFromLink) == "function" and C_AuctionHouse and C_AuctionHouse.GetReplicateItemLink and true or false
+end
+S.AtrReady = AtrReady
+local BUDGET = 4   -- milliseconds of work per frame (a frame at 60 fps is 16)
+local function Clock0() return debugprofilestop and debugprofilestop() or 0 end
+local function Over(t0, done)
+  if debugprofilestop then return done % 25 == 0 and debugprofilestop() - t0 > BUDGET end
+  return done >= 250   -- no clock (outside the game): 250 at a time
+end
+local function FeedAuctionator(n)
+  if not AtrReady() or n <= 0 then return end
+  local f = { info = {}, waiting = 0, read = false, sent = false, retry = {}, tries = 0, asked = {} }
+  feed = f
+  local function Send()
+    if f.sent or f ~= feed then return end
+    f.sent, feed = true, nil
+    local ok = pcall(Auctionator.Database.ProcessScan, Auctionator.Database, f.info, function(count)
+      Print(("Auctionator's prices updated from this scan: %d items."):format(count or 0))
+    end)
+    -- when the full read was asked for, as Auctionator stamps its own: its 15-minute wait is the game's, and it
+    -- stays no newer than WritPath's scan, so the planner keeps WritPath's stack-aware prices for the same read
+    if ok and Auctionator.SavedState then Auctionator.SavedState.TimeOfLastReplicateScan = WritPathPrices and WritPathPrices.replicateAt or time() end
+  end
+  local function Check() if f.read and f.waiting == 0 then Send() end end
+  local function Add(k)   -- one auction; false: its item data isn't loaded yet
+    local info = { C_AuctionHouse.GetReplicateItemInfo(k) }
+    local q, buy, id, full = info[3], info[10], info[17], info[18]
+    if not id or (C_Item and C_Item.DoesItemExistByID and not C_Item.DoesItemExistByID(id)) then return true end
+    if not full then
+      if not f.asked[id] and C_Item and C_Item.RequestLoadItemDataByID then f.asked[id] = true; pcall(C_Item.RequestLoadItemDataByID, id) end
+      return false
+    end
+    if not (q and buy and q > 0 and buy > 0) then return true end
+    local link = C_AuctionHouse.GetReplicateItemLink(k)
+    if not link then return true end
+    f.waiting = f.waiting + 1
+    local ok = pcall(Auctionator.Utilities.DBKeyFromLink, link, function(keys)
+      for _, key in ipairs(keys or {}) do
+        f.info[key] = f.info[key] or {}
+        table.insert(f.info[key], { price = buy / q, available = q })
+      end
+      f.waiting = f.waiting - 1
+      Check()
+    end)
+    if not ok then f.waiting = f.waiting - 1 end
+    return true
+  end
+  -- the auctions still waiting for their item data: read again every half second (up to 20 times), a few
+  -- milliseconds' worth per frame like the first pass, each item asked for once per round
+  local still, j = {}, 1
+  local function Retry()
+    if f ~= feed then return end
+    local t0, done = Clock0(), 0
+    while j <= #f.retry do
+      local k = f.retry[j]; j = j + 1
+      if not Add(k) then still[#still + 1] = k end
+      done = done + 1
+      if Over(t0, done) then C_Timer.After(0, Retry); return end
+    end
+    f.retry, still, j, f.asked = still, {}, 1, {}
+    f.tries = f.tries + 1
+    if #f.retry > 0 and f.tries < 20 then C_Timer.After(0.5, Retry); return end
+    f.read = true; Check()
+    C_Timer.After(10, Send)   -- an item whose key never comes back doesn't hold up the rest
+  end
+  -- the first pass over every auction: a few milliseconds of it per frame, so the game doesn't freeze
+  local i = 0
+  local function Step()
+    if f ~= feed then return end   -- the auction house was closed
+    local t0, done = Clock0(), 0
+    while i < n do
+      if not Add(i) then f.retry[#f.retry + 1] = i end
+      i, done = i + 1, done + 1
+      if Over(t0, done) then break end
+    end
+    if i < n then C_Timer.After(0, Step) else Retry() end
+  end
+  Step()
+end
+S.FeedAuctionator = FeedAuctionator   -- for tests
+
 local function Finish(found, n, missed, summary)
   local items, count = {}, 0
   local statusFn = C_AuctionHouse and C_AuctionHouse.GetItemCommodityStatus
@@ -176,6 +284,7 @@ local function Finish(found, n, missed, summary)
     summary and "items" or "auctions", secs, count)
     .. ((missed or 0) > 0 and (" %d auctions' item data never loaded."):format(missed) or ""))
   if WritPath_PlannerLearned then WritPath_PlannerLearned() end
+  if not summary then FeedAuctionator(n) end
 end
 
 local function Process()
@@ -214,11 +323,12 @@ local function Process()
   end
   local function Step()
     if not busy then return end   -- the auction house was closed
-    local stop = math.min(i + 2000, n)
-    for k = i, stop - 1 do
-      if not Take(k) then pending[#pending + 1] = k end
+    local t0, done = Clock0(), 0   -- a few milliseconds of reading per frame, so the game doesn't freeze
+    while i < n do
+      if not Take(i) then pending[#pending + 1] = i end
+      i, done = i + 1, done + 1
+      if Over(t0, done) then break end
     end
-    i = stop
     phase.i = i
     Render()
     if i < n then C_Timer.After(0, Step)
@@ -292,6 +402,27 @@ end
 
 ev:RegisterEvent("AUCTION_HOUSE_SHOW")
 ev:RegisterEvent("AUCTION_HOUSE_CLOSED")
+-- above the auction house window, on the right (below it are other addons' tabs, like Auctionator's), or where you
+-- dragged it: kept as an offset from the AH window's top right, so it moves with the AH
+function S.Dock()
+  local ah = AuctionHouseFrame or AuctionFrame
+  local o = WritPathNav and WritPathNav.scanAt
+  panel:ClearAllPoints()
+  if ah then panel:SetPoint("BOTTOMRIGHT", ah, "TOPRIGHT", o and o.x or 0, o and o.y or 4) else panel:SetPoint("CENTER") end
+end
+function S.Dragged()
+  panel:StopMovingOrSizing()
+  local ah = AuctionHouseFrame or AuctionFrame
+  local r, b = panel:GetRight(), panel:GetBottom()
+  local ar, at = ah and ah:GetRight(), ah and ah:GetTop()
+  if r and b and ar and at then
+    local k = (ah:GetEffectiveScale() or 1) / (panel:GetEffectiveScale() or 1)   -- the AH's points in the panel's scale
+    WritPathNav = WritPathNav or {}
+    WritPathNav.scanAt = { x = math.floor(r - ar * k + 0.5), y = math.floor(b - at * k + 0.5) }
+  end
+  S.Dock()
+end
+
 ev:SetScript("OnEvent", function(_, event, a1)
   if event == "REPLICATE_ITEM_LIST_UPDATE" then
     if busy and not got then got = true; Process() end
@@ -303,15 +434,12 @@ ev:SetScript("OnEvent", function(_, event, a1)
   elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
     if busy and phase.kind == "browse" then SummaryAdd(a1); Render(); SummaryNext() end
   elseif event == "AUCTION_HOUSE_SHOW" then
-    Build()
-    local ah = AuctionHouseFrame or AuctionFrame
-    panel:ClearAllPoints()
-    -- above the auction house window, on the right (below it are other addons' tabs, like Auctionator's)
-    if ah then panel:SetPoint("BOTTOMRIGHT", ah, "TOPRIGHT", 0, 4) else panel:SetPoint("CENTER") end
+    Build(); S.Dock()
     if phase.kind == "done" or phase.kind == "fail" then phase = { kind = "idle" } end
     panel:Show(); Render()
   elseif event == "AUCTION_HOUSE_CLOSED" then
     if panel then panel:Hide() end
+    feed = nil   -- the scan's auctions can't be read with the auction house closed
     if busy then Fail("The scan stopped: the auction house was closed.") end
   end
 end)

@@ -1720,7 +1720,7 @@ function WritPath_PlannerStart(first)
   if WritPathNav and WritPathNav.planFor == "favor" then
     local NL = string.char(10)
     intro = ((first and (G .. first .. "|r ") or "") .. H .. "Plan Merchant's Favor|r" .. NL
-      .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath prices panel) so prices are fresh." .. NL
+      .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath Scanner panel) so prices are fresh." .. NL
       .. "2. Type how much Favor you want and press " .. H .. "Plan|r. Untick " .. H .. "Use my bags|r to buy everything." .. NL
       .. "3. Press " .. H .. "Start buying|r: the shopping list opens at the auction house. Fill each crate (right-click it)"
       .. " and talk to Dokimi at the camp west of the Crossroads to hand them in.")
@@ -1728,7 +1728,7 @@ function WritPath_PlannerStart(first)
   else
     local NL = string.char(10)
     intro = ((first and (G .. first .. "|r ") or "") .. H .. "Plan writs|r" .. NL
-      .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath prices panel) so prices are fresh." .. NL
+      .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath Scanner panel) so prices are fresh." .. NL
       .. "2. Type a rep target and press " .. H .. "Plan|r. Leave it empty to plan just the writs you already have." .. NL
       .. "3. Pick " .. H .. "Cheapest|r or " .. H .. "Fastest|r and press " .. H .. "Start route|r: the shopping list opens at the"
       .. " auction house, and the guide takes you to each customer.")

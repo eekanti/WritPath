@@ -50,7 +50,7 @@ version is out (it hears it from friends, guild or group members who already hav
 
 ### Before you start
 
-1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath prices** panel above the auction
+1. **Scan writ prices at the auction house**: press **Scan** in the **WritPath Scanner** panel above the auction
    house window. It runs a detailed scan (every listing, stack sizes too) when the game allows one, once every 15
    minutes, and otherwise a quick summary scan (lowest price per item) with no wait. The panel shows how old the
    prices are and which kind of scan they came from. If you also use Auctionator, the newer prices are used.
@@ -208,7 +208,7 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 
 - **The route walks everywhere**: run `/writs travel`. If flight paths are missing or "not placed", open a flight
   master's map and plan again.
-- **"No AH price"** or writs missing from plans: press **Scan** in the WritPath prices panel at the auction house; the planner says why the rest are left out.
+- **"No AH price"** or writs missing from plans: press **Scan** in the WritPath Scanner panel at the auction house; the planner says why the rest are left out.
 - **The Writ shopping panel doesn't open**: it only opens while a running plan still has something to buy.
 - **A customer's spot is wrong**: accept the writ (its map pin corrects it) or hand it in (your spot is saved).
 
