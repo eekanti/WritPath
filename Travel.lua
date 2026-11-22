@@ -958,6 +958,22 @@ local function From(src)
 end
 
 T.Build = WritPath_Timed("travel map rebuild", T.Build)
+
+---------------------------------------------------------------- walking yards from Shortest Path Forever (1.16.2)
+-- With Shortest Path Forever installed, a ride between two writ customers is timed by the real way on the ground
+-- (around cliffs, water and buildings) instead of a straight line. Its searches run in the background (Planner.lua
+-- asks for them, one customer at a time) and the answers are kept in WritPathWalks: rows[from][to] = yards, or false
+-- when there is no way on foot. They're dropped when Shortest Path Forever's walking data changes (its NavVersion).
+local function WalkKey(p) return ("%d:%.1f:%.1f"):format(p.map, p.x, p.y) end
+T.WalkKey = WalkKey
+function T.WalkYards(a, b)
+  local rows = WritPathWalks and WritPathWalks.rows
+  if not rows then return nil end
+  local ka, kb = WalkKey(a), WalkKey(b)
+  local v = rows[ka] and rows[ka][kb]
+  if v == nil then v = rows[kb] and rows[kb][ka] end   -- either way round: a walk is the same both ways
+  return v
+end
 -- seconds from a to b, and the last node before riding to b (nil when riding straight there)
 local Time
 function T.Time(a, b)
@@ -977,11 +993,27 @@ function Time(a, b)
   if nodes and math.abs((MountSpeed() or DEFAULT_RIDE) - builtSpeed) > 0.3 then T.Reset() end   -- a faster (or slower) mount
   if not nodes then T.Build() end
   -- straight there, or over the known roads, ships and flights and then straight to the stop
-  local best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil
+  local best
+  local walk = a.inst == b.inst and T.WalkYards(a, b)
+  if walk then best = walk / RIDE            -- the real way on the ground (Shortest Path Forever)
+  elseif walk == false then best = nil       -- no way on foot: only roads, flights and ships
+  else best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil end
   local via
   local r = From(a)
+  -- the ground way is known (Shortest Path Forever): a route that stays on the ground (roads, crossings, rides) can't
+  -- beat it, and its straight rides onto and off the roads may run through a cliff (1.16.2: Juo, in the Hinterlands,
+  -- was sent straight over a 500-yard mountain to reach the road). Only a flight or a ship can do better.
+  local function Carried(i)
+    while i and r.prev[i] do
+      local k = r.prev[i][2].kind
+      if k == "fly" or k == "sail" then return true end
+      i = r.prev[i][1]
+    end
+    return false
+  end
   for _, n in ipairs(nodes) do
     local d = r.dist[n.i]
+    if d and walk and not Carried(n.i) then d = nil end
     if d and n.p.inst == b.inst and Open(b.map, n.zone) then
       d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
       if not best or d < best then best, via = d, n end

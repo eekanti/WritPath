@@ -153,6 +153,37 @@ local function Gap(a, b)
   if not (ac and bc and ax and bx) or ac ~= bc then return nil end
   return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
 end
+-- where you stand in world yards: continent, x, y
+local function PlayerYds()
+  local hbd = Lib()
+  if hbd then local x, y, i = hbd:GetPlayerWorldPosition(); return i, x, y end
+  local map = PlayerMap(); if not map then return nil end
+  local pos = C_Map.GetPlayerMapPosition(map, "player"); if not pos then return nil end
+  return World(map, pos:GetXY())
+end
+-- Bends passed without coming near them (joined the road partway along, rode past a few bends off the line, or the
+-- arrow wasn't shown for a while): the arrow looks ahead for the stretch of road you're on and leads to its far end.
+-- Only a few bends ahead, so a road that doubles back past itself isn't cut short. (1.16.2: players were sent 200
+-- yards back along a road because only the very next bend was ever checked.)
+local LOOK_AHEAD, ON_ROAD = 8, 50   -- bends looked ahead; yards from a stretch that count as being on it
+local function Ahead(w, i)
+  local pc, px, py = PlayerYds()
+  if not (pc and px) then return i end
+  local best, bd = nil, ON_ROAD
+  for k = math.max(1, i - 1), math.min(#w - 1, i + LOOK_AHEAD) do   -- the stretch from bend k to bend k + 1 (from the one
+                                                                   -- you are on now: nearest to it, the arrow stays)
+    local ac, ax, ay = WorldYds(w[k])
+    local bc, bx, by = WorldYds(w[k + 1])
+    if ac == pc and bc == pc and ax and bx then
+      local dx, dy = bx - ax, by - ay
+      local len2 = dx * dx + dy * dy
+      local t = len2 > 0 and math.max(0, math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) or 0
+      local d = math.sqrt((px - ax - t * dx) ^ 2 + (py - ay - t * dy) ^ 2)
+      if d < bd then best, bd = k + 1, d end
+    end
+  end
+  return best and best > i and best or i
+end
 ---------------------------------------------------------------- terrain walks (Shortest Path Forever)
 -- With Shortest Path Forever installed, the walk to a step's spot follows the ground (around cliffs, water and
 -- buildings) instead of a straight line. Its public API (WalkPath) gives the bends; the arrow leads through them the
@@ -215,10 +246,16 @@ local function WalkTarget(s)
     return at
   end
   local i = math.min(walk.i or 1, #pts)
+  -- a bend is passed only when you reach it, or when you're on the stretch after it. Never because you're nearer the
+  -- end than the bend is: a ground path doubles back (a switchback up a cliff), and that rule skipped the bend.
   while i < #pts do
     local d = Vector(pts[i]); if not d then break end
-    local n, gap = Vector(pts[i + 1]), Gap(pts[i], pts[i + 1])
-    if d <= WALK_NEAR or (n and gap and n < gap) then i = i + 1 else break end
+    if d <= WALK_NEAR then i = i + 1 else break end
+  end
+  if walk.from then
+    local seq = { walk.from }
+    for k = 1, #pts do seq[k + 1] = pts[k] end
+    i = Ahead(seq, i + 1) - 1
   end
   walk.i = i
   -- strayed: much further from the next bend than the path itself runs to it
@@ -232,6 +269,12 @@ function WritPath_WalkState() return walk end   -- for tests
 local function Target(s)
   local w = s and s.way
   if not w then return WalkTarget(s) end
+  -- a road step with Shortest Path Forever: its ground path to the road's end, which knows the cliffs a traced road
+  -- (and the straight ride onto it) can't. The traced road is the fallback while there's no path.
+  if SPF() then
+    local g = WalkTarget(s)
+    if walk.pts then return g end   -- while it's being worked out (or there's none), the traced road
+  end
   local i = math.min(s.wayI or 1, #w)
   local moved = false
   while i < #w do
@@ -240,6 +283,8 @@ local function Target(s)
     local n, gap = Vector(w[i + 1]), Gap(w[i], w[i + 1])
     if d <= WAY_NEAR or (n and gap and n < gap) then i, moved = i + 1, true else break end
   end
+  local j = Ahead(w, i)
+  if j > i then i, moved = j, true end
   if moved then s.wayI = i; SetWaypoint(s) end
   return w[i]
 end

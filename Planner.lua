@@ -1773,6 +1773,7 @@ WritPath_PlannerInternals_Confirm = function() return confirm end   -- for tests
 clearBtn:SetScript("OnClick", WritPath_AskClear)
 
 function WritPath_OpenPlanner(mode)   -- mode: "mine" (just your writs), "buy" (the last rep target), or nil
+  if WritPath_WalkPrefetch then WritPath_WalkPrefetch() end   -- walking yards still to work out: start on them
   local o = WritPathNav.plan
   if mode == "mine" then repBox:SetText("")
   elseif o and (mode == "buy" or WritPathNav.planMode ~= "mine") then repBox:SetText(o.target) end
@@ -2090,6 +2091,90 @@ function WritPath_DropFromPlan(ids, why)
 end
 
 -- exposed for the test harness
+---------------------------------------------------------------- walking yards (Shortest Path Forever, 1.16.2)
+-- With Shortest Path Forever installed, the real walking yards between writ customers are worked out in the
+-- background, one customer at a time (its EstimateWalks: one search from a customer to every other customer within
+-- WALK_REACH yards), and saved in WritPathWalks, where Travel.Time uses them. Done once; again only for customers
+-- not worked out yet, or all of them when its walking data changes. Its searches run on its own frame budget.
+local WALK_OWNER = "WritPath planner"
+local WALK_REACH = 2500   -- yards: further apart than this, a flight, a road or a ship is the way anyway
+local WALK_RETRY = 30     -- seconds before trying again when it's busy (combat, loading)
+local walkBusy = false
+local function WalkAPI()
+  local api = ShortestPathForever and ShortestPathForever.API
+  if type(api) == "table" and (api.version == 1 or api.version == 2) and type(api.EstimateWalks) == "function"
+     and type(api.NavVersion) == "function" then return api end
+end
+local function WalkStore(api)
+  WritPathWalks = type(WritPathWalks) == "table" and WritPathWalks or {}
+  local W = WritPathWalks
+  local ok, v = pcall(api.NavVersion)
+  v = ok and tostring(v) or "?"
+  if W.v ~= v then W.v, W.rows, W.skip = v, {}, {} end   -- new walking data: work everything out again
+  W.rows, W.skip = W.rows or {}, W.skip or {}
+  return W
+end
+-- the next customer with walks still to work out, and the customers to work them out to
+local function WalkNext(W)
+  local spots, seen = {}, {}
+  for id in pairs(DB) do
+    local c = Customer(id)
+    local p = c and c.exact and Pos(c.map, c.x, c.y)
+    if p and p.wx then
+      local k = Travel.WalkKey(p)
+      if not seen[k] then seen[k] = true; spots[#spots + 1] = { p = p, k = k } end
+    end
+  end
+  table.sort(spots, function(x, y) return x.k < y.k end)   -- the same order every time
+  for _, a in ipairs(spots) do
+    if not W.skip[a.k] then
+      local row = W.rows[a.k]
+      local to = {}
+      for _, b in ipairs(spots) do
+        if b.k ~= a.k and b.p.inst == a.p.inst and math.sqrt((a.p.wx - b.p.wx) ^ 2 + (a.p.wy - b.p.wy) ^ 2) <= WALK_REACH
+           and not (row and row[b.k] ~= nil) and not (W.rows[b.k] and W.rows[b.k][a.k] ~= nil) and #to < 256 then
+          to[#to + 1] = b
+        end
+      end
+      if #to > 0 then return a, to end
+    end
+  end
+end
+local function Prefetch()
+  if walkBusy then return end
+  local api = WalkAPI(); if not api then return end
+  local W = WalkStore(api)
+  local a, to = WalkNext(W)
+  if not a then return end
+  local targets = {}
+  for i, b in ipairs(to) do targets[i] = { map = b.p.map, x = b.p.x / 100, y = b.p.y / 100 } end
+  walkBusy = true
+  local ok, cancel, why = pcall(api.EstimateWalks, WALK_OWNER, { map = a.p.map, x = a.p.x / 100, y = a.p.y / 100 }, targets,
+    function(costs, reason)
+      walkBusy = false
+      if WritPathWalks ~= W then return end   -- the store was replaced meanwhile
+      if reason or type(costs) ~= "table" then
+        W.skip[a.k] = tostring(reason or "error")   -- this spot isn't on its walking map: don't ask again
+      else
+        local row = W.rows[a.k] or {}; W.rows[a.k] = row
+        for i, b in ipairs(to) do
+          local c = costs[i]
+          if type(c) == "number" then row[b.k] = math.floor(c + 0.5) elseif c == false then row[b.k] = false end
+        end
+      end
+      C_Timer.After(0.5, function() WritPath_WalkPrefetch() end)   -- the next customer
+    end)
+  if ok and type(cancel) == "function" then return end
+  walkBusy = false
+  local reason = ok and why or "error"
+  if reason == "combat" or reason == "loading" then C_Timer.After(WALK_RETRY, function() WritPath_WalkPrefetch() end)
+  else W.skip[a.k] = tostring(reason); C_Timer.After(0.5, function() WritPath_WalkPrefetch() end) end
+end
+WritPath_WalkPrefetch = WritPath_Timed("walking yards", Prefetch)
+local walkLogin = CreateFrame("Frame")
+walkLogin:RegisterEvent("PLAYER_LOGIN")
+walkLogin:SetScript("OnEvent", function() C_Timer.After(60, function() WritPath_WalkPrefetch() end) end)
+
 WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn, Room = Room, WarnRoom = WarnRoom }
 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
