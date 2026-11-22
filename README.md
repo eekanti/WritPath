@@ -36,6 +36,8 @@ Everything WritPath needs is in this folder. Optional addons it uses when you ha
 - **Auctionator**: not needed (WritPath scans writ prices itself). If you have it, its prices are used when its
   scan is newer (only for items WritPath's own scan didn't see).
 - **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
+- **Shortest Path Forever**: installed alongside WritPath from CurseForge. The arrow then leads you along the
+  ground (around cliffs, water and buildings) to each stop. Without it, the arrow points straight at the stop.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
 Roads, boats and flight times you use are learned as you travel.

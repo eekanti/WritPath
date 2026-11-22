@@ -153,9 +153,85 @@ local function Gap(a, b)
   if not (ac and bc and ax and bx) or ac ~= bc then return nil end
   return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
 end
+---------------------------------------------------------------- terrain walks (Shortest Path Forever)
+-- With Shortest Path Forever installed, the walk to a step's spot follows the ground (around cliffs, water and
+-- buildings) instead of a straight line. Its public API (WalkPath) gives the bends; the arrow leads through them the
+-- way it leads along a road. None of its data is copied into WritPath. Without it, the arrow points straight as before.
+local OWNER = "WritPath"
+local WALK_MIN = 80     -- yards: nearer than this, a walk isn't worked out (straight is fine)
+local WALK_NEAR = 15    -- yards: a bend is passed this close (terrain bends sit closer together than a road's)
+local WALK_OFF = 80     -- yards strayed off the path before it's worked out again from where you are
+local WALK_AGAIN = 5    -- seconds between requests
+local WALK_FAIL = 30    -- after no path, seconds before asking again for that step
+local WALK_WAIT = 20    -- seconds a request may take before it's given up and asked again
+local walk = {}         -- { s, at, pts, i, from, asked, failed, cancel }
+local function SPF()
+  local api = ShortestPathForever and ShortestPathForever.API
+  if type(api) == "table" and (api.version == 1 or api.version == 2) and type(api.WalkPath) == "function" then return api end
+end
+local function WalkReset() if walk.cancel then pcall(walk.cancel) end; walk = {} end
+
+local function WalkAsk(s)
+  local api, now = SPF(), GetTime()
+  if not api then return end
+  if walk.asked and now - walk.asked < (walk.failed and WALK_FAIL or walk.cancel and WALK_WAIT or WALK_AGAIN) then return end
+  if WritPath_Open(UnitOnTaxi, "player") or WritPath_Open(InCombatLockdown) then return end
+  local map = PlayerMap()
+  local pos = map and C_Map.GetPlayerMapPosition(map, "player"); if not pos then return end
+  local px, py = pos:GetXY(); if not (px and py) then return end
+  if walk.cancel then pcall(walk.cancel) end
+  local at = s.at
+  -- the old bends stay in use until the new ones arrive
+  local mine = { s = s, at = at, pts = walk.pts, i = walk.i, from = walk.from, asked = now,
+                 start = { map, px * 100, py * 100, at[4] } }
+  walk = mine
+  local ok, cancel = pcall(api.WalkPath, OWNER, { map = map, x = px, y = py }, { map = at[1], x = at[2] / 100, y = at[3] / 100 },
+    function(path)
+      if walk ~= mine then return end   -- the step moved on, or a newer request replaced this one
+      mine.cancel = nil
+      local w = type(path) == "table" and path.waypoints
+      if type(w) ~= "table" or #w < 2 then mine.failed = true; return end
+      local pts = {}
+      for k = 2, #w - 1 do   -- the first is where you stood; the last is its snap of the step's spot
+        local p = w[k]
+        if type(p) == "table" and p.map and p.x and p.y then pts[#pts + 1] = { p.map, p.x * 100, p.y * 100, at[4] } end
+      end
+      pts[#pts + 1] = at     -- end on the step's own spot
+      mine.pts, mine.i, mine.from, mine.failed = pts, 1, mine.start, nil
+    end)
+  if ok and type(cancel) == "function" then mine.cancel = cancel else mine.failed = true end
+end
+
+-- the next bend of the ground path to a step's spot, or the spot itself while there is none
+local function WalkTarget(s)
+  local at = s and s.at
+  if not at then return nil end
+  if walk.s ~= s or walk.at ~= at then WalkReset() end   -- a new step
+  if not SPF() then return at end
+  local pts = walk.pts
+  if not pts then
+    local d = Vector(at)
+    if d and d > WALK_MIN then WalkAsk(s) end
+    return at
+  end
+  local i = math.min(walk.i or 1, #pts)
+  while i < #pts do
+    local d = Vector(pts[i]); if not d then break end
+    local n, gap = Vector(pts[i + 1]), Gap(pts[i], pts[i + 1])
+    if d <= WALK_NEAR or (n and gap and n < gap) then i = i + 1 else break end
+  end
+  walk.i = i
+  -- strayed: much further from the next bend than the path itself runs to it
+  local prev = i > 1 and pts[i - 1] or walk.from
+  local d, leg = Vector(pts[i]), prev and Gap(prev, pts[i])
+  if d and leg and d > leg + WALK_OFF then WalkAsk(s) end
+  return pts[i]
+end
+function WritPath_WalkState() return walk end   -- for tests
+
 local function Target(s)
   local w = s and s.way
-  if not w then return s and s.at end
+  if not w then return WalkTarget(s) end
   local i = math.min(s.wayI or 1, #w)
   local moved = false
   while i < #w do

@@ -159,7 +159,7 @@ WritPath_Scan = Run   -- reads the map pins of accepted writs (done by itself as
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
-WritPath_VERSION = "1.15.14"
+WritPath_VERSION = "1.16.0"
 local MINE = WritPath_VERSION
 local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
 local function Newer(a, b)   -- is version a newer than version b?
