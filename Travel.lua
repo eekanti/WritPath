@@ -957,6 +957,7 @@ local function From(src)
   return cache[key]
 end
 
+T.Build = WritPath_Timed("travel map rebuild", T.Build)
 -- seconds from a to b, and the last node before riding to b (nil when riding straight there)
 local Time
 function T.Time(a, b)
@@ -1807,7 +1808,7 @@ local rec = CreateFrame("Frame")
 rec:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 rec:RegisterEvent("PLAYER_ENTERING_WORLD")
 rec:RegisterEvent("CHAT_MSG_SYSTEM")
-rec:SetScript("OnEvent", function(_, event, unit, _, spellID)
+rec:SetScript("OnEvent", WritPath_Timed("road recorder events", function(_, event, unit, _, spellID)
   if event == "PLAYER_ENTERING_WORLD" then return end
   if event == "CHAT_MSG_SYSTEM" then
     -- "X is now your home.": you're standing at the innkeeper
@@ -1821,7 +1822,7 @@ rec:SetScript("OnEvent", function(_, event, unit, _, spellID)
     -- landed from a hearthstone: that's where it's bound
     if name:find("Hearthstone") or name:find("Astral Recall") then C_Timer.After(8, T.SaveHearth) end
   end
-end)
+end))
 local acc = 0
-rec:SetScript("OnUpdate", function(_, e) acc = acc + e; if acc >= 0.5 then acc = 0; Poll() end end)
+rec:SetScript("OnUpdate", WritPath_Timed("road recorder", function(_, e) acc = acc + e; if acc >= 0.5 then acc = 0; Poll() end end))
 T.Recorder = { Poll = Poll, State = REC }

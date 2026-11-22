@@ -187,7 +187,7 @@ ev:RegisterEvent("BAG_UPDATE_DELAYED")
 ev:RegisterEvent("PLAYER_MONEY")
 ev:RegisterEvent("AUCTION_HOUSE_SHOW")
 ev:RegisterEvent("AUCTION_HOUSE_CLOSED")
-ev:SetScript("OnEvent", function(_, event, a1, _, a3)
+ev:SetScript("OnEvent", WritPath_Timed("money events", function(_, event, a1, _, a3)
   if event == "AUCTION_HOUSE_SHOW" or event == "AUCTION_HOUSE_CLOSED" then
     atAH = event == "AUCTION_HOUSE_SHOW"; Update(); return
   end
@@ -244,7 +244,7 @@ ev:SetScript("OnEvent", function(_, event, a1, _, a3)
     lastMoney = m
     TryMatch()
   end
-end)
+end))
 
 function WritPath_MoneyReport()
   Print("Writ report:")

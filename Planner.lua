@@ -1179,11 +1179,11 @@ local function IdleTick(dt)
 end
 WritPath_RunIdleTick = IdleTick   -- for tests
 local idleFrame = CreateFrame("Frame")
-idleFrame:SetScript("OnUpdate", function(_, e)
+idleFrame:SetScript("OnUpdate", WritPath_Timed("run timer", function(_, e)
   idleTick = idleTick + e
   if idleTick < 1 then return end
   IdleTick(idleTick); idleTick = 0
-end)
+end))
 local function RunTurnin(q)
   local run = WritPathNav and WritPathNav.run
   if not (run and run.ids and run.ids[q]) then return end
@@ -1813,7 +1813,7 @@ ev:RegisterEvent("GOSSIP_SHOW")         -- talking to a customer: open the writ 
 ev:RegisterEvent("QUEST_GREETING")
 ev:RegisterEvent("QUEST_TURNED_IN")
 ev:RegisterEvent("TAXIMAP_OPENED")
-ev:SetScript("OnEvent", function(_, event, a1)
+ev:SetScript("OnEvent", WritPath_Timed("planner events", function(_, event, a1)
   -- the camp's crate takers: every finished quest handed in there (Sealed crates, the camp's own quests)
   local CAMP = { ["Dokimi"] = true, ["Marcy Baker"] = true }
   local function AtCamp() local n = UnitName and (UnitName("npc") or UnitName("target")); return n and CAMP[n] or false end
@@ -1882,7 +1882,7 @@ ev:SetScript("OnEvent", function(_, event, a1)
   else
     C_Timer.After(1, Learn)   -- the map pin appears a moment after accepting
   end
-end)
+end))
 
 -- for Money.lua at a turn-in: name, tier and cost of a writ quest. The cost is what you paid at the auction
 -- house for this writ and its items (each unit used once), else what the plan expected.
@@ -1967,6 +1967,7 @@ local function Reroute(q, why, quiet)
     nxt.w.name, nxt.c.npc or MapName(nxt.c.map), #plan.route, math.floor((plan.secs or 0) / 60 + 0.5),
     #waiting > 0 and (" Left out until you have the item: " .. table.concat(waiting, ", ") .. ".") or ""))
 end
+Reroute = WritPath_Timed("replanning", Reroute)
 function WritPath_RerouteFromHere(q) Reroute(q) end
 function WritPath_RerouteNow(why, quiet) Reroute(nil, why, quiet) end
 
@@ -2093,3 +2094,4 @@ WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin
 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
+WritPath_ReplanFromBags = WritPath_Timed("replanning (bags)", WritPath_ReplanFromBags)

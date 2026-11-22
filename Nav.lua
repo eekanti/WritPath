@@ -504,9 +504,10 @@ function Refresh(announce)
   guide:SetHeight(-y + 4)
 end
 
+Refresh = WritPath_Timed("guide refresh", Refresh)
 -- arrow and auto-complete, polled: cheap, and catches taxis and boats without extra events
 local tick, poll = 0, 0
-arrow:SetScript("OnUpdate", function(self, e)
+arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   tick, poll = tick + e, poll + e
   if poll > 0.5 then poll = 0; Refresh(true) end
   if tick < 0.03 then return end; tick = 0
@@ -525,18 +526,18 @@ arrow:SetScript("OnUpdate", function(self, e)
   local facing = WritPath_Open(GetPlayerFacing)
   if facing and angle then self.tex:SetAlpha(1); self.tex:SetRotation(angle - facing) else self.tex:SetAlpha(0) end
   self.text:SetText(("%s\n(%dyd)"):format(g[4], math.floor(dist)))
-end)
+end))
 -- the poll lives on the arrow; keep it running while only the window is shown
-guide:SetScript("OnUpdate", function(_, e) if not arrow:IsShown() then poll = poll + e; if poll > 0.5 then poll = 0; Refresh(true) end end end)
+guide:SetScript("OnUpdate", WritPath_Timed("guide window", function(_, e) if not arrow:IsShown() then poll = poll + e; if poll > 0.5 then poll = 0; Refresh(true) end end end))
 -- with the window closed, the guide still keeps track of where you are on the route (once a second), so the road
 -- recorder always judges your riding against the right stop
 local behind, bgPoll = CreateFrame("Frame"), 0
-behind:SetScript("OnUpdate", function(_, e)
+behind:SetScript("OnUpdate", WritPath_Timed("guide (closed)", function(_, e)
   bgPoll = bgPoll + e
   if bgPoll < 1 then return end
   bgPoll = 0
   if not guide:IsVisible() and #ROUTE > 0 then Refresh() end   -- closed, or the whole UI hidden (Alt+Z)
-end)
+end))
 
 ---------------------------------------------------------------- show/hide, events, slash
 local function Show(on)
@@ -726,7 +727,7 @@ local function LearnedFlightPath(...)
     if a and (a == NEW_FP or a:find(NEW_FP, 1, true)) then return true end
   end
 end
-ev:SetScript("OnEvent", function(_, event, ...)
+ev:SetScript("OnEvent", WritPath_Timed("guide events", function(_, event, ...)
   if event == "UI_INFO_MESSAGE" or event == "CHAT_MSG_SYSTEM" then
     if not (WritPathNav and LearnedFlightPath(...)) then return end
     -- the flight path you were sent to learn (or the one you're standing at): it's yours now
@@ -760,7 +761,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
   elseif WritPathNav then
     C_Timer.After(0.5, function() Refresh(true) end)
   end
-end)
+end))
 
 SLASH_WRITPATH1 = "/writs"
 SlashCmdList.WRITPATH = function(msg)

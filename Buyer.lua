@@ -647,7 +647,7 @@ function WritPath_BuyerOpen(newList)
   Search()
 end
 
-ev:SetScript("OnEvent", function(_, event, a1, a2)
+ev:SetScript("OnEvent", WritPath_Timed("buyer events", function(_, event, a1, a2)
   if event == "AUCTION_HOUSE_SHOW" then
     ahOpen = true
     WritPath_BuyerOpen(false)
@@ -762,11 +762,11 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
       Search()
     end
   end
-end)
+end))
 
 -- queries go out as soon as the auction house allows one (the item on the button first, then the ones
 -- ahead); a purchase that's never confirmed stops and asks
-ev:SetScript("OnUpdate", function()
+ev:SetScript("OnUpdate", WritPath_Timed("buyer update", function()
   if queued and state.it and Ready() then
     queued, waiting = false, true
     SendQuery(state.it.id)
@@ -778,6 +778,6 @@ ev:SetScript("OnUpdate", function()
   if (state.phase == "buying" or state.phase == "quote") and GetTime() - (state.since or 0) > 8 then
     state.phase = "unsure"; Render()
   end
-end)
+end))
 
 WritPath_BuyerInternals = { State = state, Click = Click, AltClick = AltClick, Search = Search, Cache = function() return cache end }

@@ -12,6 +12,10 @@ function WritPath_Open(fn, ...)
   if issecretvalue and issecretvalue(v) then return nil end
   return v
 end
+-- WritPath_Timed(name, fn) is a hook for a CPU meter used while developing WritPath; it never ships. Without the
+-- meter, it hands fn back unchanged, so the release build runs exactly as before.
+WritPath_Timed = WritPath_Timed or function(_, fn) return fn end
+
 -- an event's text, or nil when the game hid it as a secret (a chat line can be; comparing or matching one errors)
 function WritPath_Text(v)
   if issecretvalue and issecretvalue(v) then return nil end
@@ -159,7 +163,7 @@ WritPath_Scan = Run   -- reads the map pins of accepted writs (done by itself as
 local PREFIX = "WritPath"
 -- the version, kept here as well as in WritPath.toc: the game reads the .toc only when it starts, so after an
 -- update and a /reload the .toc's number is still the old one (the release check makes sure the two match)
-WritPath_VERSION = "1.16.0"
+WritPath_VERSION = "1.16.1"
 local MINE = WritPath_VERSION
 local function Parts(v) local t = {}; for n in tostring(v):gmatch("%d+") do t[#t + 1] = tonumber(n) end; return t end
 local function Newer(a, b)   -- is version a newer than version b?
@@ -205,7 +209,7 @@ local ver = CreateFrame("Frame")
 ver:RegisterEvent("PLAYER_LOGIN")
 ver:RegisterEvent("CHAT_MSG_ADDON")
 ver:RegisterEvent("GROUP_ROSTER_UPDATE")
-ver:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
+ver:SetScript("OnEvent", WritPath_Timed("version check", function(_, event, prefix, msg, _, sender)
   if event == "PLAYER_LOGIN" then
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end
     -- one line at every login and /reload: which version is running
@@ -230,5 +234,5 @@ ver:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
       Send("WHISPER", who)
     end
   end
-end)
+end))
 WritPath_Version = { Mine = MINE, Newer = Newer }   -- for tests

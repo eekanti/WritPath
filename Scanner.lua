@@ -423,7 +423,7 @@ function S.Dragged()
   S.Dock()
 end
 
-ev:SetScript("OnEvent", function(_, event, a1)
+ev:SetScript("OnEvent", WritPath_Timed("scanner events", function(_, event, a1)
   if event == "REPLICATE_ITEM_LIST_UPDATE" then
     if busy and not got then got = true; Process() end
   elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
@@ -442,7 +442,7 @@ ev:SetScript("OnEvent", function(_, event, a1)
     feed = nil   -- the scan's auctions can't be read with the auction house closed
     if busy then Fail("The scan stopped: the auction house was closed.") end
   end
-end)
+end))
 
 -- what one unit costs when you need n of them, from WritPath's scan: the cheapest units first (on this auction house
 -- every purchase buys one at a time, items and commodities alike). nil when the scan didn't see it.

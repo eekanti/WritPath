@@ -180,23 +180,28 @@ local function Relay()
   R.perId = R.perId or {}
   return R
 end
-local function Prune(R)
+-- deep (at login): also drops kinds no longer shared, which means reading every record. room (the store is full):
+-- drops down to ROOM, so the next records have space instead of every one of them pruning again (1.16.1: a full store
+-- pruned all 5000 records for each record that came in, and an answer from another player lagged the game).
+local ROOM = math.floor(KEEP * 0.9)
+local function Prune(R, deep, room)
   local cut = time() - KEEP_DAYS * 86400
   local n, list, per = 0, {}, {}
-  for rec in pairs(R.recs) do if not Valid(rec) then R.recs[rec] = nil end end   -- kinds no longer shared
+  if deep then for rec in pairs(R.recs) do if not Valid(rec) then R.recs[rec] = nil end end end   -- kinds no longer shared
   for rec, e in pairs(R.recs) do
     for id, t in pairs(e.by) do if t < cut then e.by[id] = nil end end
     if next(e.by) == nil then R.recs[rec] = nil else n = n + 1; list[#list + 1] = { rec, e.last or e.t or 0 } end
   end
-  if n > KEEP then   -- too many: drop the ones heard longest ago
+  local target = room and ROOM or KEEP
+  if n > target then   -- too many: drop the ones heard longest ago
     table.sort(list, function(a, b) return a[2] < b[2] end)
-    for i = 1, n - KEEP do R.recs[list[i][1]] = nil end
-    n = KEEP
+    for i = 1, n - target do R.recs[list[i][1]] = nil end
+    n = target
   end
   for _, e in pairs(R.recs) do for id in pairs(e.by) do per[id] = (per[id] or 0) + 1 end end
   R.n, R.perId = n, per
 end
-WritPath_SharePrune = function() Prune(Relay()) end   -- for tests
+WritPath_SharePrune = function(deep, room) Prune(Relay(), deep ~= false, room) end   -- for tests
 local fromToday = {}   -- [sender] = { day, n }: records accepted from each player today
 local function Keep(sender, id, rec)
   if id == MyId() or not id:match("^%x%x%x%x%x%x%x%x$") or not Valid(rec) then return false end
@@ -208,7 +213,7 @@ local function Keep(sender, id, rec)
   local e = R.recs[rec]
   if not (e and e.by[id]) and (R.perId[id] or 0) >= PER_ID then return false end
   if not e then
-    if (R.n or 0) >= KEEP then Prune(R); if R.n >= KEEP then return false end end
+    if (R.n or 0) >= KEEP then Prune(R, false, true) end
     e = { t = time(), by = {} }; R.recs[rec] = e; R.n = (R.n or 0) + 1
   end
   if not e.by[id] then R.perId[id] = (R.perId[id] or 0) + 1 end
@@ -285,7 +290,7 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:RegisterEvent("CHAT_MSG_SYSTEM")
-ev:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
+ev:SetScript("OnEvent", WritPath_Timed("sharing", function(_, event, prefix, msg, _, sender)
   if event == "CHAT_MSG_SYSTEM" then
     local text = type(prefix) == "string" and prefix or ""   -- a system line's text comes first
     local who = text:match(NOT_FOUND) or text:match(OFFLINE)
@@ -303,7 +308,7 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
       math.randomseed(math.floor(((time and time() or 0) + (GetTime and GetTime() or 0) * 1000 + salt) % 2147483647))
     end
     MyId()
-    Prune(Relay())
+    Prune(Relay(), true)
     -- ask around a little after logging in (spread out, so a whole guild logging in doesn't ask at once), then every
     -- half hour
     C_Timer.After(90 + math.random(0, 120), Ask)
@@ -338,4 +343,4 @@ ev:SetScript("OnEvent", function(_, event, prefix, msg, _, sender)
       pending[sender] = nil
     end
   end
-end)
+end))
