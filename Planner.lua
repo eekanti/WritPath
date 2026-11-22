@@ -1547,7 +1547,15 @@ end
 
 local function Favor() return WritPathNav and WritPathNav.planFor == "favor" end
 local DoFavor
-local function DoPlan(buy)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
+local WalkHere   -- below (walking yards): ground distances from where you stand, then a callback
+local DoPlanNow
+local function DoPlan(buy)
+  DoPlanNow(buy)
+  -- the plan shows at once; with Shortest Path Forever it's worked out again when the ground distances from where
+  -- you stand arrive (a second or two), if the window is still open
+  if WalkHere then WalkHere(function() if f:IsShown() then DoPlanNow(buy) end end) end
+end
+function DoPlanNow(buy)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
   if Favor() then DoFavor(buy); return end
   local target = tonumber(repBox:GetText())
   if buy and not (target and target > 0) then target = WritPathNav.plan and WritPathNav.plan.target or 1000 end
@@ -1969,8 +1977,12 @@ local function Reroute(q, why, quiet)
     #waiting > 0 and (" Left out until you have the item: " .. table.concat(waiting, ", ") .. ".") or ""))
 end
 Reroute = WritPath_Timed("replanning", Reroute)
-function WritPath_RerouteFromHere(q) Reroute(q) end
-function WritPath_RerouteNow(why, quiet) Reroute(nil, why, quiet) end
+-- with Shortest Path Forever, the ground distances from where you stand come first (a few seconds at most)
+local function RerouteGround(q, why, quiet)
+  if not (WalkHere and WalkHere(function() Reroute(q, why, quiet) end)) then Reroute(q, why, quiet) end
+end
+function WritPath_RerouteFromHere(q) RerouteGround(q) end
+function WritPath_RerouteNow(why, quiet) RerouteGround(nil, why, quiet) end
 
 -- entering a new zone: plan the rest of the trip again (at most every 20 seconds, never in the air)
 local lastZoneReplan = 0
@@ -1980,7 +1992,7 @@ zoneWatch:SetScript("OnEvent", function()
   C_Timer.After(2, function()
     if WritPath_Open(UnitOnTaxi, "player") or GetTime() - lastZoneReplan < 20 then return end
     lastZoneReplan = GetTime()
-    Reroute(nil, "new zone", true)
+    RerouteGround(nil, "new zone", true)
   end)
 end)
 
@@ -2140,12 +2152,22 @@ local function WalkNext(W)
     end
   end
 end
+local walkNew = false   -- distances saved since the last time the work ran out
 local function Prefetch()
   if walkBusy then return end
   local api = WalkAPI(); if not api then return end
   local W = WalkStore(api)
   local a, to = WalkNext(W)
-  if not a then return end
+  if not a then
+    -- all worked out: a plan made before they were here is made again with them (quietly: the route only changes
+    -- if the way ahead does), and an open planner shows its plan again
+    if walkNew then
+      walkNew = false
+      if WritPath_RouteActive and WritPath_RouteActive() then WritPath_RerouteNow("ground distances", true) end
+      if f:IsShown() then DoPlan(WritPathNav.planMode == "buy") end
+    end
+    return
+  end
   local targets = {}
   for i, b in ipairs(to) do targets[i] = { map = b.p.map, x = b.p.x / 100, y = b.p.y / 100 } end
   walkBusy = true
@@ -2161,6 +2183,7 @@ local function Prefetch()
           local c = costs[i]
           if type(c) == "number" then row[b.k] = math.floor(c + 0.5) elseif c == false then row[b.k] = false end
         end
+        walkNew = true
       end
       C_Timer.After(0.5, function() WritPath_WalkPrefetch() end)   -- the next customer
     end)
@@ -2171,6 +2194,52 @@ local function Prefetch()
   else W.skip[a.k] = tostring(reason); C_Timer.After(0.5, function() WritPath_WalkPrefetch() end) end
 end
 WritPath_WalkPrefetch = WritPath_Timed("walking yards", Prefetch)
+
+-- From where you stand: one search to the writ customers within HERE_REACH, just before a plan or a replan, so its
+-- first leg is timed by the ground way too. done() runs when the answer is in, or after HERE_WAIT seconds at most.
+-- Returns false (and doesn't call done) when there's nothing to ask: no Shortest Path Forever, or asked from this
+-- spot within the last HERE_FRESH seconds.
+local HERE_OWNER, HERE_REACH, HERE_WAIT, HERE_FRESH = "WritPath here", 4000, 4, 60
+local hereAt
+WalkHere = function(done)
+  local api = WalkAPI()
+  local p = api and PlayerPos()
+  if not (p and p.wx) then return false end
+  if hereAt and GetTime() - hereAt.t < HERE_FRESH and hereAt.p.inst == p.inst
+     and math.sqrt((hereAt.p.wx - p.wx) ^ 2 + (hereAt.p.wy - p.wy) ^ 2) <= 30 then return false end
+  local list, seen = {}, {}
+  for id in pairs(DB) do
+    local c = Customer(id)
+    local q = c and c.exact and Pos(c.map, c.x, c.y)
+    if q and q.wx and q.inst == p.inst then
+      local k = Travel.WalkKey(q)
+      local d = math.sqrt((q.wx - p.wx) ^ 2 + (q.wy - p.wy) ^ 2)
+      if not seen[k] and d <= HERE_REACH then seen[k] = true; list[#list + 1] = { q = q, k = k, d = d } end
+    end
+  end
+  if #list == 0 then return false end
+  table.sort(list, function(x, y) return x.d < y.d end)
+  local targets = {}
+  for i = 1, math.min(256, #list) do targets[i] = { map = list[i].q.map, x = list[i].q.x / 100, y = list[i].q.y / 100 } end
+  local finished = false
+  local function Finish() if not finished then finished = true; done() end end
+  hereAt = { p = p, t = GetTime() }   -- asked from here: not again for a minute, answer or not
+  local ok, cancel = pcall(api.EstimateWalks, HERE_OWNER, { map = p.map, x = p.x / 100, y = p.y / 100 }, targets,
+    function(costs, reason)
+      if not reason and type(costs) == "table" then
+        local rows = {}
+        for i = 1, #targets do
+          local c = costs[i]
+          if type(c) == "number" then rows[list[i].k] = math.floor(c + 0.5) elseif c == false then rows[list[i].k] = false end
+        end
+        Travel.SetHere(p, rows)
+      end
+      Finish()
+    end)
+  if not (ok and type(cancel) == "function") then hereAt = nil; return false end
+  C_Timer.After(HERE_WAIT, Finish)   -- a plan isn't held up for long
+  return true
+end
 local walkLogin = CreateFrame("Frame")
 walkLogin:RegisterEvent("PLAYER_LOGIN")
 walkLogin:SetScript("OnEvent", function() C_Timer.After(60, function() WritPath_WalkPrefetch() end) end)

@@ -966,7 +966,17 @@ T.Build = WritPath_Timed("travel map rebuild", T.Build)
 -- when there is no way on foot. They're dropped when Shortest Path Forever's walking data changes (its NavVersion).
 local function WalkKey(p) return ("%d:%.1f:%.1f"):format(p.map, p.x, p.y) end
 T.WalkKey = WalkKey
+-- and from where you stood when the plan was made (Planner.lua asks just before planning): { p, rows = { [key] =
+-- yards or false } }. Your own spot is never a saved one, so this is how the first leg of a plan gets the ground way.
+local here
+local HERE_NEAR = 30   -- yards: still standing where those were worked out from
+function T.SetHere(p, rows) here = p and { p = p, rows = rows } or nil end
 function T.WalkYards(a, b)
+  if here then
+    local hp = here.p
+    if a.inst == hp.inst and Dist(a, hp) <= HERE_NEAR and here.rows[WalkKey(b)] ~= nil then return here.rows[WalkKey(b)] end
+    if b.inst == hp.inst and Dist(b, hp) <= HERE_NEAR and here.rows[WalkKey(a)] ~= nil then return here.rows[WalkKey(a)] end
+  end
   local rows = WritPathWalks and WritPathWalks.rows
   if not rows then return nil end
   local ka, kb = WalkKey(a), WalkKey(b)
