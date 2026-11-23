@@ -261,12 +261,16 @@ end
 ---------------------------------------------------------------- travel (Travel.lua: real paths)
 local Travel = WritPath_Travel
 local Pos, PlayerPos = Travel.Point, Travel.PlayerPoint
+-- Job (1.17.0): the Plan button's work runs a few milliseconds a frame instead of all at once, which froze the game
+-- for seconds on a first plan. Job.Tick() is called throughout the planner: inside a job it pauses until the next
+-- frame once the frame's share is used up; anywhere else it does nothing. (Below: Job.Start, Job.Tick.)
+local Job = { on = false, t0 = 0, n = 0, gen = 0, keep = false }
 local memo = setmetatable({}, { __mode = "k" })
 local function Secs(a, b)
   if not (a and b) then return 600 end
   local row = memo[a]; if not row then row = setmetatable({}, { __mode = "k" }); memo[a] = row end
   local t = row[b]
-  if not t then t = Travel.Time(a, b); row[b] = t end
+  if not t then t = Travel.Time(a, b); row[b] = t; if Job.on then Job.Tick() end end
   return t
 end
 local function ResetMemo() memo = setmetatable({}, { __mode = "k" }) end
@@ -374,6 +378,58 @@ local function QuickOK(c)
   return pos and c.exact and Travel.NearKnown(pos, QUICK_YARDS) ~= nil
 end
 
+-- the planning job (see Job above). It never pauses while a Quick plan is being made: quickOnly is shared, and
+-- something else planning in the pause would see it.
+Job.MS = 8   -- milliseconds of planning per frame
+function Job.Tick()
+  if not Job.on or quickOnly then return end
+  Job.n = Job.n + 1
+  if Job.n % 16 ~= 0 then return end
+  if debugprofilestop and debugprofilestop() - Job.t0 > Job.MS then coroutine.yield() end
+end
+-- how far the job has got, 0 to 1, for the loading bar: Job.Span(lo, hi) says which part of the bar the next stage
+-- fills, Job.At(f) how far through that stage it is (the bar never goes back)
+Job.p, Job.lo, Job.hi = 0, 0, 1
+function Job.Span(lo, hi) Job.lo, Job.hi = lo, hi; Job.At(0) end
+function Job.At(f)
+  local v = Job.lo + (Job.hi - Job.lo) * math.max(0, math.min(1, f))
+  if v > Job.p then Job.p = v end
+end
+-- pcall stops a pause (Lua 5.1 can't pause inside one): inside a job, call straight through and let an error end
+-- the job instead
+function Job.Try(fn, ...)
+  if Job.on then return true, fn(...) end
+  return pcall(fn, ...)
+end
+-- work() runs as a job; done(result) gets its answer. A new job replaces one still running. Returns true when
+-- it finished at once.
+function Job.Start(work, done)
+  Job.gen = Job.gen + 1
+  Job.keep = false   -- a job replaced mid-way may have left it set
+  Job.p, Job.lo, Job.hi = 0, 0, 1
+  local gen, co = Job.gen, coroutine.create(work)
+  Job.frame = Job.frame or CreateFrame("Frame")
+  local function Step()
+    Job.on, Job.t0, Job.n = true, debugprofilestop and debugprofilestop() or 0, 0
+    local ok, res = coroutine.resume(co)
+    Job.on = false
+    if gen ~= Job.gen then return true end
+    if not ok then
+      quickOnly, Job.keep = false, false
+      Job.frame:SetScript("OnUpdate", nil)
+      if Job.onStep then Job.onStep(nil) end
+      if geterrorhandler then geterrorhandler()(res) end
+      return true
+    end
+    if coroutine.status(co) == "dead" then Job.frame:SetScript("OnUpdate", nil); done(res); return true end
+    if Job.onStep then Job.onStep(Job.p) end
+  end
+  Job.frame:SetScript("OnUpdate", nil)
+  if Step() then return true end
+  Job.frame:SetScript("OnUpdate", WritPath_Timed("planner", function() Step() end))
+  return false
+end
+
 local function Candidates(zoneOnly)
   local list, skipped = {}, {}
   for id, w in pairs(DB) do
@@ -434,6 +490,7 @@ local function BestOrder(start, stops, quick)
   while improved and passes < 50 do
     improved, passes = false, passes + 1
     for i = 1, n - 1 do
+      if Job.on then Job.Tick() end
       for j = i + 1, n do
         local prev = i == 1 and 1 or order[i - 1]
         local nxt = order[j + 1]
@@ -453,6 +510,7 @@ local function BestOrder(start, stops, quick)
     local bestLen, bestOrder = Len(order), { unpack(order) }
     local used, cur = {}, {}
     local function DFS(depth, last, len)
+      if Job.on then Job.Tick() end
       if len >= bestLen then return end
       if depth > n then bestLen, bestOrder = len, { unpack(cur) }; return end
       for j = 2, n + 1 do
@@ -482,6 +540,7 @@ local function BestOrder(start, stops, quick)
     while better and passes < 20 do
       better, passes = false, passes + 1
       for i = 1, n do
+        if Job.on then Job.Tick() end
         for k = 1, n do
           if i ~= k then
             local o = { unpack(order) }
@@ -511,7 +570,7 @@ end
 local function PlanOwned(only, skipQuest, planned, ready, priced)   -- priced: planning to buy (leave out what can't be had)   -- only: just these writ ids; skipQuest: a quest just handed in;
                                                      -- planned: the "only" writs count even if not bought yet;
                                                      -- ready: only writs you can hand in now (their item in your bags)
-  Travel.Reset(); ResetMemo()
+  if not Job.keep then Travel.Reset(); ResetMemo() end   -- PlanBoth starts afresh once for all its passes
   local stops, later, unknown = {}, {}, {}
   local owned = {}
   for id, w in pairs(DB) do
@@ -586,6 +645,7 @@ local function CheapestSet(cands, need)
   for u = 1, U do dp[u] = INF end
   local picks = {}
   for gi, key in ipairs(keys) do
+    if Job.on then Job.Tick() end
     local nd, pk = {}, {}
     for u = 0, U do nd[u] = dp[u] end
     for _, c in ipairs(groups[key]) do
@@ -621,6 +681,7 @@ local function GreedyFast(start, owned, cands, need, seed)
     end
   end
   while rep < need do
+    if Job.on then Job.Tick() end
     local best, bestScore, bestAt
     for _, c in ipairs(cands) do
       if not keys[c.id] and not c.inGreedy then
@@ -662,6 +723,7 @@ local function Improve(start, owned, cands, need, seed)
     local have, total = {}, RepOf(cur)
     for _, c in ipairs(cur) do have[c.id] = c end
     for i = 1, #cur do
+      if Job.on then Job.Tick() end
       if total - cur[i].rep >= need then                  -- drop one
         local t = {}; for j, c in ipairs(cur) do if j ~= i then t[#t + 1] = c end end
         Try(t)
@@ -700,24 +762,195 @@ local function Finish(start, owned, set, target, mine, mode)
            set = set })
 end
 
+-- Optimized (1.17.0): the third plan, between Cheapest and Fastest. It prices a minute of travel at the going rate
+-- between the two (what Fastest pays per minute it saves over Cheapest) and takes the plan with the least gold +
+-- priced time. So it costs no more than Fastest, takes no longer than Cheapest, and only pays for a minute where
+-- the minute is cheap.
+
+-- a set's writs, picked one at a time by (gold + priced travel) per rep, then improved by dropping or swapping
+-- writs while that total goes down; rate = copper per second of travel
+local BuildOptimized
+do
+-- Each writ's best spot in the route is kept between picks: a new stop only splits one leg, so a writ whose best
+-- spot was that leg is worked out again, and every other writ only checks the two new legs.
+local function GreedyWeighted(start, owned, cands, need, rate)
+  local route, rep, set = {}, 0, {}
+  for _, p in ipairs(owned) do route[#route + 1] = p end
+  local open = {}   -- { c, dt = extra seconds at its best spot, before = the stop it goes in front of (nil: the end) }
+  local function Spot(o) local dt, at = InsertAt(start, route, o.c.pos); o.dt, o.before = dt, route[at] end
+  for _, c in ipairs(cands) do local o = { c = c }; Spot(o); open[#open + 1] = o end
+  while rep < need do
+    if Job.on then Job.Tick() end
+    local best, bestScore
+    for _, o in ipairs(open) do
+      local score = (o.c.cost + rate * (o.dt + 20)) / math.min(o.c.rep, need - rep)
+      if not bestScore or score < bestScore then best, bestScore = o, score end
+    end
+    if not best then break end
+    local c, before = best.c, best.before
+    local at = #route + 1
+    if before then for i, p in ipairs(route) do if p == before then at = i; break end end end
+    table.insert(route, at, c); set[#set + 1] = c; rep = rep + c.rep
+    local prevPos = at == 1 and start or route[at - 1].pos
+    local keep = {}
+    for _, o in ipairs(open) do
+      if o.c.id ~= c.id then
+        keep[#keep + 1] = o
+        if o.before == before then Spot(o)   -- its leg was the one split
+        else
+          local x = o.c.pos
+          local d1 = Secs(prevPos, x) + Secs(x, c.pos) - Secs(prevPos, c.pos)
+          if d1 < o.dt then o.dt, o.before = d1, c end
+          local d2 = Secs(c.pos, x) + (before and (Secs(x, before.pos) - Secs(c.pos, before.pos)) or 0)
+          if d2 < o.dt then o.dt, o.before = d2, before end
+        end
+      end
+    end
+    open = keep
+  end
+  return set
+end
+local function ImproveWeighted(start, owned, cands, need, seed, rate)
+  if RepOf(seed) < need then return seed end
+  local function Score(set) return CostOf(set) + rate * PathSecs(start, BestOrder(start, Join(owned, set), true)) end
+  -- swaps worth trying: the 20 writs closest to the route and the 20 cheapest for their rep
+  local route = Join(owned, seed)
+  local function Near(c)
+    local best = Secs(start, c.pos)
+    for _, p in ipairs(route) do local t = Secs(p.pos, c.pos); if t < best then best = t end end
+    return best
+  end
+  local byNear, byCost, pick, seen = {}, {}, {}, {}
+  for _, c in ipairs(cands) do byNear[#byNear + 1] = { c = c, d = Near(c) }; byCost[#byCost + 1] = c end
+  table.sort(byNear, function(a, b) return a.d < b.d end)
+  table.sort(byCost, function(a, b) return a.cost / a.rep < b.cost / b.rep end)
+  for i = 1, math.min(20, #byNear) do local c = byNear[i].c; if not seen[c] then seen[c] = true; pick[#pick + 1] = c end end
+  for i = 1, math.min(20, #byCost) do local c = byCost[i]; if not seen[c] then seen[c] = true; pick[#pick + 1] = c end end
+  -- each try is timed on the current order (the writ taken out, the new one put in its best spot): quick, and
+  -- only the winner of a round is put in the best order again
+  local cur, curS = seed, Score(seed)
+  for _ = 1, 8 do
+    local order = BestOrder(start, Join(owned, cur), true)
+    local bestS, bestSet = curS - 1, nil
+    local have, total, cost = {}, RepOf(cur), CostOf(cur)
+    for _, c in ipairs(cur) do have[c.id] = true end
+    for i = 1, #cur do
+      if Job.on then Job.Tick() end
+      local without = {}
+      for _, p in ipairs(order) do if p ~= cur[i] then without[#without + 1] = p end end
+      local base = PathSecs(start, without)
+      if total - cur[i].rep >= need then                  -- drop one
+        local s = cost - cur[i].cost + rate * base
+        if s < bestS then local t = {}; for j, c in ipairs(cur) do if j ~= i then t[#t + 1] = c end end; bestS, bestSet = s, t end
+      end
+      for _, c in ipairs(pick) do                         -- swap one for another
+        if not have[c.id] and total - cur[i].rep + c.rep >= need then
+          local s2 = cost - cur[i].cost + c.cost + rate * (base + (InsertAt(start, without, c.pos)))
+          if s2 < bestS then local t = {}; for j, x in ipairs(cur) do t[j] = (j == i) and c or x end; bestS, bestSet = s2, t end
+        end
+      end
+    end
+    if not bestSet then break end
+    local s = Score(bestSet)
+    if s >= curS - 1 then break end
+    cur, curS = bestSet, s
+  end
+  return cur
+end
+
+-- res.optimized: the Optimized plan (res.cheap or res.fast when nothing between them is worth it). It can also find
+-- a quicker Fastest than res.fast; then that becomes res.fast.
+function BuildOptimized(res, target)
+  local cheap, fast, x = res.cheap, res.fast, res.ctx
+  local dc, dt = fast.cost - cheap.cost, cheap.secs - fast.secs
+  local goal = math.min(target, cheap.rep)
+  res.optimized = cheap
+  -- nothing to trade: Fastest costs no more (it's just better), or Cheapest is no slower
+  if dt <= 0 then return end
+  if dc <= 0 then res.optimized = fast; return end
+  local going = dc / dt                                  -- copper per second Fastest pays to save time
+  -- the plans to choose from: both ends, and the best plan at a third of the going rate, at it, and at three times
+  -- it, so there are plans either side of the going rate to pick from
+  local pool, seen, made = { cheap, fast }, {}, 0
+  local function Ids(p) local t = {}; for _, s in ipairs(p.route) do t[#t + 1] = s.id end; table.sort(t); return table.concat(t, ",") end
+  seen[Ids(cheap)], seen[Ids(fast)] = true, true
+  local function Gen(rate)
+    local ok, set = Job.Try(function()
+      return ImproveWeighted(x.start, x.owned, x.cands, x.need, GreedyWeighted(x.start, x.owned, x.cands, x.need, rate), rate)
+    end)
+    made = made + 1; Job.At(made / 4)
+    if not (ok and set) then return end
+    local ok2, p = Job.Try(Finish, x.start, x.owned, set, target, x.mine, "optimized")
+    if ok2 and p and p.rep >= goal and not seen[Ids(p)] then seen[Ids(p)] = true; pool[#pool + 1] = p end
+  end
+  if x and x.need > 0 and fast.rep >= goal then
+    for _, m in ipairs({ 0.33, 1, 3 }) do Gen(going * m) end
+  end
+  -- a plan found here can beat Fastest at its own game: then it's Fastest (by the same rule as PlanBoth's: of the
+  -- plans within 10% or 3 minutes of the quickest, the cheapest), and the going rate is worked out again
+  local quickest
+  for _, p in ipairs(pool) do if p.rep >= goal and (not quickest or p.secs < quickest) then quickest = p.secs end end
+  if quickest and quickest < fast.secs then
+    local pick
+    for _, p in ipairs(pool) do
+      if p.rep >= goal and p.secs <= math.max(quickest * 1.10, quickest + 180) and (not pick or p.cost < pick.cost) then pick = p end
+    end
+    if pick and pick ~= fast and pick.secs < fast.secs then
+      pick.mode, pick.short = "fast", fast.short
+      fast = pick; res.fast = pick
+      dc, dt = fast.cost - cheap.cost, cheap.secs - fast.secs
+      if dt <= 0 then res.optimized = cheap; Job.At(1); return end
+      if dc <= 0 then res.optimized = fast; Job.At(1); return end
+      going = dc / dt
+      Gen(going)
+    end
+  end
+  Job.At(1)
+  local best, bestS
+  for _, p in ipairs(pool) do
+    if p.rep >= goal and p.secs >= fast.secs and p.cost <= fast.cost then
+      local s = p.cost + going * p.secs
+      if not bestS or s < bestS - 0.5 then best, bestS = p, s end
+    end
+  end
+  res.optimized = best or cheap
+end
+end
+
 local PlanBothInner
-local function PlanBoth(target, zoneOnly, quick)
+local PlanBoth
+do
+local PlanBothOnce
+function PlanBoth(target, zoneOnly, quick)
+  -- the travel map and times are worked out afresh once, then shared by every pass below
+  Travel.Reset(); ResetMemo()
+  local keep = Job.keep
+  Job.keep = true
+  local ok, res = Job.Try(PlanBothOnce, target, zoneOnly, quick)
+  Job.keep, quickOnly = keep, false
+  if not ok then error(res, 0) end
+  return res
+end
+function PlanBothOnce(target, zoneOnly, quick)
   quickOnly = quick and true or false
-  local ok, res = pcall(PlanBothInner, target, zoneOnly)
+  Job.Span(0, quick and 0.6 or 0.4)                     -- the loading bar: this pass, then the ones below
+  local ok, res = Job.Try(PlanBothInner, target, zoneOnly)
   quickOnly = false
   if not ok then error(res, 0) end
-  if quick then res.cheap.quick, res.fast.quick = true, true; return res end
+  if quick then res.cheap.quick, res.fast.quick = true, true; Job.Span(0.6, 1); BuildOptimized(res, target); return res end
   -- Fastest also weighs the hub plan (customers next to your flight paths: fly in, hand in, fly out) and
   -- takes it when it reaches the target in less time
   quickOnly = true
-  local ok2, hub = pcall(PlanBothInner, target, zoneOnly)
+  Job.Span(0.4, 0.45)
+  local ok2, hub = Job.Try(PlanBothInner, target, zoneOnly)
   quickOnly = false
+  Job.Span(0.45, 0.65)
   -- the hub writs as a start, topped up with the quickest other writs until the target is reached
   local seeded
   if ok2 and hub and hub.fast and #hub.fast.route > 0 then
     local ids = {}
     for _, p in ipairs(hub.fast.route) do ids[p.id] = true end
-    local ok3, s3 = pcall(PlanBothInner, target, zoneOnly, ids)
+    local ok3, s3 = Job.Try(PlanBothInner, target, zoneOnly, ids)
     if ok3 and s3 then seeded = s3.fast; seeded.hubs = true end
     hub.fast.hubs = true
   end
@@ -739,7 +972,10 @@ local function PlanBoth(target, zoneOnly, quick)
       res.fast = pick
     end
   end
+  Job.Span(0.65, 1)
+  BuildOptimized(res, target)
   return res
+end
 end
 local COMMITTED_FOR = 6 * 3600
 function PlanBothInner(target, zoneOnly, seedIds)
@@ -757,11 +993,13 @@ function PlanBothInner(target, zoneOnly, seedIds)
     else owned[#owned + 1] = p end
   end
   local cands = Buyable(zoneOnly)
+  Job.At(0.1)
   for _, p in ipairs(paidOwned) do cands[#cands + 1] = p end
   mine.paidOwned = paidOwned
   local need = target - RepOf(owned)
   local cheapSet = CheapestSet(cands, need)
   local cheap = Finish(start, owned, cheapSet, target, mine, "cheap")
+  Job.At(0.3)
   local fast
   if RepOf(cheapSet) < need then
     -- the target is out of reach today: every writ has to be used, so there's nothing to choose
@@ -774,7 +1012,9 @@ function PlanBothInner(target, zoneOnly, seedIds)
       for _, c in ipairs(cands) do if seedIds[c.id] then seed[#seed + 1] = c end end
     end
     local fastA = Improve(start, owned, cands, need, GreedyFast(start, owned, cands, need, seed))
+    Job.At(0.65)
     local fastB = Improve(start, owned, cands, need, cheapSet)
+    Job.At(0.9)
     local fa, fb = Finish(start, owned, fastA, target, mine, "fast"), Finish(start, owned, fastB, target, mine, "fast")
     fast = (fb.secs < fa.secs or (fb.secs == fa.secs and fb.cost < fa.cost)) and fb or fa
   end
@@ -790,12 +1030,20 @@ function PlanBothInner(target, zoneOnly, seedIds)
   local function Ceiling(list) return RepOf(owned) + RepOf(list) end
   local short = { max = Ceiling(cands), withZone = (not zoneOnly) and Ceiling(Buyable(true)) or nil }
   cheap.short, fast.short = short, short
-  return { cheap = cheap, fast = fast }
+  return { cheap = cheap, fast = fast,
+           ctx = { start = start, owned = owned, cands = cands, need = need, mine = mine, zoneOnly = zoneOnly } }
 end
 
--- one plan: "cheap", "fast", or a number (gold plus travel at that many copper per minute, greedy)
+-- the plan for a choice ("cheap", "optimized" or "fast") out of PlanBoth's answer
+local function Chosen(res, key)
+  if not res then return nil end
+  if key == "optimized" or key == "balanced" then return res.optimized or res.cheap end
+  return res[key] or res.cheap
+end
+
+-- one plan: "cheap", "optimized", "fast", or a number (gold plus travel at that many copper per minute, greedy)
 local function Plan(target, mode, zoneOnly)
-  if mode == "cheap" or mode == "fast" then return PlanBoth(target, zoneOnly)[mode] end
+  if mode == "cheap" or mode == "fast" or mode == "optimized" then return Chosen(PlanBoth(target, zoneOnly), mode) end
   local mine = PlanOwned()
   local start, owned = mine.start, mine.route
   local cands = Buyable(zoneOnly)
@@ -936,7 +1184,6 @@ local W = 470                     -- window width
 local PAD = 12
 local INNER = W - PAD * 2
 local GREY = "|cFFAAAAAA"
-local TIER = { Journeyman = "|cFF1EFF00J|r", Expert = "|cFF0070DDE|r", Artisan = "|cFFA335EEA|r" }
 
 local f = CreateFrame("Frame", "WritPathPlanner", UIParent, "BackdropTemplate")
 f:SetSize(W, 160); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG"); f:Hide()
@@ -971,8 +1218,9 @@ local closeX = CreateFrame("Button", nil, f, "UIPanelCloseButton"); closeX:SetSi
 -- one planner: a rep target plans what to buy (your own writs first); no target plans just the writs you have
 local tabBar = f:CreateTexture(nil, "OVERLAY"); tabBar:SetHeight(2); tabBar:SetColorTexture(1, 0.82, 0, 1); tabBar:Hide()
 -- how old the prices are: Auctionator's last full scan, and the oldest price the shown plan uses
-local ageText = Text(f, "GameFontHighlightSmall", 200, "RIGHT")
-ageText:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, -32)
+-- on the title line, so the rep row below has the full width and the window can be narrow
+local ageText = Text(f, "GameFontHighlightSmall", nil, "RIGHT"); ageText:SetWordWrap(false)
+ageText:SetPoint("TOPRIGHT", f, "TOPRIGHT", -30, -11); ageText:SetPoint("LEFT", head, "RIGHT", 8, 0)
 
 -- the rep target and the Plan button
 local buyRow = CreateFrame("Frame", nil, f); buyRow:SetSize(INNER, 24)
@@ -985,7 +1233,7 @@ local planBtn = Btn(buyRow, "Plan"); planBtn:SetPoint("LEFT", repBox, "RIGHT", 1
 -- Favor only: count what's already in your bags as free, or buy everything
 local bagsChk = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); bagsChk:SetSize(22, 22)
 bagsChk:SetPoint("LEFT", planBtn, "RIGHT", 10, 0)
-local bagsL = Text(buyRow); bagsL:SetPoint("LEFT", bagsChk, "RIGHT", 2, 0); bagsL:SetText("Use my bags"); bagsL:SetWordWrap(false)
+local bagsL = Text(buyRow); bagsL:SetPoint("LEFT", bagsChk, "RIGHT", 2, 0); bagsL:SetText("Bags"); bagsL:SetWordWrap(false)
 bagsChk:Hide(); bagsL:Hide()
 -- plan with your Hearthstone or not (per character, WritPathChar.noHearth; also /writs hearth). Only the Hearthstone:
 -- Astral Recall and mage or druid teleports are still used.
@@ -1000,7 +1248,7 @@ PlaceHearth()
 for _, w in ipairs({ repBox, planBtn }) do
   w:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan")
-    GameTooltip:AddLine("With a rep target: the cheapest and the fastest writs to reach it, starting from the writs you have.", 1, 1, 1, true)
+    GameTooltip:AddLine("With a rep target: the cheapest writs to reach it, the fastest, and the optimized mix of the two, starting from the writs you have.", 1, 1, 1, true)
     GameTooltip:AddLine("Leave it empty: just the writs you have, in the shortest order.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
@@ -1011,16 +1259,74 @@ end
 local ZONE_ONLY = true
 buyRow:Hide()
 
--- the two answers for a rep target, side by side; click one to see its writs
-local CARD_W = math.floor((INNER - 8) / 2)
+-- the three answers for a rep target, side by side (Cheapest, Optimized, Fastest) to compare at a glance: the name,
+-- the gold up front (large), the time and rep, the net gold. Click one to see its writs; the chosen one has an
+-- accent border and tint.
+local CARD_GAP = 6
+local CARD_W = math.floor((INNER - CARD_GAP * 2) / 3)
 local function Card()
   local c = CreateFrame("Button", nil, f, "BackdropTemplate"); c:SetWidth(CARD_W)
-  c.text = Text(c, nil, CARD_W - 16); c.text:SetPoint("TOPLEFT", 8, -7)
-  c.sel = c:CreateTexture(nil, "OVERLAY"); c.sel:SetHeight(2); c.sel:SetPoint("BOTTOMLEFT", 1, 1); c.sel:SetPoint("BOTTOMRIGHT", -1, 1)
-  c.sel:SetColorTexture(1, 0.82, 0, 1); c.sel:Hide()
+  local tw = CARD_W - 16
+  -- a dot before the name: grey, or the accent on the chosen card
+  c.dot = c:CreateTexture(nil, "OVERLAY"); c.dot:SetSize(6, 6); c.dot:SetPoint("TOPLEFT", 8, -10)
+  c.dot:SetTexture("Interface/BUTTONS/WHITE8X8"); c.dot:SetVertexColor(0.4, 0.4, 0.4, 1)
+  if c.CreateMaskTexture then
+    local m = c:CreateMaskTexture(); m:SetAllPoints(c.dot)
+    m:SetTexture("Interface/CHARACTERFRAME/TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    c.dot:AddMaskTexture(m)
+  end
+  c.name = Text(c, "GameFontHighlightSmall", tw - 10); c.name:SetPoint("TOPLEFT", 18, -7); c.name:SetWordWrap(false)
+  c.cost = Text(c, "GameFontHighlight", tw); c.cost:SetPoint("TOPLEFT", c.name, "BOTTOMLEFT", 0, -5)
+  c.meta = Text(c, "GameFontHighlightSmall", tw); c.meta:SetPoint("TOPLEFT", c.cost, "BOTTOMLEFT", 0, -3)
+  c.net = Text(c, "GameFontHighlightSmall", tw); c.net:SetPoint("TOPLEFT", c.meta, "BOTTOMLEFT", 0, -3)
+  -- chosen: a tint and a 1 px accent border, drawn over whatever skin the card has
+  c.tint = c:CreateTexture(nil, "ARTWORK"); c.tint:SetPoint("TOPLEFT", 1, -1); c.tint:SetPoint("BOTTOMRIGHT", -1, 1)
+  c.edges = {}
+  for i, pts in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
+    local e = c:CreateTexture(nil, "OVERLAY"); e:SetPoint(pts[1]); e:SetPoint(pts[2])
+    if i <= 2 then e:SetHeight(1) else e:SetWidth(1) end
+    c.edges[i] = e
+  end
+  c.sel = { c.tint, c.edges[1], c.edges[2], c.edges[3], c.edges[4] }
+  function c.sel:Show() for _, t in ipairs(self) do t:Show() end end
+  function c.sel:Hide() for _, t in ipairs(self) do t:Hide() end end
+  function c.sel:SetColorTexture(r, g, b)
+    self[1]:SetColorTexture(r, g, b, 0.12); for i = 2, #self do self[i]:SetColorTexture(r, g, b, 1) end
+  end
+  c.sel:SetColorTexture(1, 0.82, 0); c.sel:Hide()
+  local hl = c:CreateTexture(nil, "HIGHLIGHT"); hl:SetPoint("TOPLEFT", 1, -1); hl:SetPoint("BOTTOMRIGHT", -1, 1)
+  hl:SetColorTexture(1, 1, 1, 0.05)
   c:Hide(); return c
 end
-local cards = { cheap = Card(), fast = Card() }
+local cards = { cheap = Card(), optimized = Card(), fast = Card() }
+-- the loading bar while the plans are worked out (Job): where the cards go, with how far it's got
+local loadBar = CreateFrame("StatusBar", nil, f, "BackdropTemplate")
+loadBar:SetHeight(18); loadBar:SetMinMaxValues(0, 1); loadBar:SetValue(0)
+loadBar:SetStatusBarTexture("Interface/BUTTONS/WHITE8X8")
+loadBar:SetStatusBarColor(1, 0.82, 0, 1)
+-- the colour of EllesmereUI's XP bar (its gradient too) when it has one, else the accent
+function loadBar.XPColor()
+  local holder = _G.EllesmereEAB_XPBar
+  local bar = type(holder) == "table" and rawget(holder, "_bar")
+  local tex = loadBar:GetStatusBarTexture()
+  if type(bar) ~= "table" or not bar.GetStatusBarColor then return false end
+  local m = rawget(bar, "_xpGrad")
+  if type(m) == "table" and m.on and tex and tex.SetGradient and CreateColor then
+    loadBar:SetStatusBarColor(1, 1, 1, 1)
+    tex:SetGradient(m.dir, CreateColor(m[1], m[2], m[3], m[4]), CreateColor(m[5], m[6], m[7], m[8]))
+    return true
+  end
+  local r, g, b = bar:GetStatusBarColor()
+  if type(r) ~= "number" or (r == 1 and g == 1 and b == 1) then r, g, b = 0.60, 0.40, 0.85 end   -- its XP purple, until painted
+  loadBar:SetStatusBarColor(r, g, b, 1)
+  return true
+end
+if loadBar.SetBackdrop then
+  loadBar:SetBackdrop({ bgFile = "Interface/BUTTONS/WHITE8X8", edgeFile = "Interface/BUTTONS/WHITE8X8", edgeSize = 1 })
+  loadBar:SetBackdropColor(0.1, 0.1, 0.12, 1); loadBar:SetBackdropBorderColor(0, 0, 0, 1)
+end
+loadBar.text = Text(loadBar, "GameFontHighlightSmall", nil, "CENTER"); loadBar.text:SetPoint("CENTER", 0, 0); loadBar.text:SetWordWrap(false)
+loadBar:Hide()
 
 -- the list, summary and notes scroll; tabs and cards stay at the top, the buttons at the bottom
 local SB = 22                      -- room for the scroll bar
@@ -1036,17 +1342,93 @@ local function Bar()
   return type(b) == "table" and b or nil
 end
 
--- writ entries: two lines on the left (name; customer, zone, minutes), cost on the right
+-- writ entries, one block each: number, tier badge and name on top; customer, zone and minutes underneath with
+-- chips ("needs item", a teleport, "spot not exact") on the right; the price top right; a thin line under each.
+-- Other entries (Favor, left out) are two plain lines.
 local COST_W = 92
 local rowPool = {}
-local function Row(i)
+local Row
+do
+local TIERC = { Ap = { 0.70, 0.70, 0.72 }, J = { 0.29, 0.87, 0.50 }, E = { 0.22, 0.74, 0.97 }, A = { 0.75, 0.52, 0.99 } }
+local CHIP = { warn = { 0.26, 0.13, 0.02, "|cFFFEF08A" }, good = { 0.08, 0.33, 0.18, "|cFFBBF7D0" },
+  bad = { 0.40, 0.08, 0.08, "|cFFFFDAD6" }, info = { 0.05, 0.29, 0.43, "|cFFBAE6FD" } }
+local NUM_W, BADGE = 22, 16
+local function Edges(fr, list)
+  for i, pts in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
+    local e = fr:CreateTexture(nil, "OVERLAY"); e:SetPoint(pts[1]); e:SetPoint(pts[2])
+    if i <= 2 then e:SetHeight(1) else e:SetWidth(1) end
+    list[i] = e
+  end
+end
+local function Chip(r, k)
+  local c = CreateFrame("Frame", nil, r)
+  c.bg = c:CreateTexture(nil, "BACKGROUND"); c.bg:SetAllPoints(c)
+  c.t = Text(c, "GameFontHighlightSmall", nil, "CENTER"); c.t:SetPoint("CENTER", 0, 0); c.t:SetWordWrap(false)
+  r.chips[k] = c
+  return c
+end
+local function Fill(r, e)
+  local lw = LIST_W
+  for _, c in ipairs(r.chips) do c:Hide() end
+  local writ = e.writ and true or false
+  for _, x in ipairs({ r.num, r.badge, r.title, r.sub, r.price }) do if writ then x:Show() else x:Hide() end end
+  if writ then r.left:Hide(); r.right:Hide() else r.left:Show(); r.right:Show() end
+  if not writ then
+    r.left:SetWidth(lw - COST_W - 6); r.left:SetText(e[1]); r.right:SetText(e[2])
+    return math.max(r.left:GetStringHeight(), r.right:GetStringHeight()) + 14
+  end
+  r.num:SetText(e.numText or (e.num .. "."))
+  local tc = TIERC[e.tier] or { 0.6, 0.6, 0.6 }
+  r.badge.bg:SetColorTexture(tc[1] * 0.3, tc[2] * 0.3, tc[3] * 0.3, 1)
+  for _, ed in ipairs(r.badge.edges) do ed:SetColorTexture(tc[1], tc[2], tc[3], 1) end
+  r.badge.t:SetText(e.tier or "?")
+  local bw = r.badge.t:GetStringWidth(); r.badge:SetWidth(math.max(BADGE, (type(bw) == "number" and bw or 8) + 8))
+  r.price:SetText(e.price)
+  local bwid = r.badge:GetWidth(); bwid = type(bwid) == "number" and bwid or BADGE
+  r.title:SetWidth(lw - NUM_W - bwid - 10 - COST_W); r.title:SetText(e.name)
+  local x = 0
+  -- placed from the right edge leftward, last chip first, so they read left to right in list order
+  for k = #e.chips, 1, -1 do
+    local chip = e.chips[k]
+    local c = r.chips[k] or Chip(r, k)
+    local st = CHIP[chip[2]]
+    c.bg:SetColorTexture(st[1], st[2], st[3], 1); c.t:SetText(st[4] .. chip[1] .. "|r")
+    local w = c.t:GetStringWidth(); w = (type(w) == "number" and w or 50) + 12
+    c:SetSize(w, 16); c:ClearAllPoints(); c:SetPoint("TOPRIGHT", r, "TOPRIGHT", -x, -27); c:Show()
+    x = x + w + 4
+  end
+  r.sub:SetWidth(math.max(60, lw - NUM_W - x - 6)); r.sub:SetText(e.sub)
+  return 28 + math.max(r.sub:GetStringHeight(), #e.chips > 0 and 16 or 0) + 9
+end
+function Row(i)
   local r = rowPool[i]
   if r then return r end
   r = CreateFrame("Frame", nil, content); r:SetWidth(LIST_W)
-  r.left = Text(r, nil, LIST_W - COST_W - 6); r.left:SetPoint("TOPLEFT", 0, 0); r.left:SetSpacing(2)
-  r.right = Text(r, nil, COST_W, "RIGHT"); r.right:SetPoint("TOPRIGHT", 0, 0)
+  r.left = Text(r, nil, LIST_W - COST_W - 6); r.left:SetPoint("TOPLEFT", 0, -6); r.left:SetSpacing(2)
+  r.right = Text(r, nil, COST_W, "RIGHT"); r.right:SetPoint("TOPRIGHT", 0, -6)
+  r.num = Text(r, "GameFontDisableSmall", NUM_W); r.num:SetPoint("TOPLEFT", 0, -9); r.num:SetWordWrap(false)
+  r.badge = CreateFrame("Frame", nil, r); r.badge:SetSize(BADGE, BADGE); r.badge:SetPoint("TOPLEFT", NUM_W, -6)
+  r.badge.bg = r.badge:CreateTexture(nil, "BACKGROUND"); r.badge.bg:SetAllPoints(r.badge)
+  r.badge.edges = {}; Edges(r.badge, r.badge.edges)
+  r.badge.t = Text(r.badge, "GameFontHighlightSmall", nil, "CENTER"); r.badge.t:SetPoint("CENTER", 0, 0); r.badge.t:SetWordWrap(false)
+  r.title = Text(r, "GameFontHighlight"); r.title:SetPoint("LEFT", r.badge, "RIGHT", 7, 0); r.title:SetWordWrap(false)
+  r.price = Text(r, "GameFontHighlight", COST_W, "RIGHT"); r.price:SetPoint("TOPRIGHT", 0, -8); r.price:SetWordWrap(false)
+  r.sub = Text(r, "GameFontHighlightSmall"); r.sub:SetPoint("TOPLEFT", NUM_W, -29)
+  r.chips = {}
+  r.line = r:CreateTexture(nil, "BACKGROUND"); r.line:SetHeight(1)
+  r.line:SetPoint("BOTTOMLEFT", 0, 0); r.line:SetPoint("BOTTOMRIGHT", 0, 0); r.line:SetColorTexture(1, 1, 1, 0.08)
+  r.Fill = Fill
   rowPool[i] = r
   return r
+end
+-- above the writs: "13 steps · Optimized route" and how many items still have to be bought
+local head = CreateFrame("Frame", nil, content); head:SetHeight(20)
+head.l = Text(head, "GameFontHighlightSmall"); head.l:SetPoint("LEFT", 0, 0); head.l:SetWordWrap(false)
+head.r = Text(head, "GameFontHighlightSmall", nil, "RIGHT"); head.r:SetPoint("RIGHT", 0, 0); head.r:SetWordWrap(false)
+head.line = head:CreateTexture(nil, "BACKGROUND"); head.line:SetHeight(1)
+head.line:SetPoint("BOTTOMLEFT", 0, 0); head.line:SetPoint("BOTTOMRIGHT", 0, 0); head.line:SetColorTexture(1, 1, 1, 0.12)
+head:Hide()
+rowPool.head = head
 end
 
 local summary = Text(content, nil, LIST_W)
@@ -1065,6 +1447,7 @@ local function Accent()
   if skin and skin.GetAccentColor then local r, g, b = skin.GetAccentColor(); if r then accent = { r, g, b } end end
   tabBar:SetColorTexture(accent[1], accent[2], accent[3], 1)
   for _, c in pairs(cards) do c.sel:SetColorTexture(accent[1], accent[2], accent[3], 1) end
+  if not loadBar.XPColor() then loadBar:SetStatusBarColor(accent[1], accent[2], accent[3], 1) end
 end
 local function ApplySkin(S)
   skin = S
@@ -1072,7 +1455,7 @@ local function ApplySkin(S)
   S.CloseButton(closeX)
   for _, btn in ipairs(buttons) do S.Button(btn); if S.StateButtonLabel then S.StateButtonLabel(btn) end end
   S.EditBox(repBox, { padInput = true })
-  if WritPath_BagsCheck and S.Checkbox then S.Checkbox(WritPath_BagsCheck) end
+  if S.Checkbox then for _, chk in ipairs({ bagsChk, hearthChk, flyChk }) do if not chk.wpSkinned then chk.wpSkinned = true; S.Checkbox(chk) end end end
   for _, c in pairs(cards) do S.Panel(c, { inset = true }) end
   if Bar() and S.ScrollBar then S.ScrollBar(Bar()) end
   for _, fs in ipairs(fonts) do S.Font(fs) end
@@ -1356,9 +1739,9 @@ local function PriceAge(plan)
   local t
   if last > 0 then
     local secs = time() - last
-    t = (secs > 86400 and W_ or GREY) .. "Last full AH scan: " .. Ago(secs) .. " ago|r"
+    t = (secs > 86400 and W_ or GREY) .. "AH " .. Ago(secs):gsub(" min", "m"):gsub(" h", "h"):gsub(" days", "d") .. "|r"
   else
-    t = W_ .. "No full AH scan yet|r"
+    t = W_ .. "No AH scan|r"
   end
   -- prices also update from ordinary AH searches: the oldest one this plan relies on
   local api = Auctionator and Auctionator.API and Auctionator.API.v1
@@ -1374,7 +1757,7 @@ local function PriceAge(plan)
     end
   end
   if oldest and oldest >= 1 then
-    t = t .. "\n" .. (oldest >= 3 and W_ or GREY) .. "Oldest price in this plan: " .. oldest .. (oldest == 1 and " day|r" or " days|r")
+    t = t .. GREY .. " · |r" .. (oldest >= 3 and W_ or GREY) .. "oldest " .. oldest .. "d|r"
   end
   return t
 end
@@ -1392,20 +1775,40 @@ local function Show(plan, top)
     local tl = plan.tele and plan.tele[i]
     local leg = (prev and p.pos) and Minutes(Secs(prev, p.pos) - (tl and tl.save or 0)) or nil
     prev = p.pos or prev
-    local flags = (p.need > 0 and ("  " .. W_ .. "needs item|r") or "") .. (p.c.exact and "" or ("  " .. W_ .. "spot not exact|r"))
-      .. (tl and ("  " .. G .. (tl.tp.text:gsub("^Use your ", ""):gsub("^Cast ", "")) .. "|r") or "")
-    local left = ("%d. %s %s\n%s%s · %s%s|r%s"):format(i, TIER[p.w.tier] or "", p.w.name, GREY, p.c.npc or "writ customer",
-      MapName(p.c.map), leg and (" · ~" .. leg .. " min") or "", flags)
-    local right = plan.mine and (p.need > 0 and (Y .. Coins(p.cost) .. "|r") or "") or (p.have and (GREY .. "yours|r") or (Y .. Coins(p.cost) .. "|r"))
-    entries[#entries + 1] = { left, right }
+    local chips = {}
+    if tl then chips[#chips + 1] = { (tl.tp.text:gsub("^Use your ", ""):gsub("^Cast ", "")), "good" } end
+    if p.need > 0 then chips[#chips + 1] = { "needs item", "warn" } end
+    if not p.c.exact then chips[#chips + 1] = { "spot not exact", "bad" } end
+    local BLUE = "|cFF38BDF8"
+    entries[#entries + 1] = { writ = true, num = i, tier = p.w.tier and p.w.tier:sub(1, 1), name = p.w.name, chips = chips,
+      sub = GREY .. (p.c.npc or "writ customer") .. " · " .. MapName(p.c.map) .. (leg and (" · ~" .. leg .. " min") or "") .. "|r",
+      price = plan.mine and (p.need > 0 and (BLUE .. Coins(p.cost) .. "|r") or "") or (p.have and (GREY .. "yours|r") or (BLUE .. Coins(p.cost) .. "|r")) }
   end
   for _, l in ipairs(plan.later or {}) do entries[#entries + 1] = { W_ .. "Left out:|r " .. l.w.name .. "\n" .. GREY .. l.why .. "|r", "" } end
   for _, l in ipairs(plan.unknown or {}) do entries[#entries + 1] = { W_ .. "Not placed yet:|r " .. l.w.name .. "\n" .. GREY .. l.why .. "|r", "" } end
+  local head = rowPool.head
+  if plan.favor and #(plan.picks or {}) > 0 then
+    local n = 0; for _, p in ipairs(plan.picks) do n = n + p.count end
+    head.l:SetText(GREY .. n .. (n == 1 and " crate · " or " crates · ") .. "Merchant's Favor|r")
+    head.r:SetText("|cFFFACC15" .. plan.earned .. " Favor|r")
+    head:ClearAllPoints(); head:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0); head:SetWidth(LIST_W); head:Show()
+    y = -22
+  elseif not plan.favor and not plan.intro and #plan.route > 0 then
+    local need, which = 0, plan.mine and "your writs, shortest order" or "route"
+    for _, p in ipairs(plan.route) do if p.need > 0 then need = need + 1 end end
+    for k, nm in pairs({ cheap = "Cheapest route", optimized = "Optimized route", fast = "Fastest route" }) do
+      if plans and plans[k] == plan then which = nm end
+    end
+    head.l:SetText(GREY .. #plan.route .. (#plan.route == 1 and " step · " or " steps · ") .. which .. "|r")
+    head.r:SetText(need > 0 and ("|cFFFACC15" .. need .. (need == 1 and " item needed|r" or " items needed|r")) or (G .. "items in your bags|r"))
+    head:ClearAllPoints(); head:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0); head:SetWidth(LIST_W); head:Show()
+    y = -22
+  else head:Hide() end
   for i = 1, math.max(#entries, #rowPool) do
     local r = Row(i)
     if entries[i] then
-      r.left:SetText(entries[i][1]); r.right:SetText(entries[i][2])
-      local h = math.max(r.left:GetStringHeight(), r.right:GetStringHeight()) + 6
+      r:SetWidth(LIST_W)
+      local h = r:Fill(entries[i])
       r:SetHeight(h); r:ClearAllPoints(); r:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y); r:Show()
       y = y - h
     else r:Hide() end
@@ -1452,9 +1855,10 @@ local function Show(plan, top)
   local BOTTOM = 22 + PAD + 10                          -- buttons and the gap above them
   local maxH = math.floor((UIParent:GetHeight() or 768) * 0.5)
   local viewH = math.min(listH, math.max(90, maxH + top - BOTTOM))
-  -- a size you dragged it to: the window keeps that height, the list scrolls inside it
+  -- a size you dragged it to: the window grows no taller than that (the list scrolls inside it), and shrinks
+  -- to fit when there's less to show
   local size = WritPathNav and WritPathNav.plannerSize
-  if size and size.h then viewH = math.max(90, size.h + top - BOTTOM) end
+  if size and size.h then viewH = math.min(listH, math.max(90, size.h + top - BOTTOM)) end
   scroll:ClearAllPoints(); scroll:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, top); scroll:SetSize(LIST_W, viewH)
   scroll:SetVerticalScroll(0)
   local bar = Bar()
@@ -1472,14 +1876,16 @@ end
 -- resizing: the grip in the bottom-right corner. Widths re-flow as you drag; the list is laid out again when you
 -- let go, and the size is kept for next time.
 local function Relayout(w)
-  W = math.floor(w); INNER = W - PAD * 2; CARD_W = math.floor((INNER - 8) / 2); LIST_W = INNER - SB
+  W = math.floor(w); INNER = W - PAD * 2; CARD_W = math.floor((INNER - CARD_GAP * 2) / 3); LIST_W = INNER - SB
   f:SetWidth(W); buyRow:SetWidth(INNER); content:SetWidth(LIST_W)
-  for _, c in pairs(cards) do c:SetWidth(CARD_W); c.text:SetWidth(CARD_W - 16) end
-  for _, r in ipairs(rowPool) do r:SetWidth(LIST_W); r.left:SetWidth(LIST_W - COST_W - 6) end
+  for _, c in pairs(cards) do
+    c:SetWidth(CARD_W); for _, fs in ipairs({ c.cost, c.meta, c.net }) do fs:SetWidth(CARD_W - 16) end; c.name:SetWidth(CARD_W - 26)
+  end
+  for _, r in ipairs(rowPool) do r:SetWidth(LIST_W) end
   summary:SetWidth(LIST_W); note:SetWidth(LIST_W)
 end
 f:SetResizable(true)
-if f.SetResizeBounds then f:SetResizeBounds(470, 220, 1100, 1200) elseif f.SetMinResize then f:SetMinResize(470, 220); f:SetMaxResize(1100, 1200) end
+if f.SetResizeBounds then f:SetResizeBounds(380, 220, 1100, 1200) elseif f.SetMinResize then f:SetMinResize(380, 220); f:SetMaxResize(1100, 1200) end
 local grip = CreateFrame("Button", nil, f)
 grip:SetSize(16, 16); grip:SetPoint("BOTTOMRIGHT", -2, 2)
 local lvl = f:GetFrameLevel(); if type(lvl) == "number" then grip:SetFrameLevel(lvl + 20) end   -- above the buttons
@@ -1500,37 +1906,86 @@ f:SetScript("OnSizeChanged", function(_, w) if sizing then Relayout(w) end end)
 WritPath_PlannerRelayout = Relayout   -- for tests
 WritPath_PlannerGrip = grip
 
-local function CardText(key, plan, other)
-  local same = #plan.route == #other.route
-  if same then
-    local ids = {}; for _, p in ipairs(other.route) do ids[p.id] = true end
-    for _, p in ipairs(plan.route) do if not ids[p.id] then same = false end end
-  end
+-- the three cards, one row each: Cheapest, Optimized, Fastest; click one to see its writs
+local CardText
+do
+local function SameWrits(a, b)
+  if a == b then return true end
+  if #a.route ~= #b.route then return false end
+  local ids = {}; for _, p in ipairs(b.route) do ids[p.id] = true end
+  for _, p in ipairs(a.route) do if not ids[p.id] then return false end end
+  return true
+end
+local NAMES = { cheap = "Cheapest", optimized = "Optimized", fast = "Fastest" }
+-- fills a card: name, gold up front, time and rep, net; the rest (labels, "same writs as") is in its tooltip
+function CardText(key, plan)
+  local c = cards[key]
+  local tag
+  if key == "optimized" and SameWrits(plan, plans.cheap) then tag = "The same writs as Cheapest."
+  elseif key == "optimized" and SameWrits(plan, plans.fast) then tag = "The same writs as Fastest."
+  elseif key ~= "optimized" and SameWrits(plans.cheap, plans.fast) then tag = "Cheapest and Fastest are the same writs."
+  elseif plan.hubs or plan.quick then tag = "Planned by flight paths." end
   local net = plan.pouches - plan.cost
-  local tag = same and (GREY .. "  same writs as the other|r") or ((plan.hubs or plan.quick) and (GREY .. "  by flight paths|r") or "")
-  return ("%s%s|r%s\n%s · ~%d min · %d rep\nnet %s%s|r"):format(G, key == "cheap" and "Cheapest" or "Fastest",
-    tag, Coins(plan.cost), Minutes(plan.secs), plan.rep,
-    net >= 0 and G or "|cFFFF5722", Coins(net))
+  local netC = net >= 0 and "|cFF4ADE80" or "|cFFFF5555"
+  c.name:SetText(G .. NAMES[key] .. "|r")
+  c.cost:SetText(Coins(plan.cost))
+  c.meta:SetText(("%s~%dm · %d rep|r"):format(GREY, Minutes(plan.secs), plan.rep))
+  c.net:SetText(netC .. "net " .. Coins(net) .. "|r")
+  c.tip = { NAMES[key], ("Up front: %s"):format(Coins(plan.cost)), ("Time to complete: ~%d min"):format(Minutes(plan.secs)),
+    ("Rep: %d"):format(plan.rep), ("Estimated net: %s (coin pouches minus what you spend)"):format(Coins(net)), tag }
+end
+for _, c in pairs(cards) do
+  c:SetScript("OnEnter", function(self)
+    if not self.tip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:SetText(self.tip[1])
+    for i = 2, 6 do if self.tip[i] then GameTooltip:AddLine(self.tip[i], 1, 1, 1, true) end end
+    GameTooltip:Show()
+  end)
+  c:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
 end
 
 local CARDS_TOP = -60
 local function LayoutCards()
   local h = 0
-  for _, c in pairs(cards) do h = math.max(h, c.text:GetStringHeight() + 16) end
-  cards.cheap:SetHeight(h); cards.fast:SetHeight(h)
-  cards.cheap:ClearAllPoints(); cards.cheap:SetPoint("TOPLEFT", PAD, CARDS_TOP)
-  cards.fast:ClearAllPoints(); cards.fast:SetPoint("TOPLEFT", cards.cheap, "TOPRIGHT", 8, 0)
+  for _, c in pairs(cards) do
+    local ch = 7 + 5 + 3 + 3 + 9
+    for _, fs in ipairs({ c.name, c.cost, c.meta, c.net }) do ch = ch + fs:GetStringHeight() end
+    h = math.max(h, ch)
+  end
+  local prev
+  for _, k in ipairs({ "cheap", "optimized", "fast" }) do
+    local c = cards[k]
+    c:SetHeight(h); c:ClearAllPoints()
+    if prev then c:SetPoint("TOPLEFT", prev, "TOPRIGHT", CARD_GAP, 0) else c:SetPoint("TOPLEFT", PAD, CARDS_TOP) end
+    prev = c
+  end
   return CARDS_TOP - h - 10
 end
 
 local function Select(key)
   choice = key; WritPathNav.planChoice = key
-  for k, c in pairs(cards) do if k == key then c.sel:Show() else c.sel:Hide() end end
+  for k, c in pairs(cards) do
+    if k == key then c.sel:Show(); c.dot:SetVertexColor(accent[1], accent[2], accent[3], 1)
+    else c.sel:Hide(); c.dot:SetVertexColor(0.4, 0.4, 0.4, 1) end
+  end
   Show(plans[key], LayoutCards())
 end
 WritPath_PlannerReselect = function() Select(choice or "cheap") end   -- the resize grip lays the cards out again
-cards.cheap:SetScript("OnClick", function() Select("cheap") end)
-cards.fast:SetScript("OnClick", function() Select("fast") end)
+for k, c in pairs(cards) do c:SetScript("OnClick", function() Select(k) end) end
+local function ShowCards(on)
+  for _, c in pairs(cards) do if on then c:Show() else c:Hide() end end
+  loadBar:Hide()
+end
+-- the loading bar: shown (with how far the plans have got) or hidden
+local function Loading(p)
+  if not p then loadBar:Hide(); Job.onStep = nil; return end
+  loadBar:ClearAllPoints()
+  loadBar:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, CARDS_TOP - 4); loadBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, CARDS_TOP - 4)
+  loadBar:SetValue(p); loadBar.text:SetText(("Working out the plans... %d%%"):format(math.floor(p * 100)))
+  if not loadBar:IsShown() then loadBar.XPColor() end   -- the XP bar may have been restyled since
+  loadBar:Show()
+end
 
 local function Warm(plan)   -- ask the client for item names it hasn't loaded yet
   if not (C_Item and C_Item.RequestLoadItemDataByID) then return end
@@ -1539,7 +1994,7 @@ end
 
 local function DoMine()
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
-  cards.cheap:Hide(); cards.fast:Hide()
+  ShowCards(false)
   WritPathNav.planMode = "mine"
   local plan = PlanOwned(nil, nil, nil, true); Warm(plan)   -- just what you can hand in now
   Show(plan, -62)
@@ -1550,12 +2005,13 @@ local DoFavor
 local WalkHere   -- below (walking yards): ground distances from where you stand, then a callback
 local DoPlanNow
 local function DoPlan(buy)
+  -- with Shortest Path Forever: a rep target is planned once the ground distances from where you stand are in (a
+  -- few seconds at most), not twice; the other views show at once and again when they arrive
+  if WalkHere and WalkHere(function() if f:IsShown() then DoPlanNow(buy) end end) then DoPlanNow(buy, true); return end
   DoPlanNow(buy)
-  -- the plan shows at once; with Shortest Path Forever it's worked out again when the ground distances from where
-  -- you stand arrive (a second or two), if the window is still open
-  if WalkHere then WalkHere(function() if f:IsShown() then DoPlanNow(buy) end end) end
 end
-function DoPlanNow(buy)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
+function DoPlanNow(buy, wait)   -- buy: plan for a target even if the box is empty (the last target, or 1000)
+                                -- wait: a rep target waits (the ground distances are on their way)
   if Favor() then DoFavor(buy); return end
   local target = tonumber(repBox:GetText())
   if buy and not (target and target > 0) then target = WritPathNav.plan and WritPathNav.plan.target or 1000 end
@@ -1563,18 +2019,34 @@ function DoPlanNow(buy)   -- buy: plan for a target even if the box is empty (th
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
   WritPathNav.planMode = "buy"
   if not HavePrices() then
-    cards.cheap:Hide(); cards.fast:Hide()
+    ShowCards(false)
     Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, -62)
     summary:SetText(W_ .. "No prices yet: open the auction house and press \"WritPath: scan writs\" (or install Auctionator).|r"); return
   end
   local zoneOnly = ZONE_ONLY
   WritPathNav.plan = { target = target, zoneOnly = zoneOnly }
-  plans = PlanBoth(target, zoneOnly)   -- Fastest weighs the flight-path hub plan by itself
-  Warm(plans.cheap); Warm(plans.fast)
-  cards.cheap.text:SetText(CardText("cheap", plans.cheap, plans.fast))
-  cards.fast.text:SetText(CardText("fast", plans.fast, plans.cheap))
-  cards.cheap:Show(); cards.fast:Show()
-  Select(WritPathNav.planChoice or "cheap")
+  -- worked out a few milliseconds a frame (Job): the window says so until the plans are in
+  local finished = not wait and Job.Start(function() return PlanBoth(target, zoneOnly) end, function(res)
+    plans = res   -- Fastest weighs the flight-path hub plan by itself
+    Loading(nil)
+    for _, k in ipairs({ "cheap", "optimized", "fast" }) do
+      Warm(plans[k]); CardText(k, plans[k])
+    end
+    ShowCards(true)
+    local key = WritPathNav.planChoice
+    if key == "balanced" then key = "optimized" end
+    Select((key == "cheap" or key == "optimized" or key == "fast") and key or "cheap")
+  end)
+  -- the plans for this target already showing (worked out again with fresh ground distances): they stay until the
+  -- new ones are in; otherwise the window waits
+  if not finished and not (plans and plans.cheap and plans.cheap.target == target) then
+    plans = nil
+    ShowCards(false)
+    Show({ route = {}, start = nil, pouches = 0, cost = 0, rep = 0, target = 0, secs = 0 }, CARDS_TOP - 32)
+    summary:SetText("")
+    Loading(wait and 0 or Job.p)
+    Job.onStep = Loading
+  end
 end
 -- Merchant's Favor: the cheapest crates and fillings for a Favor target (Favor.lua)
 function DoFavor(saved)   -- saved: use the last Favor target when the box is empty
@@ -1584,7 +2056,7 @@ function DoFavor(saved)   -- saved: use the last Favor target when the box is em
     target = WritPathNav.favorTarget
   end
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
-  cards.cheap:Hide(); cards.fast:Hide()
+  ShowCards(false)
   WritPathNav.planMode = "favor"
   WritPathNav.favorTarget = target
   if not HavePrices() then
@@ -1607,14 +2079,14 @@ modeBtn:SetScript("OnClick", function()
 end)
 bagsChk:SetScript("OnClick", function(self) WritPathNav.favorNoBags = not self:GetChecked() or nil; DoPlan() end)
 bagsChk:SetScript("OnEnter", function(self)
-  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Use my bags")
+  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Bags")
   GameTooltip:AddLine("On: crates and materials already in your bags are used first, for free.", 1, 1, 1, true)
   GameTooltip:AddLine("Off: the plan buys everything and leaves what's in your bags alone.", 1, 1, 1, true)
   GameTooltip:Show()
 end)
 bagsChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
 WritPath_BagsCheck = bagsChk   -- for tests
-if skin and skin.Checkbox then skin.Checkbox(bagsChk) end   -- EllesmereUI skinned the window before this existed
+if skin and skin.Checkbox and not bagsChk.wpSkinned then bagsChk.wpSkinned = true; skin.Checkbox(bagsChk) end   -- EllesmereUI skinned the window before this existed
 -- the Hearthstone on or off: the shown plan (and a route under way) is planned again
 function WritPath_SetHearth(on)
   WritPathChar = WritPathChar or {}
@@ -1634,7 +2106,7 @@ hearthChk:SetScript("OnEnter", function(self)
 end)
 hearthChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
 WritPath_HearthCheck = hearthChk   -- for tests
-if skin and skin.Checkbox then skin.Checkbox(hearthChk) end
+if skin and skin.Checkbox and not hearthChk.wpSkinned then hearthChk.wpSkinned = true; skin.Checkbox(hearthChk) end
 flyChk:SetScript("OnShow", function(self) self:SetChecked(WritPathNav and WritPathNav.autoFly and true or false) end)
 flyChk:SetScript("OnClick", function(self) WritPath_SetAutoFly(self:GetChecked() and true or false) end)
 flyChk:SetScript("OnEnter", function(self)
@@ -1645,7 +2117,7 @@ flyChk:SetScript("OnEnter", function(self)
 end)
 flyChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
 WritPath_AutoFlyCheck = flyChk
-if skin and skin.Checkbox then skin.Checkbox(flyChk) end
+if skin and skin.Checkbox and not flyChk.wpSkinned then flyChk.wpSkinned = true; skin.Checkbox(flyChk) end
 modeBtn:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan for")
   GameTooltip:AddLine("Rep: the writs to reach a reputation target (empty: just the writs you have).", 1, 1, 1, true)
@@ -1720,7 +2192,7 @@ function WritPath_ClearAll()
 end
 -- the planner with nothing planned yet: what to do, for the mode it's in
 function WritPath_PlannerStart(first)
-  cards.cheap:Hide(); cards.fast:Hide()
+  ShowCards(false)
   buyRow:ClearAllPoints(); buyRow:SetPoint("TOPLEFT", PAD, -32); buyRow:Show()
   repBox:SetText("")
   local H = "|cFFFFD100"
@@ -1729,7 +2201,7 @@ function WritPath_PlannerStart(first)
     local NL = string.char(10)
     intro = ((first and (G .. first .. "|r ") or "") .. H .. "Plan Merchant's Favor|r" .. NL
       .. "1. At the auction house, press " .. H .. "Scan|r (the WritPath Scanner panel) so prices are fresh." .. NL
-      .. "2. Type how much Favor you want and press " .. H .. "Plan|r. Untick " .. H .. "Use my bags|r to buy everything." .. NL
+      .. "2. Type how much Favor you want and press " .. H .. "Plan|r. Untick " .. H .. "Bags|r to buy everything." .. NL
       .. "3. Press " .. H .. "Start buying|r: the shopping list opens at the auction house. Fill each crate (right-click it)"
       .. " and talk to Dokimi at the camp west of the Crossroads to hand them in.")
     introNote = GREY .. "Click Favor to switch back to planning writs for reputation.|r"
@@ -2066,7 +2538,7 @@ function WritPath_DropFromPlan(ids, why)
   local added, addedCost = {}, 0
   if target and plan.rep < target and (WritPathNav.step or 1) <= 1 then
     local ok, plans = pcall(PlanBoth, target, ZONE_ONLY)
-    local new = ok and plans and plans[WritPathNav.planChoice or "cheap"]
+    local new = ok and Chosen(plans, WritPathNav.planChoice or "cheap")
     if new and new.rep > plan.rep then
       plan = new
       WritPathNav.plannedCost = WritPathNav.plannedCost or {}
@@ -2244,7 +2716,7 @@ local walkLogin = CreateFrame("Frame")
 walkLogin:RegisterEvent("PLAYER_LOGIN")
 walkLogin:SetScript("OnEvent", function() C_Timer.After(60, function() WritPath_WalkPrefetch() end) end)
 
-WritPath_PlannerInternals = { LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn, Room = Room, WarnRoom = WarnRoom }
+WritPath_PlannerInternals = { Job = Job, Shown = function() return current end, LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn, Room = Room, WarnRoom = WarnRoom }
 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end

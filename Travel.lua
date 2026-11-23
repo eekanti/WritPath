@@ -532,11 +532,17 @@ T.DangerAlong = DangerAlong
 -- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
 -- border runs into the mountains between Feralas and Un'Goro, Duskwood and Stranglethorn, ...)
 local function ZoneName(m) local i = MapInfo(m); return i and i.name or "?" end
+-- looked up for every place on the travel map, for every leg the planner times: a table built once (1.17.0), not
+-- a walk through the list each time
+local noRoadSet
 local function NoRoad(a, b)
-  for _, r in ipairs(WritPath_Data and WritPath_Data.noRoad or {}) do
-    if (r[1] == a and r[2] == b) or (r[1] == b and r[2] == a) then return true end
+  if not noRoadSet then
+    noRoadSet = {}
+    for _, r in ipairs(WritPath_Data and WritPath_Data.noRoad or {}) do
+      noRoadSet[r[1] .. ":" .. r[2]], noRoadSet[r[2] .. ":" .. r[1]] = true, true
+    end
   end
-  return false
+  return noRoadSet[a .. ":" .. b] or false
 end
 T.NoRoad = NoRoad
 
@@ -935,10 +941,15 @@ local function From(src)
   end
   -- start: ride to any known place on this continent; straight across a zone you haven't learned roads for
   -- costs a bit more, because the straight line may run into hills
+  local open = {}
   for _, n in ipairs(nodes) do
-    if n.p.inst == src.inst and Open(src.map, n.zone) then
-      dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and Ride(src.map) or UNKNOWN)
-      Push(dist[n.i], n.i)
+    if n.p.inst == src.inst then
+      local o = open[n.zone]
+      if o == nil then o = Open(src.map, n.zone); open[n.zone] = o end
+      if o then
+        dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and Ride(src.map) or UNKNOWN)
+        Push(dist[n.i], n.i)
+      end
     end
   end
   while true do
@@ -1019,20 +1030,33 @@ function Time(a, b)
   -- the ground way is known (Shortest Path Forever): a route that stays on the ground (roads, crossings, rides) can't
   -- beat it, and its straight rides onto and off the roads may run through a cliff (1.16.2: Juo, in the Hinterlands,
   -- was sent straight over a 500-yard mountain to reach the road). Only a flight or a ship can do better.
+  -- (worked out once per starting place and kept with its shortest times: r.carried[node])
   local function Carried(i)
-    while i and r.prev[i] do
-      local k = r.prev[i][2].kind
-      if k == "fly" or k == "sail" then return true end
-      i = r.prev[i][1]
+    local c = r.carried
+    if not c then c = {}; r.carried = c end
+    local v = c[i]
+    if v == nil then
+      local p = r.prev[i]
+      if not p then v = false
+      else local k = p[2].kind; v = (k == "fly" or k == "sail") or Carried(p[1]) end
+      c[i] = v
     end
-    return false
+    return v
   end
-  for _, n in ipairs(nodes) do
+  -- the places you can ride straight to b from: only its own zone's when its roads are known (1.17.0: every place on
+  -- the map was checked, for every leg)
+  local list = (not loose and roads and roads[b.map]) and (byZone[b.map] or {}) or nodes
+  local open = {}
+  for _, n in ipairs(list) do
     local d = r.dist[n.i]
     if d and walk and not Carried(n.i) then d = nil end
-    if d and n.p.inst == b.inst and Open(b.map, n.zone) then
-      d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
-      if not best or d < best then best, via = d, n end
+    if d and n.p.inst == b.inst then
+      local o = open[n.zone]
+      if o == nil then o = Open(b.map, n.zone); open[n.zone] = o end
+      if o then
+        d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
+        if not best or d < best then best, via = d, n end
+      end
     end
   end
   return best, via, r

@@ -2,7 +2,8 @@
 
 A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Logistics / merchant reputation).
 
-- **Plan:** set a rep target and get the cheapest and the fastest set of writs to reach it, starting from the
+- **Plan:** set a rep target and get the cheapest set of writs to reach it, the fastest, and the optimized mix of
+  the two, starting from the
   writs you have and priced from WritPath's own auction house scan (or Auctionator's), each writ once a day (the game's
   limit). With no target, it plans just the writs you have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
@@ -77,12 +78,16 @@ Open the planner (map icon). There is one **Plan** button:
 - **Type a rep target** (for example 1000) to reach it, starting from the writs you have:
 
 1. Type a **Rep target** and press **Plan**.
-2. Two plans appear:
+2. A loading bar fills while the plans are worked out (a few seconds for a big target), then three plans appear:
    - **Cheapest**: the least gold that reaches the target.
+   - **Optimized**: the best trade of gold for time. It pays for a minute saved only where the minute comes cheap,
+     at the going rate between Cheapest and Fastest, so it often takes far less time than Cheapest for little more
+     gold.
    - **Fastest**: the quickest trip to the target. It starts from the customers next to your flight paths (fly in,
      hand in, fly out), adds the quickest other writs, and doesn't overpay for a minute or two: of the plans within
      about 10% of the quickest, it takes the cheapest.
-   Each card shows the cost, the time, the rep and the net gold (coin pouches minus what you spend).
+   The three cards sit side by side: the gold up front, the time, the rep and the net gold (coin pouches minus
+   what you spend). Hover a card for the details; the one you picked has a highlighted border.
    Your own writs whose items you have are always used; ones that still need an item compete on price.
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
    Customers known only by their zone are included too: when you accept their writ, its map pin gives the exact
@@ -95,7 +100,7 @@ Open the planner (map icon). There is one **Plan** button:
 In the planner, click **Rep** to switch it to **Favor**, type how much Merchant's Favor you
 want and press **Plan**. WritPath works out which Waylaid Crates and fillings cost the least per Favor at your
 last scan's prices, counting the silver each crate pays back and anything already in your bags as free (untick
-**Use my bags** to buy everything and leave your bags alone). When the
+**Bags** to buy everything and leave your bags alone). When the
 cheapest crate or material runs out on the auction house, the next best takes over, until the target is reached
 (or it tells you how far the auction house can get you). **Start buying** puts the crates and materials on the
 shopping list, next to any writ shopping. Right-click each crate to fill it and talk to Dokimi

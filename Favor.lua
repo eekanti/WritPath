@@ -123,10 +123,18 @@ function WritPath_FavorView(plan)
     local note = #bags > 0 and ("\n" .. GREY .. "from your bags (free): " .. table.concat(bags, " and ") .. "|r") or ""
     -- the silver back pays for more than you spend: a profit, not a cost
     local perText = per < 0 and (G .. Coins(-per) .. " profit per Favor|r") or (GREY .. Coins(per) .. " per Favor|r")
+    -- the planner draws it like a writ: count, tier badge, crate; what to fill it with underneath; chips on the right
+    local tierWord = p.name:match("^(%a+)")
+    local chips = { { per < 0 and (Coins(-per) .. " profit / Favor") or (Coins(per) .. " / Favor"), per < 0 and "good" or "info" } }
+    if #bags > 0 then chips[#chips + 1] = { "from bags", "good" } end
     rows[#rows + 1] = {
       ("%s%dx|r Waylaid Crate: %s\n%sfill each with %d %s · %d Favor and %s back each|r%s"):format(G, p.count, p.name, GREY, p.n,
         mat, p.favor, Coins(p.silver), note),
       ("%s%s|r\n%s"):format(Y, Coins(p.cost), perText),
+      writ = true, numText = p.count .. "x", name = "Waylaid Crate: " .. p.name,
+      tier = ({ Apprentice = "Ap", Journeyman = "J", Expert = "E", Artisan = "A" })[tierWord],
+      sub = ("%sfill each with %d %s · %d Favor and %s back each|r%s"):format(GREY, p.n, mat, p.favor, Coins(p.silver), note),
+      price = "|cFF38BDF8" .. Coins(p.cost) .. "|r", chips = chips,
     }
   end
   local have = WritPath_FavorHave()
