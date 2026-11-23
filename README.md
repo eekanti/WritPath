@@ -189,7 +189,10 @@ list after asking. What WritPath has learned stays.
 - **Dangerous stretches**: on a route, WritPath also notes the hostile mobs around you (from enemy nameplates, so turn
   those on) and the level of anyone who dies. A guide step warns in red when the way ahead has mobs 3 or more levels
   above you, elites at your level, "??" mobs, or deaths of players near your level, and routes go round those roads
-  when they can.
+  when they can. WritPath ships the mob levels other WritPath players have seen from the road (except right by towns,
+  where the other faction's guards show up), so you're warned on roads you haven't ridden yet; what you see yourself
+  wins. Where nothing is known about the way, the zone's level range decides: a zone whose mobs start 3 or more
+  levels above you gets the warning, and the stop's row in the plan gets a red "lvl 55-60 zone" chip.
 - **Flight paths you know**, each time you open a flight master's map.
 
 It starts from what ships with it (customer spots from community sources and QuestieDB, RestedXP's roads, boats

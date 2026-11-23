@@ -1351,7 +1351,7 @@ local Row
 do
 local TIERC = { Ap = { 0.70, 0.70, 0.72 }, J = { 0.29, 0.87, 0.50 }, E = { 0.22, 0.74, 0.97 }, A = { 0.75, 0.52, 0.99 } }
 local CHIP = { warn = { 0.26, 0.13, 0.02, "|cFFFEF08A" }, good = { 0.08, 0.33, 0.18, "|cFFBBF7D0" },
-  bad = { 0.40, 0.08, 0.08, "|cFFFFDAD6" }, info = { 0.05, 0.29, 0.43, "|cFFBAE6FD" } }
+  bad = { 0.40, 0.08, 0.08, "|cFFFFDAD6" }, danger = { 0.60, 0.05, 0.05, "|cFFFFFFFF" }, info = { 0.05, 0.29, 0.43, "|cFFBAE6FD" } }
 local NUM_W, BADGE = 22, 16
 local function Edges(fr, list)
   for i, pts in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
@@ -1778,6 +1778,8 @@ local function Show(plan, top)
     local chips = {}
     if tl then chips[#chips + 1] = { (tl.tp.text:gsub("^Use your ", ""):gsub("^Cast ", "")), "good" } end
     if p.need > 0 then chips[#chips + 1] = { "needs item", "warn" } end
+    local zlo, zhi = Travel.ZoneDanger(p.c.map)   -- a zone whose mobs start well above your level
+    if zlo then chips[#chips + 1] = { ("lvl %d-%d zone"):format(zlo, zhi), "danger" } end
     if not p.c.exact then chips[#chips + 1] = { "spot not exact", "bad" } end
     local BLUE = "|cFF38BDF8"
     entries[#entries + 1] = { writ = true, num = i, tier = p.w.tier and p.w.tier:sub(1, 1), name = p.w.name, chips = chips,

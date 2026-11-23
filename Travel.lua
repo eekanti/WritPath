@@ -494,20 +494,88 @@ local function Dangerous(cell, lvl)
   return false
 end
 T.Dangerous = Dangerous
--- the danger along a straight ride from a to b (same continent): a warning line for the guide, or nil
+-- What's known about a hex: what you saw yourself wins; otherwise what WritPath players saw (WritPathDanger.lua),
+-- except near a town with a flight master, where the other faction's guards show up as hostile mobs. nil when
+-- nothing is known.
+local DangerCell
+do
+  local towns, shipped = nil, {}
+  local function Towns()
+    if towns then return towns end
+    local t, found = {}, false
+    for _, n in pairs(WritPath_Data and WritPath_Data.flightNodes or {}) do
+      local p = (n[4] == "A" or n[4] == "H") and T.Point(n[1], n[2], n[3])
+      if p and p.wx then
+        found = true
+        local inst, q, r = HexKey(p):match("^(.-):(%-?%d+):(%-?%d+)$")
+        q, r = tonumber(q), tonumber(r)
+        for dq = -5, 5 do
+          for dr = math.max(-5, -dq - 5), math.min(5, -dq + 5) do t[inst .. ":" .. (q + dq) .. ":" .. (r + dr)] = true end
+        end
+      end
+    end
+    if found then towns = t end   -- the map library not ready yet: try again next time
+    return t
+  end
+  function DangerCell(key)
+    local R = WritPathLearned and WritPathLearned.roads
+    local c = R and R.v == 2 and R.cells and R.cells[key]
+    if c and (c.h or c.s or (c.d or 0) > 0) then return c end
+    local s = WritPath_Danger and WritPath_Danger[key]
+    if s and not Towns()[key] then
+      shipped[key] = shipped[key] or { h = s[1], e = s[2] == 1 or nil, shipped = true }
+      return shipped[key]
+    end
+  end
+  T.DangerCell = DangerCell
+
+  -- When nobody has ridden a stretch, the zone's level range stands in: a zone whose mobs start DANGER_LEVELS or
+  -- more above you gets a warning. Classic's ranges; for a zone not listed (Forever's own), the game's, if it says.
+  local ZONE_LEVELS = {
+    [1411] = { 1, 10 }, [1412] = { 1, 10 }, [1413] = { 10, 25 }, [1416] = { 30, 40 }, [1417] = { 30, 40 },
+    [1418] = { 35, 45 }, [1419] = { 45, 55 }, [1420] = { 1, 10 }, [1421] = { 10, 20 }, [1422] = { 51, 58 },
+    [1423] = { 53, 60 }, [1424] = { 20, 30 }, [1425] = { 40, 50 }, [1426] = { 1, 10 }, [1427] = { 43, 50 },
+    [1428] = { 50, 58 }, [1429] = { 1, 10 }, [1430] = { 55, 60 }, [1431] = { 18, 30 }, [1432] = { 10, 20 },
+    [1433] = { 15, 25 }, [1434] = { 30, 45 }, [1435] = { 35, 45 }, [1436] = { 10, 20 }, [1437] = { 20, 30 },
+    [1438] = { 1, 10 }, [1439] = { 10, 20 }, [1440] = { 18, 30 }, [1441] = { 25, 35 }, [1442] = { 15, 27 },
+    [1443] = { 30, 40 }, [1444] = { 40, 50 }, [1445] = { 35, 45 }, [1446] = { 40, 50 }, [1447] = { 45, 55 },
+    [1448] = { 48, 55 }, [1449] = { 48, 55 }, [1451] = { 55, 60 }, [1452] = { 55, 60 },
+  }
+  function T.ZoneLevels(map)
+    local z = map and ZoneOf(map)
+    if not z then return nil end
+    local t = ZONE_LEVELS[z]
+    if t then return t[1], t[2], z end
+    if C_Map.GetMapLevels then
+      local ok, lo, hi = pcall(C_Map.GetMapLevels, z)
+      if ok and type(lo) == "number" and lo > 0 and type(hi) == "number" and hi >= lo then return lo, hi, z end
+    end
+  end
+  -- the zone's range and name when it's too high for you (lvl: your level, by default the one you are), or nil
+  function T.ZoneDanger(map, lvl)
+    lvl = lvl or PlayerLevel()
+    local lo, hi, z = T.ZoneLevels(map)
+    if not (lo and lo >= lvl + DANGER_LEVELS) then return nil end
+    local info = MapInfo(z)
+    return lo, hi, info and info.name or "this zone"
+  end
+end
+-- the danger along a straight ride from a to b (same continent): a warning line for the guide, or nil. Where
+-- less than half the ride is known, b's zone level range decides.
 local function DangerAlong(a, b)
-  local R = WritPathLearned and WritPathLearned.roads
-  if not (a and b and a.wx and b.wx and R and R.v == 2 and R.cells and a.inst == b.inst) then return nil end
+  if not (a and b and a.wx and b.wx and a.inst == b.inst) then return nil end
   local lvl = PlayerLevel()
   local len = math.sqrt((b.wx - a.wx) ^ 2 + (b.wy - a.wy) ^ 2)
   local n = math.max(1, math.floor(len / 25))
-  local seen, hi, elite, skull, deaths, count = {}, nil, false, false, 0, 0
+  local seen, hi, elite, skull, deaths, count, hexes, known = {}, nil, false, false, 0, 0, 0, 0
   for i = 0, n do
     local t = i / n
     local k = HexKey({ inst = a.inst, wx = a.wx + (b.wx - a.wx) * t, wy = a.wy + (b.wy - a.wy) * t })
     if not seen[k] then
       seen[k] = true
-      local c = R.cells[k]
+      hexes = hexes + 1
+      local c = DangerCell(k)
+      if c then known = known + 1 end
       if Dangerous(c, lvl) then
         count = count + 1
         if c.h and c.h >= lvl then hi = math.max(hi or 0, c.h) end
@@ -517,7 +585,11 @@ local function DangerAlong(a, b)
       end
     end
   end
-  if count == 0 then return nil end
+  if count == 0 then
+    if known * 2 >= hexes then return nil end
+    local lo, zhi, name = T.ZoneDanger(b.map, lvl)
+    return lo and ("|cFFFF5555Careful:|r %s is a level %d-%d zone (you're %d)"):format(name, lo, zhi, lvl) or nil
+  end
   local what = {}
   if skull then what[#what + 1] = "mobs far above your level"
   elseif hi then what[#what + 1] = ("mobs up to level %d"):format(hi) end
@@ -820,7 +892,7 @@ function T.Build()
             local c, cell = base, R.cells[to]
             if (cell.d or 0) > 0 then c = c + 20 * math.min(cell.d, 3) end   -- deaths here: mobs worth avoiding
             if (cell.w or 0) > 0 then c = c * 1.3 end                        -- swimming
-            if Dangerous(cell, builtLevel) then c = c + 60 end               -- too dangerous for your level
+            if Dangerous(DangerCell(to), builtLevel) then c = c + 60 end               -- too dangerous for your level
             return c
           end
           local oneWay = (nab >= 3 and nba == 0) and "ab" or ((nba >= 3 and nab == 0) and "ba" or nil)
