@@ -33,7 +33,9 @@ end
 -- { id, name, total = how many you need, unit = price the plan was built on, base = in your bags when the
 --   list was made, bought = bought here since (may still be in the mail) }
 local ahOpen = false   -- the auction house window is open right now
+local replanOwed = false   -- bought this or an earlier visit, the route not yet rebuilt (things still to buy)
 function WritPath_SetShopList(list)
+  replanOwed = false   -- a new plan: nothing owed from the old list
   for _, it in ipairs(list or {}) do it.base, it.bought = Count(it.id), 0 end
   WritPathNav.shopList = list
   WritPathNav.shopAt = time()
@@ -656,8 +658,18 @@ ev:SetScript("OnEvent", WritPath_Timed("buyer events", function(_, event, a1, a2
     queued, waiting, aheadWaiting, ahead = false, false, nil, {}
     if boughtThisVisit and WritPath_RunBought then WritPath_RunBought() end
     if panel then panel:Hide() end
-    -- done buying: if what you got isn't what was planned, the route is rebuilt from what you have
-    if boughtThisVisit and WritPath_ReplanFromBags then boughtThisVisit = false; C_Timer.After(1, WritPath_ReplanFromBags) end
+    -- done buying: if what you got isn't what was planned, the route is rebuilt from what you have. Left with
+    -- things still to buy (not skipped): the route waits for them, and is rebuilt once the list is done.
+    if boughtThisVisit then replanOwed = true; boughtThisVisit = false end
+    if replanOwed and WritPath_ReplanFromBags then
+      local left = 0
+      for _, it in ipairs(List()) do if not it.skipped and not it.favor and Need(it) > 0 then left = left + 1 end end
+      if left > 0 then
+        Print(("%d thing%s still to buy: the route stays as planned. Finish at the auction house (or skip them) and it's rebuilt from what you have."):format(left, left == 1 and "" or "s"))
+      else
+        replanOwed = false; C_Timer.After(1, WritPath_ReplanFromBags)
+      end
+    end
   elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
     -- a buyout went through: credit the item that auction was for, even if the panel has moved on
     local p = pending[a1]

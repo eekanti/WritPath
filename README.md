@@ -123,7 +123,9 @@ while a plan has something left to buy).
 - More than 25% over the plan's price stops and asks first, and an item only sold as a whole stack bigger than you
   need says so.
 - Purchases that go to your mailbox count as yours straight away.
-- **When you close the auction house**, the route is rebuilt from what you actually bought.
+- **When you close the auction house** with the list done (everything bought or skipped), the route is rebuilt
+  from what you actually bought. Leave with things still to buy and the route stays as planned until you come
+  back and finish.
 
 Then right-click each writ in your bags: WritPath accepts it for you (`/writs accept` turns that off).
 
