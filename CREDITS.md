@@ -28,8 +28,8 @@ Which NPC takes each Craftsman's Writ, and in which zone, was gathered on 2026-1
 - **Wowhead** item and quest tooltips (writ names, tiers, quests, requested items).
 - **wowforever.gg** atlas NPC pages (customer coordinates). https://wowforever.gg/
 - **QuestieDB** (GPL-3.0, https://github.com/Questie/Questie): which NPC takes each writ quest and where that
-  NPC stands, read from its WoW Forever data on 2026-11-15 (customers marked `src = "questie"`). Only these facts
-  were used; no QuestieDB code or files are included.
+  NPC stands, read from its WoW Forever data on 2026-11-15 and again on 2026-11-24 (28 more Artisan and Expert
+  writs; customers marked `src = "questie"`). Only these facts were used; no QuestieDB code or files are included.
 - **QuestieDB** again for where each flight master stands (WritPathData.lua, `flightMasters`), used to place
   the flight points you know when the game can't (2026-11-16).
 - **Polestar** (GPL-3.0, https://github.com/fitzforge/polestar): which NPC five writ quests end at and where that

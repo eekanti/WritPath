@@ -234,8 +234,8 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 ## Sharing what you learn
 
 WritPath players help each other's routes get better. What your copy learns while travelling (road crossings you
-rode, winding paths, boat and zeppelin trips, flight times, writ customers' spots from your hand-ins, and trouble
-spots on your writ routes: high-level mobs and deaths) is passed from player to player until it reaches the author, who checks
+rode, winding paths, boat and zeppelin trips, flight times, writ customers' spots from your hand-ins and from the
+map pins of writs you open, and trouble spots on your writ routes: high-level mobs and deaths) is passed from player to player until it reaches the author, who checks
 it and ships the good parts to everyone in later versions.
 
 - **Anonymous:** your records travel under a random id your copy makes once, never under your character's name. No

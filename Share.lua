@@ -1,8 +1,9 @@
 -- WritPath: sharing what's learned while travelling with the WritPath author's collector, by way of other players.
 --
 -- What's shared: road crossings, winding paths, boat and zeppelin trips, flight times, writ customers' spots from
--- hand-ins, the road steps of writ routes (50-yard hexes) and trouble spots on them. Nothing else: no gold, no
--- items, no character names. Each player's records travel under a random id (made once, kept in the saved data).
+-- hand-ins and from the map pins of opened writs, the road steps of writ routes (50-yard hexes) and trouble spots
+-- on them. Nothing else: no gold, no items, no character names. Each player's records travel under a random id
+-- (made once, kept in the saved data).
 --
 -- The web: every copy asks the WritPath players it can reach (guild, party/raid, instance chat, online friends)
 -- every half hour, keeps what they send (checked, capped, expiring) and passes it on when asked, so the author's
@@ -34,6 +35,10 @@ local function Records()
   for id, v in pairs(L) do   -- customer spots from hand-ins (writ pins are keyed by item id)
     if type(id) == "number" and type(v) == "table" and v.src == "turnin" and v.map then
       out[#out + 1] = ("N,%d,%d,%s,%s,%s"):format(id, v.map, Round(v.x), Round(v.y), Clean(v.npc))
+    elseif type(id) == "number" and type(v) == "table" and v.map and v.x and v.checked and v.src ~= "turnin" then
+      -- 1.19.1: the map pin read when a writ is opened, so a customer nobody has handed in to yet is known as soon
+      -- as anyone opens their writ (a hand-in spot, N, is better and wins when there is one)
+      out[#out + 1] = ("M,%d,%d,%s,%s"):format(id, v.map, Round(v.x), Round(v.y))
     end
   end
   -- (road steps, H records, aren't shared since 1.18.1: roads are no longer learned from rides)
@@ -135,6 +140,7 @@ local CHECK = {
                      and (f[7] or ""):match("^[%d%. /]*$") ~= nil end,
   -- S (boat trips) and F (flight times) from older versions are refused: not kept, not passed on
   N = function(f) return (#f == 5 or #f == 6) and N(f[2], 1, 999999) and Map(f[3]) and XY(f[4], f[5]) end,
+  M = function(f) return #f == 5 and N(f[2], 1, 999999) and Map(f[3]) and XY(f[4], f[5]) end,   -- a writ's map pin (1.19.1)
   -- H (road steps) from older versions are refused since 1.18.1: not kept, not passed on
   Q = function(f)
     if not (#f == 12 or (#f == 13 and (f[13] == "A" or f[13] == "H" or f[13] == "AH" or f[13] == "-"))) then return false end

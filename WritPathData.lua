@@ -30,6 +30,10 @@ WritPath_Data = {
     { from = 1412, to = 1456, x = 39.8, y = 29.2 },   -- Mulgore -> Thunder Bluff (lift)
     { from = 1458, to = 1420, x = 66.3, y = 0.8 },    -- Undercity -> Tirisfal Glades
     { from = 1431, to = 1434, x = 44.8, y = 84.6 },   -- Duskwood -> Stranglethorn Vale (the road south)
+    -- without these, a fresh install only knew Deadwind Pass by way of Swamp of Sorrows, and a route from
+    -- Stranglethorn went straight over the mountains into it (bug report, 2026-11-24)
+    { from = 1431, to = 1430, x = 90.5, y = 41.0 },   -- Duskwood -> Deadwind Pass (the road east from Darkshire)
+    { from = 1431, to = 1433, x = 94.2, y = 10.4 },   -- Duskwood -> Redridge Mountains (the road north-east)
   },
   -- flight times in seconds between flight points (taxi node ids), either direction
   flights = {
