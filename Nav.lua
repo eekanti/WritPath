@@ -209,9 +209,7 @@ end
 -- way it leads along a road. None of its data is copied into WritPath. Without it, the arrow points straight as before.
 local OWNER = "WritPath"
 local WALK_MIN = 80     -- yards: nearer than this, a walk isn't worked out (straight is fine)
-local WALK_NEAR = 15    -- yards: a bend is passed this close (terrain bends sit closer together than a road's)
 local WALK_OFF = 80     -- yards strayed off the path before it's worked out again from where you are
-local WALK_PASSED = 40  -- yards nearer the step's spot than the next bend is: that bend was gone past
 local WALK_AGAIN = 5    -- seconds between requests
 local WALK_FAIL = 30    -- after no path, seconds before asking again for that step
 local WALK_WAIT = 20    -- seconds a request may take before it's given up and asked again
@@ -233,7 +231,7 @@ local function WalkAsk(s, at)
   if walk.cancel then pcall(walk.cancel) end
   at = at or s.at
   -- the old bends stay in use until the new ones arrive
-  local mine = { s = s, at = at, pts = walk.pts, i = walk.i, from = walk.from, asked = now,
+  local mine = { s = s, at = at, pts = walk.pts, i = walk.i, from = walk.from, prog = walk.prog, line = walk.line, asked = now,
                  start = { map, px * 100, py * 100, at[4] } }
   walk = mine
   local ok, cancel = pcall(api.WalkPath, OWNER, { map = map, x = px, y = py }, { map = at[1], x = at[2] / 100, y = at[3] / 100 },
@@ -248,68 +246,57 @@ local function WalkAsk(s, at)
         if type(p) == "table" and p.map and p.x and p.y then pts[#pts + 1] = { p.map, p.x * 100, p.y * 100, at[4] } end
       end
       pts[#pts + 1] = at     -- end on the step's own spot
-      mine.pts, mine.i, mine.from, mine.failed = pts, 1, mine.start, nil
+      mine.pts, mine.i, mine.from, mine.failed, mine.prog, mine.line = pts, 1, mine.start, nil, nil, nil
     end)
   if ok and type(cancel) == "function" then mine.cancel = cancel else mine.failed = true end
 end
 
--- The furthest bend ahead you can ride to straight without leaving the path: every bend before it lies within
--- PULL_WIDE yards of that straight line. A ground path's bends sit a few yards apart and wiggle, so the next one can
--- be behind you while the path runs straight on (1.17.4: in Durotar the arrow pointed back over your shoulder with
--- the pin dead ahead). A bend you've gone past (the path from it runs towards you) doesn't hold it back either.
--- A real detour (round a cliff) keeps its bends far off the line, so the arrow still turns; and the path to that bend
--- may be only a little longer than the straight line, so a switchback (a ramp up a mountain, its legs stacked close
--- together on the map, which has no heights) is followed leg by leg instead of cut straight up the cliff.
-local PULL_WIDE, PULL_AHEAD, PULL_BEHIND = 20, 24, 60   -- yards either side of the line; bends looked ahead; yards
-                                                       -- away a bend gone past may be and still be left out
-local PULL_LONGER, PULL_SLACK = 1.1, 5   -- the path there may be this much longer than the straight line, + yards
-local function Pull(pts, i)
-  local pc, px, py = PlayerYds()
-  if not (pc and px) then return i end
-  local pos = walk.pos
-  if not pos or walk.posFor ~= pts then pos = {}; walk.pos, walk.posFor = pos, pts end
-  local function W(k)
-    local q = pos[k]
-    if q == nil then
-      local c, x, y = WorldYds(pts[k])
-      q = (c == pc and x) and { x, y } or false
-      pos[k] = q
-    end
-    return q
+-- The arrow points CARROT yards further along the ground path from where you are on it, so it only ever points
+-- along ground Shortest Path Forever knows is passable, and always onwards (1.17.4). Where you are on it is the
+-- nearest spot of the path, looked for only a little behind and ahead of how far along it you've got: a ramp up a
+-- mountain has its legs stacked close together on the map (no heights), and the leg above isn't where you are.
+-- (Before: the arrow pointed at the next bend; the bends sit a few yards apart and wiggle, so it could point back
+-- over your shoulder with the step dead ahead.)
+local CARROT = 25                    -- yards ahead along the path
+local SEEK_BACK, SEEK_AHEAD = 20, 100   -- yards of path behind and ahead of your progress searched for where you are
+local function Line(pts)
+  local l = walk.line
+  if l and l.pts == pts then return l end
+  local seq = {}
+  if walk.from then seq[1] = walk.from end
+  for k = 1, #pts do seq[#seq + 1] = pts[k] end
+  l = { pts = pts, seq = seq, xy = {}, cum = { 0 } }
+  for k = 1, #seq do
+    local c, x, y = WorldYds(seq[k])
+    if not (c and x) then return nil end
+    l.c = l.c or c
+    if c ~= l.c then return nil end
+    l.xy[k] = { x, y }
+    if k > 1 then l.cum[k] = l.cum[k - 1] + math.sqrt((x - l.xy[k - 1][1]) ^ 2 + (y - l.xy[k - 1][2]) ^ 2) end
   end
-  local best = i
-  for j = i + 1, math.min(#pts, i + PULL_AHEAD) do
-    local b = W(j); if not b then break end
-    local dx, dy = b[1] - px, b[2] - py
-    local len2 = dx * dx + dy * dy
-    local ok = len2 > 0
-    local lead, run, lx, ly = true, 0, px, py   -- still among the bends gone past; path length so far; last point
-    for k = i, j - 1 do
-      local q = W(k); if not q then ok = false; break end
-      local n = W(k + 1)
-      local mx, my = px - q[1], py - q[2]
-      -- gone past: close by, and the path from this bend runs towards you
-      if lead and n and mx * mx + my * my <= PULL_BEHIND * PULL_BEHIND and (n[1] - q[1]) * mx + (n[2] - q[2]) * my > 0 then
-        -- left out
-      else
-        lead = false
-        local t = math.max(0, math.min(1, ((q[1] - px) * dx + (q[2] - py) * dy) / len2))
-        if (q[1] - px - t * dx) ^ 2 + (q[2] - py - t * dy) ^ 2 > PULL_WIDE * PULL_WIDE then ok = false; break end
-        run = run + math.sqrt((q[1] - lx) ^ 2 + (q[2] - ly) ^ 2); lx, ly = q[1], q[2]
-      end
+  walk.line = l
+  return l
+end
+-- a spot `arc` yards along the path, as a waypoint { map, x, y, label }, and the index (into seq) of the bend after it
+local function Along(l, arc, label)
+  local seq, cum = l.seq, l.cum
+  for k = 1, #seq - 1 do
+    if arc < cum[k + 1] then
+      local a, b = seq[k], seq[k + 1]
+      local len = cum[k + 1] - cum[k]
+      local t = len > 0 and (arc - cum[k]) / len or 1
+      if a[1] ~= b[1] then return b, k + 1 end   -- two different maps: the bend itself
+      local g = walk.carrot or {}
+      g[1], g[2], g[3], g[4] = a[1], a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t, label
+      walk.carrot = g
+      return g, k + 1
     end
-    if ok then
-      run = run + math.sqrt((b[1] - lx) ^ 2 + (b[2] - ly) ^ 2)
-      if run > math.sqrt(len2) * PULL_LONGER + PULL_SLACK then ok = false end
-    end
-    if not ok then break end
-    best = j
   end
-  return best
+  return seq[#seq], #seq
 end
 
--- the next bend of the ground path to a step's spot (or to goal: where you join a road), or the spot itself while
--- there is none
+-- where the arrow points on the ground path to a step's spot (or to goal: where you join a road), or the spot itself
+-- while there is no path
 local function WalkTarget(s, goal)
   local at = goal or (s and s.at)
   if not at then return nil end
@@ -321,32 +308,31 @@ local function WalkTarget(s, goal)
     if d and d > WALK_MIN then WalkAsk(s, at) end
     return at
   end
-  local i = math.min(walk.i or 1, #pts)
-  -- a bend is passed only when you reach it, or when you're on the stretch after it. Never because you're nearer the
-  -- end than the bend is: a ground path doubles back (a switchback up a cliff), and that rule skipped the bend.
-  while i < #pts do
-    local d = Vector(pts[i]); if not d then break end
-    if d <= WALK_NEAR then i = i + 1 else break end
+  local l = Line(pts)
+  local pc, px, py = PlayerYds()
+  if not (l and pc == l.c and px) then return pts[math.min(walk.i or 1, #pts)] end
+  -- where you are on the path
+  local prog, cum, xy = walk.prog or 0, l.cum, l.xy
+  local best, bestArc
+  for k = 1, #xy - 1 do
+    if cum[k + 1] >= prog - SEEK_BACK and cum[k] <= prog + SEEK_AHEAD then
+      local a, b = xy[k], xy[k + 1]
+      local dx, dy = b[1] - a[1], b[2] - a[2]
+      local len2 = dx * dx + dy * dy
+      local t = len2 > 0 and math.max(0, math.min(1, ((px - a[1]) * dx + (py - a[2]) * dy) / len2)) or 0
+      local d2 = (px - a[1] - t * dx) ^ 2 + (py - a[2] - t * dy) ^ 2
+      if not best or d2 < best then best, bestArc = d2, cum[k] + t * (cum[k + 1] - cum[k]) end
+    end
   end
-  if walk.from then
-    local seq = { walk.from }
-    for k = 1, #pts do seq[k + 1] = pts[k] end
-    i = Ahead(seq, i + 1) - 1
-  end
-  walk.i = i
-  -- strayed: much further from the next bend than the path itself runs to it
-  local prev = i > 1 and pts[i - 1] or walk.from
-  local d, leg = Vector(pts[i]), prev and Gap(prev, pts[i])
-  if d and leg and d > leg + WALK_OFF then WalkAsk(s, at) end
-  -- gone past it: you've gained ground since the path was worked out, and are now well nearer the step's spot than
-  -- the bend is (rode a road beside the path, never within WALK_NEAR of the bend). Straight at the spot while the
-  -- path is worked out again from here. (1.17.4: on the way to Felwood the arrow pointed back at a bend left behind.)
-  -- A fresh path that heads away first (round a cliff) doesn't count: you haven't gained ground on it yet.
-  local left, bendLeft = Vector(at), Gap(pts[i], at)
-  local startLeft = walk.from and Gap(walk.from, at)
-  if d and d > WALK_PASSED and left and bendLeft and startLeft
-     and left + WALK_PASSED < bendLeft and left + WALK_PASSED < startLeft then WalkAsk(s, at); return at end
-  return pts[Pull(pts, i)]
+  if bestArc and bestArc > prog then prog = bestArc end
+  walk.prog = prog
+  -- strayed far off the path (or rode on beside it, past where it was looked for): worked out again from where you
+  -- are, and straight at the spot meanwhile (where you left the path is behind you)
+  if not best or best > WALK_OFF * WALK_OFF then WalkAsk(s, at); return at end
+  if prog + CARROT >= cum[#cum] then walk.i = #pts; return at end
+  local g, k = Along(l, prog + CARROT, at[4])
+  walk.i = math.max(1, math.min(#pts, k - (walk.from and 1 or 0)))   -- the next bend (for tests)
+  return g
 end
 function WritPath_WalkState() return walk end   -- for tests
 
