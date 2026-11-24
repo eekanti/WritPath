@@ -509,6 +509,13 @@ arrow.tex = arrow:CreateTexture(nil, "ARTWORK"); arrow.tex:SetAllPoints(); arrow
 arrow.text = arrow:CreateFontString(nil, "OVERLAY")
 arrow.text:SetFont(GameFontNormal:GetFont(), 10, "OUTLINE"); arrow.text:SetPoint("TOP", arrow, "BOTTOM", 0, -5)
 arrow.text:SetJustifyH("CENTER")
+-- arrived: the name and "here" in large type (1.17.4: at size 10 it was easy to miss)
+function arrow:Big(big)
+  big = big and true or false
+  if self.big == big then return end
+  self.big = big
+  self.text:SetFont(GameFontNormal:GetFont(), big and 20 or 10, "OUTLINE")
+end
 arrow:Hide()
 
 ---------------------------------------------------------------- refresh
@@ -635,20 +642,25 @@ arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   if poll > 0.5 then poll = 0; Refresh(true) end
   if tick < 0.03 then return end; tick = 0
   local s = ROUTE[WritPathNav.step]; if not s then return end
-  local g = Target(s)   -- a road's next waypoint, or the step's spot
+  local g = Target(s)   -- where the arrow points: a road's next waypoint, along the ground path, or the step's spot
   if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
   local dist, angle = Vector(g)
+  -- the distance shown is to the marker (the map pin: a road's next waypoint, or the step's spot), not to the spot
+  -- the arrow follows 25 yards ahead on the ground path (1.17.4)
+  local marker = (s.way and s.way[s.wayI or 1]) or s.at
+  local mdist = marker and Vector(marker) or dist
+  self:Big(mdist and mdist < 10)
   if not dist then
     self.tex:SetAlpha(angle == "continent" and 0.4 or 0); self.tex:SetRotation(0)
     self.text:SetText(g[4] .. "\n" .. (angle == "continent" and "|cFFFF5722other continent|r" or "~"))
     return
   end
-  if dist < 10 then
-    self.tex:SetAlpha(0); self.text:SetText(g[4] .. "\n|cFF00FF25here|r"); return
+  if mdist and mdist < 10 then
+    self.tex:SetAlpha(0); self.text:SetText(marker[4] .. "\n|cFF00FF25here|r"); return
   end
   local facing = WritPath_Open(GetPlayerFacing)
   if facing and angle then self.tex:SetAlpha(1); self.tex:SetRotation(angle - facing) else self.tex:SetAlpha(0) end
-  self.text:SetText(("%s\n(%dyd)"):format(g[4], math.floor(dist)))
+  self.text:SetText(("%s\n(%dyd)"):format(g[4], math.floor(mdist or dist)))
 end))
 -- the poll lives on the arrow; keep it running while only the window is shown
 guide:SetScript("OnUpdate", WritPath_Timed("guide window", function(_, e) if not arrow:IsShown() then poll = poll + e; if poll > 0.5 then poll = 0; Refresh(true) end end end))
