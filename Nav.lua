@@ -252,7 +252,7 @@ local function WalkAsk(s, at)
 end
 
 -- The arrow points CARROT yards further along the ground path from where you are on it, so it only ever points
--- along ground Shortest Path Forever knows is passable, and always onwards (1.17.4). Where you are on it is the
+-- along ground Shortest Path Forever knows is passable, and always onwards (1.18.0). Where you are on it is the
 -- nearest spot of the path, looked for only a little behind and ahead of how far along it you've got: a ramp up a
 -- mountain has its legs stacked close together on the map (no heights), and the leg above isn't where you are.
 -- (Before: the arrow pointed at the next bend; the bends sit a few yards apart and wiggle, so it could point back
@@ -371,7 +371,7 @@ local function Target(s)
   -- a road step with Shortest Path Forever: its ground path to where you join the road, which knows the cliffs the
   -- straight ride onto it can't. The traced road is the fallback while there's no path. Once you're on the road,
   -- the road leads (1.17.3: the ground path wandered off a road that ran straight to Felwood, and the arrow kept
-  -- swinging off it). Off it again only past ROAD_LEAVE yards, so the arrow doesn't flip at the edge. (1.17.4: the
+  -- swinging off it). Off it again only past ROAD_LEAVE yards, so the arrow doesn't flip at the edge. (1.18.0: the
   -- ground path went to the road's far end, beside the road, and never joined it.)
   local near = WritPath_RoadGap(w)
   if near then
@@ -538,7 +538,7 @@ arrow.tex = arrow:CreateTexture(nil, "ARTWORK"); arrow.tex:SetAllPoints(); arrow
 arrow.text = arrow:CreateFontString(nil, "OVERLAY")
 arrow.text:SetFont(GameFontNormal:GetFont(), 10, "OUTLINE"); arrow.text:SetPoint("TOP", arrow, "BOTTOM", 0, -5)
 arrow.text:SetJustifyH("CENTER")
--- arrived: the name and "here" in large type (1.17.4: at size 10 it was easy to miss)
+-- arrived: the name and "here" in large type (1.18.0: at size 10 it was easy to miss)
 function arrow:Big(big)
   big = big and true or false
   if self.big == big then return end
@@ -676,7 +676,7 @@ arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
   local dist, angle = Vector(g)
   -- the distance shown is to the marker (the map pin: a road's next waypoint, or the step's spot), not to the spot
-  -- the arrow follows 25 yards ahead on the ground path (1.17.4)
+  -- the arrow follows 25 yards ahead on the ground path (1.18.0)
   local marker = (s.way and s.way[s.wayI or 1]) or s.at
   local mdist = marker and Vector(marker) or dist
   self:Big(mdist and mdist < 10)

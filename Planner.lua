@@ -2724,7 +2724,7 @@ WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartR
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
 WritPath_ReplanFromBags = WritPath_Timed("replanning (bags)", WritPath_ReplanFromBags)
 
----------------------------------------------------------------- map pins (1.17.4)
+---------------------------------------------------------------- map pins (1.18.0)
 -- A map pin you drop yourself becomes a route: the same travel steps a writ route gets (roads, flights, boats,
 -- danger warnings), then the pin, and the arrow leads you there. A writ route in progress wins: a pin dropped then
 -- is left alone. Clearing the pin clears its route, and a new pin replaces it. WritPath's own pins (the next road

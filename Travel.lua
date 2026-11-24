@@ -1098,7 +1098,7 @@ function Time(a, b)
   local best
   local walk = a.inst == b.inst and T.WalkYards(a, b)
   -- the real way on the ground (Shortest Path Forever). Its walk is the shortest, not the fastest: it takes no road
-  -- (1.17.4), so where roads are known it rides off-road, OFFROAD slower, like any other straight ride there
+  -- (1.18.0), so where roads are known it rides off-road, OFFROAD slower, like any other straight ride there
   if walk then best = walk / RIDE * math.max(Ride(a.map), Ride(b.map))
   elseif walk == false then best = nil       -- no way on foot: only roads, flights and ships
   else best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil end
@@ -1107,7 +1107,7 @@ function Time(a, b)
   -- the ground way is known (Shortest Path Forever): a route that stays on the ground (roads, crossings, rides) beats
   -- it only when every straight ride in it is short, since a long one may run through a cliff (1.16.2: Juo, in the
   -- Hinterlands, was sent straight over a 500-yard mountain to reach the road). A flight or a ship always may.
-  -- (1.17.4: nothing on the ground could beat the walk, so the road to Felwood lost to a walk beside it and the
+  -- (1.18.0: nothing on the ground could beat the walk, so the road to Felwood lost to a walk beside it and the
   -- arrow led off the road.) (worked out once per starting place and kept with its shortest times: r.carried[node])
   local function Carried(i)
     local c = r.carried
