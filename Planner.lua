@@ -2554,6 +2554,11 @@ function WritPath_DropFromPlan(ids, why)
         end
       end
       for id in pairs(WritPathNav.dropped) do ids[id] = nil end
+      -- writs the new plan left out come off the planned cost too, not just the dropped ones
+      for id in pairs(ids0) do
+        local q = DB[id] and DB[id].q
+        if not ids[id] and not WritPathNav.dropped[id] and q and WritPathNav.plannedCost then saved = saved + (WritPathNav.plannedCost[q] or 0) end
+      end
       WritPathNav.planIds = ids
     end
   end

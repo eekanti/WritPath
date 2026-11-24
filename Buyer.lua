@@ -360,6 +360,7 @@ local queued, waiting = false, false   -- the item on the button: query to send 
 local cache = {}                       -- [item id] = { pick = what to buy or false, t = when }
 local ahead = {}                       -- item ids being looked up in advance, in order
 local aheadWaiting = nil               -- the advance lookup awaiting its answer
+local askedAt, aheadAt = 0, 0          -- when each lookup went out
 -- Random-enchant items ("Wild Leather Helmet of the Owl") are listed under a key per suffix, so a search for the
 -- plain item finds nothing. Then the auction house is browsed by name, and the cheapest suffix is searched.
 local variants = {}                    -- [item id] = "browsing" while looking for its suffixes, "done" after
@@ -370,7 +371,7 @@ local function Entry(id) for _, it in ipairs(List()) do if it.id == id and Need(
 
 local Decide
 function Search(target)
-  state.pick = nil
+  state.pick, state.sendBuy = nil, false
   if target then state.it = target else state.i, state.it = NextItem() end
   if not state.it then state.phase = "done"; Render(); return end
   local c = cache[state.it.id]
@@ -544,17 +545,28 @@ local function NoteSeen(it, pick)
   WritPathNav.seenPrice[it.id] = { u = math.floor(pick.total / need + 0.5), t = time() }
 end
 
+-- the game takes one auction house message at a time and drops one sent while it's busy (a lookup ahead still
+-- out), so a purchase waits its turn: SendBuy runs when the auction house is ready (OnUpdate)
+local function SendBuy()
+  local p = state.pick
+  state.sendBuy, state.since = false, GetTime()
+  if p.kind == "item" then
+    pending[p.auctionID] = { it = state.it, qty = p.qty, paid = p.total }
+    C_AuctionHouse.PlaceBid(p.auctionID, p.bid or p.total)
+  else
+    C_AuctionHouse.StartCommoditiesPurchase(p.itemID, p.qty)
+  end
+end
+
 local function Buy()
   local p = state.pick
   state.since = GetTime()
   NoteSeen(state.it, p)
-  if p.kind == "item" then
-    state.phase, state.paid = "buying", p.total
-    pending[p.auctionID] = { it = state.it, qty = p.qty, paid = p.total }
-    C_AuctionHouse.PlaceBid(p.auctionID, p.bid or p.total)
-  elseif p.kind == "commodity" then
-    state.phase = "quote"
-    C_AuctionHouse.StartCommoditiesPurchase(p.itemID, p.qty)
+  if p.kind == "item" or p.kind == "commodity" then
+    state.phase = p.kind == "item" and "buying" or "quote"
+    if p.kind == "item" then state.paid = p.total end
+    state.sendBuy = true
+    if Ready() then SendBuy() end
   else
     local info = { GetAuctionItemInfo("list", p.index) }   -- still the same auction as shown?
     if not (info[17] == p.itemId and (info[3] or 1) == p.qty and (info[10] or 0) == p.total) then Search(); return end
@@ -623,7 +635,7 @@ if MODERN then
                        "ITEM_SEARCH_RESULTS_ADDED", "COMMODITY_PRICE_UPDATED",
                        "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
                        "COMMODITY_PRICE_UNAVAILABLE", "COMMODITY_PURCHASE_SUCCEEDED", "COMMODITY_PURCHASE_FAILED",
-                       "AUCTION_HOUSE_PURCHASE_COMPLETED" }) do pcall(ev.RegisterEvent, ev, e) end
+                       "AUCTION_HOUSE_PURCHASE_COMPLETED", "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" }) do pcall(ev.RegisterEvent, ev, e) end
 else
   ev:RegisterEvent("AUCTION_ITEM_LIST_UPDATE")
 end
@@ -677,6 +689,22 @@ ev:SetScript("OnEvent", WritPath_Timed("buyer events", function(_, event, a1, a2
       pending[a1] = nil
       if state.phase == "buying" and state.pick and state.pick.auctionID == a1 then Bought(p.qty)
       else Credit(p.it, p.qty, p.paid); if state.phase == "unsure" then Search() end end
+    end
+  elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
+    -- a lookup the game threw away: ask again rather than wait for an answer that never comes
+    if waiting then queued, waiting = true, false end
+    if aheadWaiting then table.insert(ahead, 1, aheadWaiting); aheadWaiting = nil end
+  elseif event == "CHAT_MSG_SYSTEM" and MODERN and WritPath_Text(a1) and a1:match(WON) then
+    -- "You won an auction for X": the game's own word that a buyout went through, when the purchase event is missed
+    local name = a1:match(WON)
+    for id, p in pairs(pending) do
+      if (ItemName(p.it.id) or p.it.name) == name then
+        pending[id] = nil
+        if state.phase == "buying" and state.pick and state.pick.auctionID == id then Bought(p.qty)
+        elseif state.phase == "unsure" and state.pick and state.pick.auctionID == id then Credit(p.it, p.qty, p.paid); Search()
+        else Credit(p.it, p.qty, p.paid) end
+        break
+      end
     end
   elseif not (panel and panel:IsShown() and state.it) then
     return
@@ -779,16 +807,23 @@ end))
 -- queries go out as soon as the auction house allows one (the item on the button first, then the ones
 -- ahead); a purchase that's never confirmed stops and asks
 ev:SetScript("OnUpdate", WritPath_Timed("buyer update", function()
-  if queued and state.it and Ready() then
-    queued, waiting = false, true
+  if state.sendBuy and state.it and state.pick then
+    if Ready() then SendBuy() end
+  elseif queued and state.it and Ready() then
+    queued, waiting, askedAt = false, true, GetTime()
     SendQuery(state.it.id)
+  elseif waiting and state.phase == "searching" and GetTime() - askedAt > 6 then
+    queued, waiting = true, false   -- no answer: the lookup was lost, ask again
   elseif MODERN and not queued and not waiting and not aheadWaiting and #ahead > 0 and Ready()
          and state.phase ~= "buying" and state.phase ~= "quote" and state.phase ~= "confirm" then
-    aheadWaiting = table.remove(ahead, 1)
+    aheadWaiting, aheadAt = table.remove(ahead, 1), GetTime()
     SendQuery(aheadWaiting)
+  elseif aheadWaiting and GetTime() - aheadAt > 6 then
+    aheadWaiting = nil   -- never answered: let the rest go on (it's looked up when you get to it)
   end
   if (state.phase == "buying" or state.phase == "quote") and GetTime() - (state.since or 0) > 8 then
-    state.phase = "unsure"; Render()
+    if state.sendBuy then Search()   -- the auction house never got free: nothing was sent, look again
+    else state.phase = "unsure"; Render() end
   end
 end))
 
