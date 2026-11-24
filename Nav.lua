@@ -109,11 +109,15 @@ local function StepDone(i)
     hit = true
     for _, q in ipairs(d.quests) do if not QuestDone(q) then hit = false end end
   end
-  if d.ready then   -- planned route's shopping step: every writ bought and accepted, every item in the bags
+  if d.ready then   -- planned route's shopping step: every writ bought (in your bags or opened), every item in the bags
     hit = true
-    for _, q in ipairs(d.ready.quests or {}) do
+    -- 1.18.3: writs are opened as you go (WritPath_OpenNextWrit), so one still in your bags counts. A route saved
+    -- by an older version has no writ ids: each is found from its quest, so that route doesn't wait on opening either.
+    local writs = d.ready.writs or {}
+    for i, q in ipairs(d.ready.quests or {}) do
       local inLog = C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetLogIndexForQuestID(q)
-      if not (QuestDone(q) or inLog) then hit = false end
+      local id = writs[i] or (WritPath_WritForQuest and WritPath_WritForQuest(q))
+      if not (QuestDone(q) or inLog or (id and Count(id) > 0)) then hit = false end
     end
     for _, it in ipairs(d.ready.items or {}) do   -- { item, count, quest }: not needed once that writ is done
       if not QuestDone(it[3]) and Count(it[1]) < it[2] then hit = false end
@@ -547,6 +551,46 @@ function arrow:Big(big)
 end
 arrow:Hide()
 
+---------------------------------------------------------------- opening writs as you go
+-- The next customer's writ is opened for you once they're the next delivery (Planner.lua accepts it), so you don't
+-- right-click every writ at the start and the quest log holds only what you're about to hand in. Never while
+-- talking to anyone: with a merchant, auction house, mailbox or bank open, using a bag item sells, lists or moves it.
+do
+  local tried = {}   -- [writ item id] = when it was last tried (a writ that doesn't open isn't hammered)
+  local BUSY = { "MerchantFrame", "AuctionHouseFrame", "AuctionFrame", "MailFrame", "BankFrame", "GuildBankFrame",
+                 "TradeFrame", "QuestFrame", "GossipFrame", "ClassTrainerFrame" }
+  local function Busy()
+    if WritPath_Open(InCombatLockdown) or WritPath_Open(UnitExists, "npc") then return true end
+    for _, n in ipairs(BUSY) do local f = _G[n]; if f and f.IsShown and f:IsShown() then return true end end
+    return false
+  end
+  local function FindWrit(id)
+    local C = C_Container
+    for bag = 0, 4 do
+      for slot = 1, (C.GetContainerNumSlots(bag) or 0) do
+        if C.GetContainerItemID(bag, slot) == id then return bag, slot end
+      end
+    end
+  end
+  function WritPath_OpenNextWrit(cur)
+    if WritPathNav.noAutoAccept or not (C_Container and C_Container.UseContainerItem and C_Container.GetContainerItemID) then return end
+    local W = WritPath_Writs or {}
+    for i = cur or WritPathNav.step or 1, #ROUTE do
+      local s = ROUTE[i]
+      if s.done and s.done.ready then return end   -- still shopping
+      if s.writ then
+        local w = W[s.writ]
+        if not w or QuestDone(w.q) or (C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetLogIndexForQuestID(w.q)) then return end
+        if (tried[s.writ] and GetTime() - tried[s.writ] < 10) or Busy() then return end
+        tried[s.writ] = GetTime()
+        local bag, slot = FindWrit(s.writ)
+        if bag then C_Container.UseContainerItem(bag, slot) end
+        return
+      end
+    end
+  end
+end
+
 ---------------------------------------------------------------- refresh
 local lastStep
 
@@ -581,6 +625,7 @@ function Refresh(announce)
     end
   end
   WritPathNav.step = cur
+  WritPath_OpenNextWrit(cur)
   title:SetText(WritPathNav.title or "Writs")
   scroll = math.max(1 - cur, math.min(scroll, #ROUTE - cur))
   count:SetText(math.min(cur, #ROUTE) .. "/" .. #ROUTE .. (scroll ~= 0 and " |cFFAAAAAA(scrolled)|r" or ""))
@@ -950,7 +995,7 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs runs|r  your last runs: the planner's time estimate against your real time")
     Print("  |cFFFFD100/writs pins|r  turn off (or back on) a map pin you drop becoming a route the arrow leads you on"
       .. (WritPathNav.noPins and " |cFFAAAAAA(off now)|r" or ""))
-    Print("  |cFFFFD100/writs accept|r  turn off (or back on) accepting writs, handing them in, and handing in Sealed crates")
+    Print("  |cFFFFD100/writs accept|r  turn off (or back on) opening and accepting writs, handing them in, and handing in Sealed crates")
     Print("  |cFFFFD100/writs autofly|r  turn on (or off) flying to the next stop when you talk to the guide's flight master"
       .. (WritPathNav.autoFly and " |cFFAAAAAA(on now)|r" or ""))
     Print("  |cFFFFD100/writs travel|r  which flight paths, roads and ships WritPath knows (for a route that walks everywhere)")
@@ -982,8 +1027,8 @@ SlashCmdList.WRITPATH = function(msg)
   elseif msg == "plan" then WritPath_OpenPlanner()
   elseif msg == "accept" then
     WritPathNav.noAutoAccept = not WritPathNav.noAutoAccept or nil
-    Print(WritPathNav.noAutoAccept and "Writs are no longer accepted or handed in for you."
-      or "Writs are accepted for you when you open them, and handed in when you talk to their customer.")
+    Print(WritPathNav.noAutoAccept and "Writs are no longer opened, accepted or handed in for you."
+      or "The next customer's writ is opened and accepted for you, and handed in when you talk to them.")
   elseif msg == "leg" then
     -- why the way to the next customer looks the way it does; also saved for a /reload so it can be read later
     local T = WritPath_Travel

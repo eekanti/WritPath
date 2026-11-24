@@ -1103,20 +1103,21 @@ end
 
 local FP_DETOUR, GREY_ = 1e9, "|cFFAAAAAA"   -- any flight path you lack in a zone the route takes you to
 local function Steps(plan)
-  local steps, buy, quests, items, suggested = {}, {}, {}, {}, {}
+  local steps, buy, quests, items, suggested, writs = {}, {}, {}, {}, {}, {}
   for _, p in ipairs(plan.route) do
     if not p.have then buy[#buy + 1] = "{buy} " .. Y .. "Craftsman's Writ: " .. p.w.name .. "|r" end
     if p.need > 0 then
       buy[#buy + 1] = "{buy} " .. Y .. (ItemName(p.w.req) or p.w.name) .. "|r" .. (p.need > 1 and (" x" .. p.need) or "")
     end
     quests[#quests + 1] = p.w.q
+    writs[#writs + 1] = p.id
     items[#items + 1] = { p.w.req, p.w.n or 1, p.w.q }
   end
   local first = { "{buy} At the auction house buy:" }
   for _, l in ipairs(buy) do first[#first + 1] = l end
-  first[#first + 1] = W_ .. "Then right-click every writ to accept it|r"
-  if #buy == 0 then first = { "{buy} You have every writ and item: right-click each writ to accept it" } end
-  steps[1] = { lines = first, done = { ready = { quests = quests, items = items } } }
+  first[#first + 1] = GREY_ .. "Each writ is opened for you when its customer is next|r"
+  if #buy == 0 then first = { "{buy} You have every writ and item" } end
+  steps[1] = { lines = first, done = { ready = { quests = quests, items = items, writs = writs } } }
 
   local prev, last = plan.start, nil
   for ri, p in ipairs(plan.route) do
@@ -1151,7 +1152,7 @@ local function Steps(plan)
       lines[#lines + 1] = "{goto} Go to " .. G .. (p.c.npc or "the writ customer") .. "|r in " .. zone
       if warn then lines[#lines + 1] = warn end
       lines[#lines + 1] = "{turnin} Hand in " .. Y .. p.w.name .. "|r"
-      if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once you accept the writ, its map pin sets the arrow|r" end
+      if not p.c.exact then lines[#lines + 1] = W_ .. "Exact spot unknown: once the writ is open, its map pin sets the arrow|r" end
       -- a customer who walks a patrol: where to look
       if base and base.patrol then lines[#lines + 1] = GREY_ .. base.patrol .. "|r" end
       -- a flight path you don't have in this customer's zone: worth grabbing while you're there, on the way in when
@@ -2380,9 +2381,11 @@ local function TakePaid(id, n)
 end
 local writQuests
 function WritPath_IsWritQuest(q)
-  if not writQuests then writQuests = {}; for _, w in pairs(DB) do if w.q then writQuests[w.q] = true end end end
-  return writQuests[q] or false
+  if not writQuests then writQuests = {}; for id, w in pairs(DB) do if w.q then writQuests[w.q] = id end end end
+  return writQuests[q] and true or false
 end
+-- the writ (its item id) that starts a quest (Nav.lua's shopping step finds writs still in your bags)
+function WritPath_WritForQuest(q) return WritPath_IsWritQuest(q) and writQuests[q] or nil end
 
 function WritPath_WritByQuest(q)
   for id, w in pairs(DB) do

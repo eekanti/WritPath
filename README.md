@@ -92,8 +92,8 @@ Open the planner (map icon). There is one **Plan** button:
    what you spend). Hover a card for the details; the one you picked has a highlighted border.
    Your own writs whose items you have are always used; ones that still need an item compete on price.
 3. Click a card to see its writs. "yours" means you already have it; a price means it has to be bought.
-   Customers known only by their zone are included too: when you accept their writ, its map pin gives the exact
-   spot before you travel.
+   Customers known only by their zone are included too: when their writ is opened on the way, its map pin gives
+   the exact spot before you travel.
 4. If the target can't be reached today, the plan says how close you can get and why.
 5. Click **Start route**. This sets the guide, starts tracking the plan's money, and makes the shopping list.
 
@@ -129,7 +129,9 @@ while a plan has something left to buy).
   from what you actually bought. Leave with things still to buy and the route stays as planned until you come
   back and finish.
 
-Then right-click each writ in your bags: WritPath accepts it for you (`/writs accept` turns that off).
+No need to open your writs: when a customer is your next stop, WritPath opens their writ from your bags and
+accepts it, so your quest log only holds what you're about to hand in. It waits until you're out of combat and not
+talking to anyone (`/writs accept` turns this off).
 
 ### Follow the guide
 
@@ -213,7 +215,7 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs` | Show or hide the guide window |
 | `/writs plan` | Open the planner (writs for a rep target, or Merchant's Favor) |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
-| `/writs accept` | Turn off (or back on) accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
+| `/writs accept` | Turn off (or back on) opening and accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
 | `/writs autofly` | Turn on (or off) taking the guide's flight when you talk to its flight master (the planner's Auto-fly box) |
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
