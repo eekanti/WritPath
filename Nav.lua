@@ -253,6 +253,46 @@ local function WalkAsk(s, at)
   if ok and type(cancel) == "function" then mine.cancel = cancel else mine.failed = true end
 end
 
+-- The furthest bend ahead you can ride to straight without leaving the path: every bend before it lies within
+-- PULL_WIDE yards of that straight line. A ground path's bends sit a few yards apart and wiggle, so the next one can
+-- be behind you while the path runs straight on (1.17.4: in Durotar the arrow pointed back over your shoulder with
+-- the pin dead ahead). A bend just behind you doesn't hold it back either (you came at the path from the side).
+-- A real detour (round a cliff) keeps its bends far off the line, so the arrow still turns.
+local PULL_WIDE, PULL_AHEAD, PULL_BEHIND = 20, 24, 60   -- yards either side of the line; bends looked ahead; yards
+                                                       -- behind you a bend may be and still be left out
+local function Pull(pts, i)
+  local pc, px, py = PlayerYds()
+  if not (pc and px) then return i end
+  local pos = walk.pos
+  if not pos or walk.posFor ~= pts then pos = {}; walk.pos, walk.posFor = pos, pts end
+  local function W(k)
+    local q = pos[k]
+    if q == nil then
+      local c, x, y = WorldYds(pts[k])
+      q = (c == pc and x) and { x, y } or false
+      pos[k] = q
+    end
+    return q
+  end
+  local best = i
+  for j = i + 1, math.min(#pts, i + PULL_AHEAD) do
+    local b = W(j); if not b then break end
+    local dx, dy = b[1] - px, b[2] - py
+    local len2 = dx * dx + dy * dy
+    local ok = len2 > 0
+    for k = i, j - 1 do
+      local q = W(k); if not q then ok = false; break end
+      local u = ((q[1] - px) * dx + (q[2] - py) * dy) / len2
+      local t = math.max(0, math.min(1, u))
+      local off = (q[1] - px - t * dx) ^ 2 + (q[2] - py - t * dy) ^ 2
+      if off > PULL_WIDE * PULL_WIDE and not (u <= 0 and off <= PULL_BEHIND * PULL_BEHIND) then ok = false; break end
+    end
+    if not ok then break end
+    best = j
+  end
+  return best
+end
+
 -- the next bend of the ground path to a step's spot (or to goal: where you join a road), or the spot itself while
 -- there is none
 local function WalkTarget(s, goal)
@@ -291,7 +331,7 @@ local function WalkTarget(s, goal)
   local startLeft = walk.from and Gap(walk.from, at)
   if d and d > WALK_PASSED and left and bendLeft and startLeft
      and left + WALK_PASSED < bendLeft and left + WALK_PASSED < startLeft then WalkAsk(s, at); return at end
-  return pts[i]
+  return pts[Pull(pts, i)]
 end
 function WritPath_WalkState() return walk end   -- for tests
 
