@@ -256,10 +256,13 @@ end
 -- The furthest bend ahead you can ride to straight without leaving the path: every bend before it lies within
 -- PULL_WIDE yards of that straight line. A ground path's bends sit a few yards apart and wiggle, so the next one can
 -- be behind you while the path runs straight on (1.17.4: in Durotar the arrow pointed back over your shoulder with
--- the pin dead ahead). A bend just behind you doesn't hold it back either (you came at the path from the side).
--- A real detour (round a cliff) keeps its bends far off the line, so the arrow still turns.
+-- the pin dead ahead). A bend you've gone past (the path from it runs towards you) doesn't hold it back either.
+-- A real detour (round a cliff) keeps its bends far off the line, so the arrow still turns; and the path to that bend
+-- may be only a little longer than the straight line, so a switchback (a ramp up a mountain, its legs stacked close
+-- together on the map, which has no heights) is followed leg by leg instead of cut straight up the cliff.
 local PULL_WIDE, PULL_AHEAD, PULL_BEHIND = 20, 24, 60   -- yards either side of the line; bends looked ahead; yards
-                                                       -- behind you a bend may be and still be left out
+                                                       -- away a bend gone past may be and still be left out
+local PULL_LONGER, PULL_SLACK = 1.1, 5   -- the path there may be this much longer than the straight line, + yards
 local function Pull(pts, i)
   local pc, px, py = PlayerYds()
   if not (pc and px) then return i end
@@ -280,12 +283,24 @@ local function Pull(pts, i)
     local dx, dy = b[1] - px, b[2] - py
     local len2 = dx * dx + dy * dy
     local ok = len2 > 0
+    local lead, run, lx, ly = true, 0, px, py   -- still among the bends gone past; path length so far; last point
     for k = i, j - 1 do
       local q = W(k); if not q then ok = false; break end
-      local u = ((q[1] - px) * dx + (q[2] - py) * dy) / len2
-      local t = math.max(0, math.min(1, u))
-      local off = (q[1] - px - t * dx) ^ 2 + (q[2] - py - t * dy) ^ 2
-      if off > PULL_WIDE * PULL_WIDE and not (u <= 0 and off <= PULL_BEHIND * PULL_BEHIND) then ok = false; break end
+      local n = W(k + 1)
+      local mx, my = px - q[1], py - q[2]
+      -- gone past: close by, and the path from this bend runs towards you
+      if lead and n and mx * mx + my * my <= PULL_BEHIND * PULL_BEHIND and (n[1] - q[1]) * mx + (n[2] - q[2]) * my > 0 then
+        -- left out
+      else
+        lead = false
+        local t = math.max(0, math.min(1, ((q[1] - px) * dx + (q[2] - py) * dy) / len2))
+        if (q[1] - px - t * dx) ^ 2 + (q[2] - py - t * dy) ^ 2 > PULL_WIDE * PULL_WIDE then ok = false; break end
+        run = run + math.sqrt((q[1] - lx) ^ 2 + (q[2] - ly) ^ 2); lx, ly = q[1], q[2]
+      end
+    end
+    if ok then
+      run = run + math.sqrt((b[1] - lx) ^ 2 + (b[2] - ly) ^ 2)
+      if run > math.sqrt(len2) * PULL_LONGER + PULL_SLACK then ok = false end
     end
     if not ok then break end
     best = j
