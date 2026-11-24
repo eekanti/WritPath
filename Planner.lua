@@ -2718,7 +2718,7 @@ local walkLogin = CreateFrame("Frame")
 walkLogin:RegisterEvent("PLAYER_LOGIN")
 walkLogin:SetScript("OnEvent", function() C_Timer.After(60, function() WritPath_WalkPrefetch() end) end)
 
-WritPath_PlannerInternals = { Job = Job, Shown = function() return current end, LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn, Room = Room, WarnRoom = WarnRoom }
+WritPath_PlannerInternals = { Job = Job, Shown = function() return current end, LearnTurnin = LearnTurnin, NoteTurnin = NoteTurnin, BuyList = BuyList, PriceAgeText = function() return PriceAge(current) end, Scroll = scroll, Content = content, ApplySkin = ApplySkin, PlainLook = PlainLook, PlanBoth = PlanBoth, ShoppingFor = ShoppingFor, Plan = Plan, PlanOwned = PlanOwned, BestOrder = BestOrder, Steps = Steps, TravelSteps = TravelSteps, Travel = Travel, Customer = Customer, Candidates = Candidates, Learn = Learn, Room = Room, WarnRoom = WarnRoom }
 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
