@@ -447,8 +447,8 @@ end
 ---------------------------------------------------------------- the graph
 local nodes, byZone, cache, roads
 local builtLevel   -- the player level the route map was built for (dangerous roads depend on it)
-local roadZone = {}       -- zones with learned roads (checkpoints): off-road riding there counts OFFROAD slower
-local ROAD_RUNS, OFFROAD, ROAD_ACCESS = 3, 1.3, 5   -- runs before a step is road; off-road penalty; access every 5 spots
+local roadZone = {}       -- zones with traced roads: off-road riding there counts OFFROAD slower
+local OFFROAD = 1.3   -- off-road penalty
 
 function T.Reset() nodes, byZone, cache, roads, roadZone = nil, nil, nil, nil, {} end
 local function Ride(zone) return roadZone[zone] and OFFROAD or 1 end   -- straight riding inside a zone
@@ -857,86 +857,22 @@ function T.Build()
   end
   -- which zones have known roads (a crossing on either side)
   for _, n in ipairs(nodes) do if n.kind == "exit" or n.kind == "entry" then roads[n.zone] = true end end
-  -- learned roads: checkpoint steps ridden in ROAD_RUNS or more runs. A stretch of road with no junction is one
-  -- link that remembers its shape (with an access point every ROAD_ACCESS spots); its cost is the time it really
-  -- took, plus extra where players died or swam.
-  local R = L.roads
-  local roadNodes = {}
-  if R and R.v == 2 and R.edges and R.cells then   -- v2: hexes (an old square-grid store is ignored)
-    local pt = {}
-    local function P(k)
-      if pt[k] == nil then local c = R.cells[k]; pt[k] = c and T.Point(c.m, c.x, c.y) or false end
-      return pt[k]
-    end
-    -- a hex is road when it was ridden and ROAD_RUNS different runs went through it or right next to it: a road
-    -- along the edge between two rows of hexes still adds up, and no run is counted twice
-    local isRoad, near = {}, R.near or {}
-    for key, c in pairs(R.cells) do
-      if (c.v or 0) >= 1 and (near[key] or 0) >= ROAD_RUNS then isRoad[key] = true end
-    end
-    -- linked where a run actually moved between them (never through a wall); one way only when it's clear (3+ runs
-    -- one way, none back: a drop you can't climb)
-    local step, nbr = {}, {}       -- step[a][b] = cost; nbr[a] = set of spots linked either way
-    local function E(a, b) local v = R.edges[a .. ">" .. b]; return v and (type(v) == "number" and { n = v } or v) end
-    local seen = {}
-    for key in pairs(R.edges) do
-      local a, b = key:match("^(.-)>(.+)$")
-      local pair = a and b and ((a < b) and (a .. "|" .. b) or (b .. "|" .. a))
-      if pair and not seen[pair] and isRoad[a] and isRoad[b] then
-        seen[pair] = true
-        local pa, pb = P(a), P(b)
-        if pa and pb and pa.inst == pb.inst then
-          local ab, ba = E(a, b), E(b, a)
-          local nab, nba = ab and ab.n or 0, ba and ba.n or 0
-          local r, k = (ab and ab.r or 0) + (ba and ba.r or 0), (ab and ab.k or 0) + (ba and ba.k or 0)
-          local base = Dist(pa, pb) / RIDE * (k > 0 and r / k or 1)
-          local function Cost(to)
-            local c, cell = base, R.cells[to]
-            if (cell.d or 0) > 0 then c = c + 20 * math.min(cell.d, 3) end   -- deaths here: mobs worth avoiding
-            if (cell.w or 0) > 0 then c = c * 1.3 end                        -- swimming
-            if Dangerous(DangerCell(to), builtLevel) then c = c + 60 end               -- too dangerous for your level
-            return c
-          end
-          local oneWay = (nab >= 3 and nba == 0) and "ab" or ((nba >= 3 and nab == 0) and "ba" or nil)
-          if oneWay ~= "ba" then step[a] = step[a] or {}; step[a][b] = Cost(b) end
-          if oneWay ~= "ab" then step[b] = step[b] or {}; step[b][a] = Cost(a) end
-          nbr[a] = nbr[a] or {}; nbr[a][b] = true
-          nbr[b] = nbr[b] or {}; nbr[b][a] = true
-          roadZone[R.cells[a].m], roadZone[R.cells[b].m] = true, true
-        end
-      end
-    end
-    local function Count(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
-    local function Interior(k) return Count(nbr[k]) == 2 end
-    local function NodeOf(k)
-      if not roadNodes[k] then roadNodes[k] = Add({ zone = R.cells[k].m, p = P(k), kind = "road" }) end
-      return roadNodes[k]
-    end
-    -- walk every stretch from a junction or end (or an access point) to the next one
-    local walked = {}
-    local function Walk(a)
-      if walked[a] then return end
-      walked[a] = true
-      for b, cost in pairs(step[a] or {}) do
-        local pts, total, prev, cur, len = { P(a), P(b) }, cost, a, b, 1
-        while Interior(cur) and len % ROAD_ACCESS ~= 0 do
-          local nxt
-          for c in pairs(step[cur] or {}) do if c ~= prev then nxt = c end end
-          if not nxt then break end   -- a one-way end: this spot becomes a place of its own
-          total = total + step[cur][nxt]; pts[#pts + 1] = P(nxt)
-          prev, cur, len = cur, nxt, len + 1
-        end
-        Edge(NodeOf(a), NodeOf(cur), total, "road", nil, pts)
-        if Interior(cur) and len % ROAD_ACCESS == 0 then Walk(cur) end
-      end
-    end
-    for k in pairs(step) do if not Interior(k) then Walk(k) end end
-  end
   -- roads traced from the zone maps (WritPathRoads.lua): every player starts with them, so routes follow the drawn
   -- roads instead of a straight line through the mountains. Each point is a road spot; lines that meet at the same
-  -- point share it (a junction). Trails count a little slower. Learned roads (above) are timed by real rides, so a
-  -- shortcut players use wins wherever it's faster.
+  -- point share it (a junction). Trails count a little slower, and a stretch with mobs well above your level (seen
+  -- by WritPath players: WritPathDanger.lua, or by you) costs a minute more, so a route goes round it where it can.
+  -- (1.18.1: roads are no longer learned from your rides: in all its play the busiest WritPath player's rides made
+  -- 8 hexes of road. The traced roads and Shortest Path Forever's ground paths do that job.)
   local TRAIL = 1.15
+  local function RoadDanger(a, b)
+    local n = math.max(1, math.floor(Dist(a, b) / 50))
+    for i = 0, n do
+      local t = i / n
+      local q = { inst = a.inst, wx = a.wx + (b.wx - a.wx) * t, wy = a.wy + (b.wy - a.wy) * t }
+      if Dangerous(DangerCell(HexKey(q)), builtLevel) then return 60 end
+    end
+    return 0
+  end
   for m, z in pairs(WritPath_MapRoads or {}) do
     local spot = {}
     local function Spot(x, y)
@@ -955,7 +891,7 @@ function T.Build()
         for i = 1, #line - 1, 2 do
           local n = Spot(line[i], line[i + 1])
           if n and prev and n ~= prev and n.p.inst == prev.p.inst then
-            local c = Dist(prev.p, n.p) / RIDE * f
+            local c = Dist(prev.p, n.p) / RIDE * f + RoadDanger(prev.p, n.p)
             Edge(prev, n, c, "road", nil, { prev.p, n.p }); Edge(n, prev, c, "road", nil, { n.p, prev.p })
             any = true
           end
@@ -1513,60 +1449,24 @@ local function RecordPath(trail, a, b)
 end
 T.Path = { Simplify = Simplify, Agree = Agree, Record = function(trail, a, b) RecordPath(trail, a, b) end }
 
--- Checkpoints (roads learned from many rides): the world is tiled with 50-yard hexes (HexKey above). While a writ route is
--- under way, every step from one hex into the next is counted, once per run, and so is each hex it passes. A hex is
--- road when 3 different runs went through it or a neighbour (Build); a wrong turn or a chase almost never repeats. Each step also keeps how slow it was (its time against the
--- time it takes at the speed you were moving: 1.0 is open riding, 2.0 took twice as long), and each spot how often
--- someone died or swam there.
+-- Spots on the road (50-yard hexes, HexKey above): the hostile mob levels seen from the road on a writ route, and
+-- where someone died or swam. They warn about and steer routes round dangerous stretches, and are shared (Q records).
+-- (Before 1.18.1 the hexes also counted every ride to learn roads: edges, near, v. That's gone; the first time this
+-- runs, those counts and the hexes with nothing else on them are dropped.)
 local CellKey = HexKey
 local function Roads()
   -- v2: 50-yard hexes (the first version used 100-yard squares; those few records are dropped)
-  if not (WritPathLearned.roads and WritPathLearned.roads.v == 2) then WritPathLearned.roads = { v = 2, cells = {}, edges = {}, near = {} } end
-  return WritPathLearned.roads
-end
-local function Edge0(v) if type(v) == "number" then return { n = v } end; return v end   -- older saves: a bare count
--- p: a spot of a leg being saved (with the speed and swimming seen there when it was ridden)
-local function RecordStep(p, now)
-  local run = WritPathNav and WritPathNav.run
-  local runId = run and run.start or 0
-  if REC.runId ~= runId then REC.runId, REC.runSteps, REC.runSwim, REC.runCells, REC.runNear = runId, {}, {}, {}, {} end
-  local key = CellKey(p)
-  local R = Roads()
-  local cell = R.cells[key]
-  if not cell then cell = { m = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }; R.cells[key] = cell end
-  if not REC.runCells[key] then
-    REC.runCells[key] = true; cell.v = (cell.v or 0) + 1      -- runs through this hex
-    -- runs through it or a neighbour (each run once per hex)
-    R.near = R.near or {}
-    local around = HexNeighbours(key); around[#around + 1] = key
-    for _, k in ipairs(around) do
-      if not REC.runNear[k] then REC.runNear[k] = true; R.near[k] = (R.near[k] or 0) + 1 end
+  if not (WritPathLearned.roads and WritPathLearned.roads.v == 2) then WritPathLearned.roads = { v = 2, cells = {} } end
+  local R = WritPathLearned.roads
+  if R.edges or R.near then
+    R.edges, R.near = nil, nil
+    for key, c in pairs(R.cells or {}) do
+      c.v = nil
+      if not (c.h or c.s or (c.d or 0) > 0 or (c.w or 0) > 0) then R.cells[key] = nil end
     end
   end
-  -- swimming here (once per run per spot)
-  if p.swim and not REC.runSwim[key] then REC.runSwim[key] = true; cell.w = (cell.w or 0) + 1 end
-  -- the speed you were moving at, sampled while in this spot
-  local speed = p.speed   -- nil when the game kept it secret
-  if speed and speed > 0 then REC.speedSum, REC.speedN = (REC.speedSum or 0) + speed, (REC.speedN or 0) + 1 end
-  local prev = REC.cell
-  if prev == key then return end
-  local prevP, prevT, sum, cnt = REC.cellP, REC.cellT, REC.speedSum, REC.speedN
-  REC.cell, REC.cellP, REC.cellT, REC.speedSum, REC.speedN = key, p, now, 0, 0
-  if not prev then return end
-  local step = prev .. ">" .. key
-  if REC.runSteps[step] then return end   -- once per run
-  REC.runSteps[step] = true
-  local e = Edge0(R.edges[step] or { n = 0 })
-  e.n = (e.n or 0) + 1
-  e.g = 1   -- ridden under 1.15.2's rules (a plan running, closing in on the stop): only these steps are shared
-  -- how slow: the time it took against the time at the speed you were going (0.5 to 5)
-  local d = prevP and Dist(prevP, p) or 0
-  if prevT and now and cnt and cnt > 0 and d > 20 then
-    local expected = d / (sum / cnt)
-    local ratio = math.max(0.5, math.min(5, (now - prevT) / expected))
-    e.r, e.k = (e.r or 0) + ratio, (e.k or 0) + 1
-  end
-  R.edges[step] = e
+  R.cells = R.cells or {}
+  return R
 end
 -- someone died here (counted on the spot where it happened)
 local function RecordDeath(p)
@@ -1578,7 +1478,6 @@ local function RecordDeath(p)
   cell.dl, cell.dh = math.min(cell.dl or lvl, lvl), math.max(cell.dh or lvl, lvl)   -- the levels of those who died here
   R.cells[key] = cell
 end
-T.RoadEdge = Edge0
 T.Roads = Roads
 
 local function RecordShip(dock, land)
@@ -1708,68 +1607,6 @@ local function RecordMobs(p, now)
 end
 T.RecordMobs = RecordMobs
 
----------------------------------------------------------------- road steps, saved at a writ hand-in (1.15.2)
--- While a plan runs, the ride is kept as a leg (REC.leg: a spot a second since the last flight, hand-in, teleport,
--- death or jump). Nothing becomes road until a writ is handed in, the proof that the ride led to a customer; a leg
--- that never ends at one (questing, wandering) just goes. At a hand-in:
---   * the approach, the last APPROACH_YDS, is saved: the way in to the customer, which no traced road knows;
---   * the whole leg too if it was direct: no longer than DIRECT times the straight line (plus SLACK yards for the
---     odd bend), with no stop over LEG_STOP seconds on the way. A detour to quest fails that; a shortcut passes.
-local LEG_MAX, APPROACH_YDS, DIRECT, SLACK, LEG_STOP = 3600, 500, 1.5, 150, 60
-local function LegAdd(p, now)
-  local leg = REC.leg
-  if not leg then leg = {}; REC.leg = leg end
-  local tail = leg[#leg]
-  if tail and now - tail.t < 1 then return end
-  local s = { map = p.map, x = p.x, y = p.y, inst = p.inst, wx = p.wx, wy = p.wy, t = now,
-              speed = WritPath_Open(GetUnitSpeed, "player"), swim = WritPath_Open(IsSwimming) and true or nil }
-  -- standing about before setting off (at the mailbox, after a hand-in) isn't part of the leg
-  if #leg == 1 and Dist(tail, p) < 2 then leg[1] = s; return end
-  leg[#leg + 1] = s
-  if #leg > LEG_MAX then table.remove(leg, 1) end
-end
--- how the last leg went: its length, the straight line, the longest stop (not counting the wait at its end)
-local function LegShape(leg)
-  local len, stop, still = 0, 0, nil
-  for i = 2, #leg do
-    local d = Dist(leg[i - 1], leg[i])
-    len = len + d
-    if d < 2 then still = still or leg[i - 1].t
-    else
-      if still then stop = math.max(stop, leg[i - 1].t - still) end
-      still = nil
-    end
-  end
-  return len, Dist(leg[1], leg[#leg]), stop
-end
-local function CommitLeg()
-  local leg = REC.leg
-  REC.leg = nil
-  if not (leg and #leg >= 2) then return 0, "none" end
-  local len, straight, stop = LegShape(leg)
-  local direct = len <= DIRECT * straight + SLACK and stop <= LEG_STOP
-  local first = 1
-  if not direct then   -- the approach only: back from the hand-in until APPROACH_YDS
-    local back = 0
-    first = #leg
-    while first > 1 and back < APPROACH_YDS do back = back + Dist(leg[first - 1], leg[first]); first = first - 1 end
-  end
-  REC.cell = nil
-  for i = first, #leg do RecordStep(leg[i], leg[i].t) end
-  REC.cell = nil
-  T.Reset()
-  return #leg - first + 1, direct and "leg" or "approach"
-end
-T.LegShape, T.CommitLeg = LegShape, CommitLeg
--- a writ was handed in (Planner): save the ride that led here
-function T.WritHandedIn()
-  local n, how = CommitLeg()
-  REC.lastCommit = { n = n, how = how }
-  if WritPathNav then
-    local rl = WritPathNav.recLog or {}; WritPathNav.recLog = rl
-    rl[#rl + 1] = ("%s hand-in: saved %d spots (%s)"):format(date and date("%H:%M:%S") or "", n, how)
-  end
-end
 
 local function Poll()
   if not WritPathLearned then return end
@@ -1840,23 +1677,7 @@ local function Poll()
   -- trips only on a route (1.15.2).
   local heading = onRoute and Heading(p, now)
   if heading then REC.headingAt = now; if clean then RecordMobs(p, now) end end
-  -- why the recorder did or didn't note this spot, every 5 seconds on a route (WritPathNav.recLog, the last 300):
-  -- for finding out why a ride wasn't recorded
-  if onRoute and now - (REC.logAt or 0) >= 5 then
-    REC.logAt = now
-    WritPathNav = WritPathNav or {}
-    local rl = WritPathNav.recLog or {}; WritPathNav.recLog = rl
-    local at = REC.whyAt
-    rl[#rl + 1] = ("%s %d %.1f,%.1f step %s -> %s %s d %s %s %s%s%s"):format(date and date("%H:%M:%S") or "", p.map, p.x, p.y,
-      tostring(REC.whyStep), at and at[1] or "-", at and ("%.1f,%.1f"):format(at[2], at[3]) or "-",
-      REC.whyD and math.floor(REC.whyD) or "-", "leg " .. (REC.leg and #REC.leg or 0), tostring(REC.why),
-      taxi and " taxi" or "", clean and "" or " notclean")
-    while #rl > 300 do table.remove(rl, 1) end
-  end
-  -- the leg: kept while a plan runs; a flight, teleport, death or jump starts a new one
   local jump = last and (p.inst ~= last.inst or Dist(p, last) > 300)
-  if not onRoute or not clean or jump then REC.leg = nil end
-  if onRoute and clean then LegAdd(p, now) end
   if not clean or not heading or jump then
     REC.trail = nil   -- the next checkpoint starts afresh (no path across a flight or a jump)
   else

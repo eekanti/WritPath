@@ -10,8 +10,8 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
 - **Map pins:** drop a pin on the map and WritPath routes you there the same way.
 - **Buying help:** at the auction house a shopping panel buys the plan's list one click at a time, with a price cap.
 - **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
-- **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
-  flight paths you know.
+- **Learns as you play:** customer spots at turn-in, zone crossings, boats you take, flight times, which
+  flight paths you know, and the mob levels along your way.
 
 **Discord:** help and news: **https://discord.gg/Rw7HnghnXh** (in game: the Discord logo on the guide window, or `/writs discord`).
 
@@ -43,7 +43,7 @@ Everything WritPath needs is in this folder. Optional addons it uses when you ha
   under the arrow is to the stop (or the road's next waypoint). Without it, the arrow points straight at the stop.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
-Roads, boats and flight times you use are learned as you travel.
+Crossings, boats and flight times you use are learned as you travel.
 
 ### Staying up to date
 
@@ -147,7 +147,7 @@ the current step when that one is done.
   fly to in green. Tick **Auto-fly** at the bottom of the planner (or type `/writs autofly`) and talking to that
   flight master takes the flight for you. It only does this on the fly step itself, at the flight master the step
   names; hold Shift as you talk to choose your flight yourself.
-- **Road crossings and docks** finish once you're within 200 yards. If you take another road and reach a later
+- **Road crossings, docks and zeppelin towers** finish once you're within 200 yards. If you take another road and reach a later
   one first, the guide catches up.
 - **Hearthstone / teleport** steps: routes use your Hearthstone (to where it's bound), a shaman's Astral Recall, a
   mage's city teleports (with Runes of Teleportation) and a druid's Teleport: Moonglade on the legs where they save
@@ -191,10 +191,7 @@ list after asking. What WritPath has learned stays.
 - **Map roads**: WritPath ships the roads and trails of every outdoor zone, traced from the zone maps, so routes
   follow the drawn roads from the start instead of riding a straight line through the mountains. Route times use
   your own mount's speed once WritPath has seen you mounted.
-- **Roads**: while you follow a writ route, WritPath notes the roads you take (50-yard hexes), how
-  fast you could ride them, and where players died or had to swim. A road taken on 3 or more runs (through a hex or right next to it) is used in routes,
-  with a guide step at each bend; in zones with learned roads, routes prefer them to riding cross-country.
-- **Dangerous stretches**: on a route, WritPath also notes the hostile mobs around you (from enemy nameplates, so turn
+- **Dangerous stretches**: on a route, WritPath notes the hostile mobs around you (from enemy nameplates, so turn
   those on) and the level of anyone who dies. A guide step warns in red when the way ahead has mobs 3 or more levels
   above you, elites at your level, "??" mobs, or deaths of players near your level, and routes go round those roads
   when they can. WritPath ships the mob levels other WritPath players have seen from the road (right by towns, only
@@ -235,8 +232,8 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 ## Sharing what you learn
 
 WritPath players help each other's routes get better. What your copy learns while travelling (road crossings you
-rode, winding paths, boat and zeppelin trips, flight times, writ customers' spots from your hand-ins, the roads your
-writ routes take, and trouble spots on them) is passed from player to player until it reaches the author, who checks
+rode, winding paths, boat and zeppelin trips, flight times, writ customers' spots from your hand-ins, and trouble
+spots on your writ routes: high-level mobs and deaths) is passed from player to player until it reaches the author, who checks
 it and ships the good parts to everyone in later versions.
 
 - **Anonymous:** your records travel under a random id your copy makes once, never under your character's name. No

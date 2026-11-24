@@ -36,24 +36,9 @@ local function Records()
       out[#out + 1] = ("N,%d,%d,%s,%s,%s"):format(id, v.map, Round(v.x), Round(v.y), Clean(v.npc))
     end
   end
-  -- road steps from the checkpoints (writ routes only): sent when first ridden, again at 3 runs and at 10
+  -- (road steps, H records, aren't shared since 1.18.1: roads are no longer learned from rides)
   local R = L.roads
-  if R and R.edges and R.cells then
-    for step, v in pairs(R.edges) do
-      local e = type(v) == "number" and { n = v } or v
-      local a, b = step:match("^(.-)>(.+)$")
-      local A, B = a and R.cells[a], b and R.cells[b]
-      -- only steps ridden under 1.15.2's rules (e.g): older ones may be questing with a route open, so they stay on
-      -- this player's own map but aren't passed on
-      if A and B and e.g then
-        local n = e.n or 0
-        local bucket = n >= 10 and 10 or (n >= 3 and 3 or 1)
-        local slow = (e.k or 0) > 0 and Round(e.r / e.k) or 0   -- 1.0 open riding, 2.0 twice as slow (0: not measured)
-        -- H (hex steps, 1.14.2+; E was 1.14.1's square grid): the hexes' own names (the same for every player)
-        -- first, then where this player saw them
-        out[#out + 1] = ("H,%s,%s,%d,%s,%d,%s,%s,%d,%s,%s"):format(a, b, bucket, slow, A.m, Round(A.x), Round(A.y), B.m, Round(B.x), Round(B.y))
-      end
-    end
+  if R and R.cells then
     -- spots where someone died or swam on a route, or hostile mobs were seen from the road:
     -- Q,hex,deaths,swims,map,x,y,mob lowest,mob highest,flags (s: a "??" mob, e: an elite),died lowest,died highest,
     -- the faction that saw the mobs (A, H, AH; - not known: 1.17.3+)
@@ -150,15 +135,7 @@ local CHECK = {
                      and (f[7] or ""):match("^[%d%. /]*$") ~= nil end,
   -- S (boat trips) and F (flight times) from older versions are refused: not kept, not passed on
   N = function(f) return (#f == 5 or #f == 6) and N(f[2], 1, 999999) and Map(f[3]) and XY(f[4], f[5]) end,
-  H = function(f)
-    if #f ~= 11 then return false end
-    local q1, r1 = Hex(f[2]); local q2, r2 = Hex(f[3])
-    if not (q1 and q2) then return false end
-    local dq, dr = q2 - q1, r2 - r1
-    if (math.abs(dq) + math.abs(dr) + math.abs(dq + dr)) / 2 > 8 then return false end   -- one step, not a jump
-    return (f[4] == "1" or f[4] == "3" or f[4] == "10") and N(f[5], 0, 5) and Map(f[6]) and XY(f[7], f[8])
-       and Map(f[9]) and XY(f[10], f[11])
-  end,
+  -- H (road steps) from older versions are refused since 1.18.1: not kept, not passed on
   Q = function(f)
     if not (#f == 12 or (#f == 13 and (f[13] == "A" or f[13] == "H" or f[13] == "AH" or f[13] == "-"))) then return false end
     return Hex(f[2]) ~= nil and N(f[3], 0, 99) and N(f[4], 0, 99) and Map(f[5]) and XY(f[6], f[7])

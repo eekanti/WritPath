@@ -1081,7 +1081,10 @@ local function TravelSteps(steps, from, to, suggested)
       steps[#steps + 1] = { lines = { Crossing(to.inst) }, done = { arrive = { leg.into } } }
     else
       local what = leg.kind == "cross" and ("To " .. MapName(leg.into))
-                or leg.kind == "fly" and (leg.fp or "Flight master") or "Dock"
+                or leg.kind == "fly" and (leg.fp or "Flight master")
+                -- a zeppelin or airship leaves from a tower, a boat from a dock (1.18.1)
+                or (leg.text or ""):find("take the zeppelin") and "Zeppelin tower"
+                or (leg.text or ""):find("take the airship") and "Airship tower" or "Dock"
       -- a flight is done once you take off, a boat or zeppelin once you land (not on reaching the dock)
       local done = leg.kind == "fly" and { taxi = true, arrive = { leg.into } }
                 or leg.kind == "sail" and { sail = true, arrive = { leg.into } } or { arrive = { leg.into } }
@@ -2344,8 +2347,6 @@ ev:SetScript("OnEvent", WritPath_Timed("planner events", function(_, event, a1)
     return
   end
   if event == "QUEST_TURNED_IN" then
-    -- a writ handed in: the ride that led here is saved as road (only a writ counts, never a questing hand-in)
-    if a1 and WritPath_IsWritQuest and WritPath_IsWritQuest(a1) and Travel.WritHandedIn then Travel.WritHandedIn() end
     LearnTurnin(a1)
     RunTurnin(a1)
     local q = a1
