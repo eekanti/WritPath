@@ -2723,3 +2723,45 @@ WritPath_PlannerInternals = { Job = Job, Shown = function() return current end, 
 WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartRun, RunTurnin   -- for tests
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
 WritPath_ReplanFromBags = WritPath_Timed("replanning (bags)", WritPath_ReplanFromBags)
+
+---------------------------------------------------------------- map pins (1.17.4)
+-- A map pin you drop yourself becomes a route: the same travel steps a writ route gets (roads, flights, boats,
+-- danger warnings), then the pin, and the arrow leads you there. A writ route in progress wins: a pin dropped then
+-- is left alone. Clearing the pin clears its route, and a new pin replaces it. WritPath's own pins (the next road
+-- waypoint, set as you go) are told apart by being on the route. /writs pins turns it off (WritPathNav.noPins).
+-- (no locals of its own here: Planner.lua's main chunk is at Lua's 200-local limit)
+WritPath_PlannerInternals.PinRoute = function()
+  if not WritPathNav or WritPathNav.noPins then return end
+  local wp = C_Map.GetUserWaypoint and C_Map.GetUserWaypoint()
+  if not wp then   -- cleared: its route goes too
+    if WritPathNav.pinRoute then WritPath_SetRoute(nil) end
+    return
+  end
+  if not wp.position then return end
+  local map, x, y = wp.uiMapID, wp.position.x * 100, wp.position.y * 100
+  for _, s in ipairs(WritPath_CurrentRoute and WritPath_CurrentRoute() or {}) do   -- WritPath's own pin: on the route
+    for _, g in ipairs(s.way or {}) do
+      if g[1] == map and math.abs(g[2] - x) < 0.3 and math.abs(g[3] - y) < 0.3 then return end
+    end
+    if s.at and s.at[1] == map and math.abs(s.at[2] - x) < 0.3 and math.abs(s.at[3] - y) < 0.3 then return end
+  end
+  if not WritPathNav.pinRoute and WritPath_RouteActive() then return end  -- a writ route in progress wins
+  if Travel.IsContinent(map) then                                         -- dropped on the continent map
+    local z, zx, zy = Travel.Place(map, x / 100, y / 100)
+    if z then map, x, y = z, zx, zy end
+  end
+  local from, to = Travel.PlayerPoint(), Travel.Point(map, x, y)
+  if not (from and to) then return end
+  local steps = {}
+  local warn = TravelSteps(steps, from, to)
+  steps[#steps + 1] = { at = { map, x, y, "Map pin" }, lines = { "{goto} To your map pin", warn }, done = { pin = true } }
+  WritPath_SetRoute(steps, "Map pin", "You're at your map pin.")
+  WritPathNav.pinRoute = true
+end
+WritPath_PlannerInternals.PinRoute = WritPath_Timed("map pin route", WritPath_PlannerInternals.PinRoute)
+WritPath_PlannerInternals.pinEvents = CreateFrame("Frame")
+WritPath_PlannerInternals.pinEvents:RegisterEvent("USER_WAYPOINT_UPDATED")
+-- a moment later: the pin is set, and a road waypoint WritPath sets itself is on the route by then
+WritPath_PlannerInternals.pinEvents:SetScript("OnEvent", function()
+  C_Timer.After(0.1, function() WritPath_PlannerInternals.PinRoute() end)
+end)

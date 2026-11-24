@@ -7,6 +7,7 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
   writs you have and priced from WritPath's own auction house scan (or Auctionator's), each writ once a day (the game's
   limit). With no target, it plans just the writs you have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
+- **Map pins:** drop a pin on the map and WritPath routes you there the same way.
 - **Buying help:** at the auction house a shopping panel buys the plan's list one click at a time, with a price cap.
 - **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
 - **Learns as you play:** customer spots at turn-in, roads you ride, boats you take, flight times and which
@@ -38,7 +39,8 @@ Everything WritPath needs is in this folder. Optional addons it uses when you ha
   scan is newer (only for items WritPath's own scan didn't see).
 - **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
 - **Shortest Path Forever**: installed alongside WritPath from CurseForge. The arrow then leads you along the
-  ground (around cliffs, water and buildings) to each stop. Without it, the arrow points straight at the stop.
+  ground (around cliffs, water and buildings) to each stop, pointing a little way ahead on its path. The distance
+  under the arrow is to the stop (or the road's next waypoint). Without it, the arrow points straight at the stop.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
 Roads, boats and flight times you use are learned as you travel.
@@ -132,6 +134,12 @@ Then right-click each writ in your bags: WritPath accepts it for you (`/writs ac
 ### Follow the guide
 
 The guide window shows the next steps, and an arrow on screen points to the current one with the distance.
+When you get there, the arrow's label says **here** in large type.
+
+**Map pins.** Drop a pin on the world map (outside a writ route) and WritPath plans the way there, with roads,
+flights, boats and the same warnings about high-level mobs, and the arrow leads you. Clear the pin to stop, or drop
+another to go somewhere else. While a writ route is in progress, a pin you drop doesn't replace it. `/writs pins`
+turns this off (or back on).
 Scroll over the steps with the mouse wheel to see the rest of the route (or the finished steps); it jumps back to
 the current step when that one is done.
 

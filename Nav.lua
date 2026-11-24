@@ -123,7 +123,7 @@ local function StepDone(i)
   if d.arrive and InZone(ArriveZones(s)) then hit = true end
   -- a waypoint on the way (a road crossing) is done once you're close to it; a flight master only once you've
   -- taken the flight (or landed), a boat or zeppelin once you land, a writ customer only when you've handed it in
-  if not hit and TravelStep(s) and not d.taxi and not d.taxiMap and not d.sail and Near(s) then hit = true end
+  if not hit and TravelStep(s) and not d.taxi and not d.taxiMap and not d.sail and not d.pin and Near(s) then hit = true end
   if hit then WritPathNav.manual[i] = true end
   return hit
 end
@@ -724,6 +724,7 @@ close:SetScript("OnClick", function() Show(false) end)
 -- the planner hands over a new route here; progress starts fresh
 function WritPath_SetRoute(route, titleText, doneText)
   WritPathNav.route, WritPathNav.title, WritPathNav.doneText, WritPathNav.doneRep = route, titleText, doneText, nil
+  WritPathNav.pinRoute = nil   -- a map pin's route says so itself, after this (Planner.lua)
   ROUTE = route or {}
   WritPathNav.manual, lastStep = {}, nil
   if not route then WritPathNav.skipWrit, WritPathNav.skipFp = nil, nil end   -- cleared: skips go with the route
@@ -947,6 +948,8 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs|r  show or hide the guide")
     Print("  |cFFFFD100/writs plan|r  open the planner (writs for a rep target, or Merchant's Favor)")
     Print("  |cFFFFD100/writs runs|r  your last runs: the planner's time estimate against your real time")
+    Print("  |cFFFFD100/writs pins|r  turn off (or back on) a map pin you drop becoming a route the arrow leads you on"
+      .. (WritPathNav.noPins and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs accept|r  turn off (or back on) accepting writs, handing them in, and handing in Sealed crates")
     Print("  |cFFFFD100/writs autofly|r  turn on (or off) flying to the next stop when you talk to the guide's flight master"
       .. (WritPathNav.autoFly and " |cFFAAAAAA(on now)|r" or ""))
@@ -957,6 +960,10 @@ SlashCmdList.WRITPATH = function(msg)
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs hearth|r  turn off (or back on) using your Hearthstone in plans, for this character"
       .. ((WritPathChar and WritPathChar.noHearth) and " |cFFAAAAAA(off now)|r" or ""))
+  elseif msg == "pins" then
+    WritPathNav.noPins = not WritPathNav.noPins or nil
+    Print(WritPathNav.noPins and "Map pins no longer become routes."
+      or "A map pin you drop becomes a route, and the arrow leads you there (not while a writ route is in progress).")
   elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "hearth" then
     local on = WritPathChar and WritPathChar.noHearth   -- off now: turn it on
