@@ -1061,6 +1061,7 @@ T.WalkKey = WalkKey
 -- yards or false } }. Your own spot is never a saved one, so this is how the first leg of a plan gets the ground way.
 local here
 local HERE_NEAR = 30   -- yards: still standing where those were worked out from
+local SHORT_RIDE = 200 -- yards: a straight ride this short won't cross a mountain, so a road route may beat the walk
 function T.SetHere(p, rows) here = p and { p = p, rows = rows } or nil end
 function T.WalkYards(a, b)
   if here then
@@ -1096,15 +1097,18 @@ function Time(a, b)
   -- straight there, or over the known roads, ships and flights and then straight to the stop
   local best
   local walk = a.inst == b.inst and T.WalkYards(a, b)
-  if walk then best = walk / RIDE            -- the real way on the ground (Shortest Path Forever)
+  -- the real way on the ground (Shortest Path Forever). Its walk is the shortest, not the fastest: it takes no road
+  -- (1.17.4), so where roads are known it rides off-road, OFFROAD slower, like any other straight ride there
+  if walk then best = walk / RIDE * math.max(Ride(a.map), Ride(b.map))
   elseif walk == false then best = nil       -- no way on foot: only roads, flights and ships
   else best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil end
   local via
   local r = From(a)
-  -- the ground way is known (Shortest Path Forever): a route that stays on the ground (roads, crossings, rides) can't
-  -- beat it, and its straight rides onto and off the roads may run through a cliff (1.16.2: Juo, in the Hinterlands,
-  -- was sent straight over a 500-yard mountain to reach the road). Only a flight or a ship can do better.
-  -- (worked out once per starting place and kept with its shortest times: r.carried[node])
+  -- the ground way is known (Shortest Path Forever): a route that stays on the ground (roads, crossings, rides) beats
+  -- it only when every straight ride in it is short, since a long one may run through a cliff (1.16.2: Juo, in the
+  -- Hinterlands, was sent straight over a 500-yard mountain to reach the road). A flight or a ship always may.
+  -- (1.17.4: nothing on the ground could beat the walk, so the road to Felwood lost to a walk beside it and the
+  -- arrow led off the road.) (worked out once per starting place and kept with its shortest times: r.carried[node])
   local function Carried(i)
     local c = r.carried
     if not c then c = {}; r.carried = c end
@@ -1117,13 +1121,31 @@ function Time(a, b)
     end
     return v
   end
+  -- every straight ride on the way to node i is short (the ride from a to the first place, and each "ride" edge)
+  local function Grounded(i)
+    local g = r.grounded
+    if not g then g = {}; r.grounded = g end
+    local v = g[i]
+    if v == nil then
+      local p = r.prev[i]
+      if not p then v = Dist(a, nodes[i].p) <= SHORT_RIDE
+      else
+        local k = p[2].kind
+        if k == "fly" or k == "sail" then v = false
+        elseif k == "ride" and Dist(nodes[p[1]].p, nodes[i].p) > SHORT_RIDE then v = false
+        else v = Grounded(p[1]) end
+      end
+      g[i] = v
+    end
+    return v
+  end
   -- the places you can ride straight to b from: only its own zone's when its roads are known (1.17.0: every place on
   -- the map was checked, for every leg)
   local list = (not loose and roads and roads[b.map]) and (byZone[b.map] or {}) or nodes
   local open = {}
   for _, n in ipairs(list) do
     local d = r.dist[n.i]
-    if d and walk and not Carried(n.i) then d = nil end
+    if d and walk and not Carried(n.i) and not (Grounded(n.i) and Dist(n.p, b) <= SHORT_RIDE) then d = nil end
     if d and n.p.inst == b.inst then
       local o = open[n.zone]
       if o == nil then o = Open(b.map, n.zone); open[n.zone] = o end

@@ -222,7 +222,7 @@ local function SPF()
 end
 local function WalkReset() if walk.cancel then pcall(walk.cancel) end; walk = {} end
 
-local function WalkAsk(s)
+local function WalkAsk(s, at)
   local api, now = SPF(), GetTime()
   if not api then return end
   if walk.asked and now - walk.asked < (walk.failed and WALK_FAIL or walk.cancel and WALK_WAIT or WALK_AGAIN) then return end
@@ -231,7 +231,7 @@ local function WalkAsk(s)
   local pos = map and C_Map.GetPlayerMapPosition(map, "player"); if not pos then return end
   local px, py = pos:GetXY(); if not (px and py) then return end
   if walk.cancel then pcall(walk.cancel) end
-  local at = s.at
+  at = at or s.at
   -- the old bends stay in use until the new ones arrive
   local mine = { s = s, at = at, pts = walk.pts, i = walk.i, from = walk.from, asked = now,
                  start = { map, px * 100, py * 100, at[4] } }
@@ -253,16 +253,17 @@ local function WalkAsk(s)
   if ok and type(cancel) == "function" then mine.cancel = cancel else mine.failed = true end
 end
 
--- the next bend of the ground path to a step's spot, or the spot itself while there is none
-local function WalkTarget(s)
-  local at = s and s.at
+-- the next bend of the ground path to a step's spot (or to goal: where you join a road), or the spot itself while
+-- there is none
+local function WalkTarget(s, goal)
+  local at = goal or (s and s.at)
   if not at then return nil end
   if walk.s ~= s or walk.at ~= at then WalkReset() end   -- a new step
   if not SPF() then return at end
   local pts = walk.pts
   if not pts then
     local d = Vector(at)
-    if d and d > WALK_MIN then WalkAsk(s) end
+    if d and d > WALK_MIN then WalkAsk(s, at) end
     return at
   end
   local i = math.min(walk.i or 1, #pts)
@@ -281,7 +282,7 @@ local function WalkTarget(s)
   -- strayed: much further from the next bend than the path itself runs to it
   local prev = i > 1 and pts[i - 1] or walk.from
   local d, leg = Vector(pts[i]), prev and Gap(prev, pts[i])
-  if d and leg and d > leg + WALK_OFF then WalkAsk(s) end
+  if d and leg and d > leg + WALK_OFF then WalkAsk(s, at) end
   -- gone past it: you've gained ground since the path was worked out, and are now well nearer the step's spot than
   -- the bend is (rode a road beside the path, never within WALK_NEAR of the bend). Straight at the spot while the
   -- path is worked out again from here. (1.17.4: on the way to Felwood the arrow pointed back at a bend left behind.)
@@ -289,7 +290,7 @@ local function WalkTarget(s)
   local left, bendLeft = Vector(at), Gap(pts[i], at)
   local startLeft = walk.from and Gap(walk.from, at)
   if d and d > WALK_PASSED and left and bendLeft and startLeft
-     and left + WALK_PASSED < bendLeft and left + WALK_PASSED < startLeft then WalkAsk(s); return at end
+     and left + WALK_PASSED < bendLeft and left + WALK_PASSED < startLeft then WalkAsk(s, at); return at end
   return pts[i]
 end
 function WritPath_WalkState() return walk end   -- for tests
@@ -297,16 +298,17 @@ function WritPath_WalkState() return walk end   -- for tests
 local function Target(s)
   local w = s and s.way
   if not w then return WalkTarget(s) end
-  -- a road step with Shortest Path Forever: its ground path to the road's end, which knows the cliffs a traced road
-  -- (and the straight ride onto it) can't. The traced road is the fallback while there's no path. Once you're on
-  -- the road, the road leads (1.17.3: the ground path wandered off a road that ran straight to Felwood, and the
-  -- arrow kept swinging off it). Off it again only past ROAD_LEAVE yards, so the arrow doesn't flip at the edge.
+  -- a road step with Shortest Path Forever: its ground path to where you join the road, which knows the cliffs the
+  -- straight ride onto it can't. The traced road is the fallback while there's no path. Once you're on the road,
+  -- the road leads (1.17.3: the ground path wandered off a road that ran straight to Felwood, and the arrow kept
+  -- swinging off it). Off it again only past ROAD_LEAVE yards, so the arrow doesn't flip at the edge. (1.17.4: the
+  -- ground path went to the road's far end, beside the road, and never joined it.)
   local near = WritPath_RoadGap(w)
   if near then
     if near <= ON_ROAD then s.onRoad = true elseif near > ROAD_LEAVE then s.onRoad = nil end
   end
   if SPF() and not s.onRoad then
-    local g = WalkTarget(s)
+    local g = WalkTarget(s, w[math.min(s.wayI or 1, #w)])
     if walk.pts then return g end   -- while it's being worked out (or there's none), the traced road
   end
   local i = math.min(s.wayI or 1, #w)
