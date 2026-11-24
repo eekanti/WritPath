@@ -258,6 +258,7 @@ end
 -- (Before: the arrow pointed at the next bend; the bends sit a few yards apart and wiggle, so it could point back
 -- over your shoulder with the step dead ahead.)
 local CARROT = 25                    -- yards ahead along the path
+local SMOOTH_FROM, SMOOTH_TO = 15, 45   -- yards ahead: the stretch of path whose middle the arrow points at
 local SEEK_BACK, SEEK_AHEAD = 20, 100   -- yards of path behind and ahead of your progress searched for where you are
 local function Line(pts)
   local l = walk.line
@@ -332,6 +333,34 @@ local function WalkTarget(s, goal)
   if prog + CARROT >= cum[#cum] then walk.i = #pts; return at end
   local g, k = Along(l, prog + CARROT, at[4])
   walk.i = math.max(1, math.min(#pts, k - (walk.from and 1 or 0)))   -- the next bend (for tests)
+  -- the path zigzags a few yards side to side, and a single spot on it slides across each zigzag: the arrow
+  -- twitched. It points at the middle of the stretch SMOOTH_FROM to SMOOTH_TO yards ahead instead, where the
+  -- zigzags cancel out and a real bend still pulls it round. (Needs HereBeDragons to turn it back into map
+  -- coordinates; without it, the single spot.)
+  local hbd = Lib()
+  if hbd and hbd.GetZoneCoordinatesFromWorld then
+    local sx, sy, n = 0, 0, 0
+    for arc = prog + SMOOTH_FROM, prog + SMOOTH_TO, 5 do
+      local a = math.min(arc, cum[#cum])
+      for j = 1, #xy - 1 do
+        if a <= cum[j + 1] then
+          local len = cum[j + 1] - cum[j]
+          local t = len > 0 and (a - cum[j]) / len or 1
+          sx, sy, n = sx + xy[j][1] + (xy[j + 1][1] - xy[j][1]) * t, sy + xy[j][2] + (xy[j + 1][2] - xy[j][2]) * t, n + 1
+          break
+        end
+      end
+    end
+    if n > 0 then
+      local zx, zy = hbd:GetZoneCoordinatesFromWorld(sx / n, sy / n, at[1], true)
+      if zx and zy then
+        local m = walk.mid or {}
+        m[1], m[2], m[3], m[4] = at[1], zx * 100, zy * 100, at[4]
+        walk.mid = m
+        return m
+      end
+    end
+  end
   return g
 end
 function WritPath_WalkState() return walk end   -- for tests
@@ -640,7 +669,8 @@ local tick, poll = 0, 0
 arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   tick, poll = tick + e, poll + e
   if poll > 0.5 then poll = 0; Refresh(true) end
-  if tick < 0.03 then return end; tick = 0
+  if tick < 0.03 then return end
+  local dt = tick; tick = 0
   local s = ROUTE[WritPathNav.step]; if not s then return end
   local g = Target(s)   -- where the arrow points: a road's next waypoint, along the ground path, or the step's spot
   if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
@@ -657,6 +687,16 @@ arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   end
   if mdist and mdist < 10 then
     self.tex:SetAlpha(0); self.text:SetText(marker[4] .. "\n|cFF00FF25here|r"); return
+  end
+  -- the bearing eases round over a quarter second instead of snapping, so the path's small jumps don't twitch the
+  -- arrow; your own turning (facing) isn't eased. A new step, or a turn past 90 degrees, snaps straight there.
+  if angle then
+    local b = self.bear
+    if b and self.bearStep == WritPathNav.step then
+      local d = (angle - b + math.pi) % (2 * math.pi) - math.pi
+      if math.abs(d) > math.pi / 2 then b = angle else b = b + d * math.min(1, dt / 0.25) end
+    else b = angle end
+    self.bear, self.bearStep, angle = b, WritPathNav.step, b
   end
   local facing = WritPath_Open(GetPlayerFacing)
   if facing and angle then self.tex:SetAlpha(1); self.tex:SetRotation(angle - facing) else self.tex:SetAlpha(0) end
