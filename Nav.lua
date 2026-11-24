@@ -211,6 +211,7 @@ local OWNER = "WritPath"
 local WALK_MIN = 80     -- yards: nearer than this, a walk isn't worked out (straight is fine)
 local WALK_NEAR = 15    -- yards: a bend is passed this close (terrain bends sit closer together than a road's)
 local WALK_OFF = 80     -- yards strayed off the path before it's worked out again from where you are
+local WALK_PASSED = 40  -- yards nearer the step's spot than the next bend is: that bend was gone past
 local WALK_AGAIN = 5    -- seconds between requests
 local WALK_FAIL = 30    -- after no path, seconds before asking again for that step
 local WALK_WAIT = 20    -- seconds a request may take before it's given up and asked again
@@ -281,6 +282,14 @@ local function WalkTarget(s)
   local prev = i > 1 and pts[i - 1] or walk.from
   local d, leg = Vector(pts[i]), prev and Gap(prev, pts[i])
   if d and leg and d > leg + WALK_OFF then WalkAsk(s) end
+  -- gone past it: you've gained ground since the path was worked out, and are now well nearer the step's spot than
+  -- the bend is (rode a road beside the path, never within WALK_NEAR of the bend). Straight at the spot while the
+  -- path is worked out again from here. (1.17.4: on the way to Felwood the arrow pointed back at a bend left behind.)
+  -- A fresh path that heads away first (round a cliff) doesn't count: you haven't gained ground on it yet.
+  local left, bendLeft = Vector(at), Gap(pts[i], at)
+  local startLeft = walk.from and Gap(walk.from, at)
+  if d and d > WALK_PASSED and left and bendLeft and startLeft
+     and left + WALK_PASSED < bendLeft and left + WALK_PASSED < startLeft then WalkAsk(s); return at end
   return pts[i]
 end
 function WritPath_WalkState() return walk end   -- for tests
