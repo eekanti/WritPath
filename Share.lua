@@ -55,11 +55,12 @@ local function Records()
       end
     end
     -- spots where someone died or swam on a route, or hostile mobs were seen from the road:
-    -- Q,hex,deaths,swims,map,x,y,mob lowest,mob highest,flags (s: a "??" mob, e: an elite),died lowest,died highest
+    -- Q,hex,deaths,swims,map,x,y,mob lowest,mob highest,flags (s: a "??" mob, e: an elite),died lowest,died highest,
+    -- the faction that saw the mobs (A, H, AH; - not known: 1.17.3+)
     for key, c in pairs(R.cells) do
       if (c.d or 0) > 0 or (c.w or 0) > 0 or c.h or c.s then
-        out[#out + 1] = ("Q,%s,%d,%d,%d,%s,%s,%d,%d,%s,%d,%d"):format(key, c.d or 0, c.w or 0, c.m, Round(c.x), Round(c.y),
-          c.l or 0, c.h or 0, (c.s and "s" or "") .. (c.e and "e" or "") .. "-", c.dl or 0, c.dh or 0)
+        out[#out + 1] = ("Q,%s,%d,%d,%d,%s,%s,%d,%d,%s,%d,%d,%s"):format(key, c.d or 0, c.w or 0, c.m, Round(c.x), Round(c.y),
+          c.l or 0, c.h or 0, (c.s and "s" or "") .. (c.e and "e" or "") .. "-", c.dl or 0, c.dh or 0, c.f or "-")
       end
     end
   end
@@ -159,7 +160,8 @@ local CHECK = {
        and Map(f[9]) and XY(f[10], f[11])
   end,
   Q = function(f)
-    return #f == 12 and Hex(f[2]) ~= nil and N(f[3], 0, 99) and N(f[4], 0, 99) and Map(f[5]) and XY(f[6], f[7])
+    if not (#f == 12 or (#f == 13 and (f[13] == "A" or f[13] == "H" or f[13] == "AH" or f[13] == "-"))) then return false end
+    return Hex(f[2]) ~= nil and N(f[3], 0, 99) and N(f[4], 0, 99) and Map(f[5]) and XY(f[6], f[7])
        and N(f[8], 0, 63) and N(f[9], 0, 63) and (f[10] or ""):match("^[se%-]+$") ~= nil and N(f[11], 0, 63) and N(f[12], 0, 63)
   end,
 }

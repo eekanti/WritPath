@@ -488,7 +488,7 @@ local DANGER_LEVELS = 3
 local function PlayerLevel() return WritPath_Open(UnitLevel, "player") or 60 end
 local function Dangerous(cell, lvl)
   if not cell then return false end
-  if cell.s then return true end
+  if cell.s and not cell.h then return true end   -- a skull from before 1.17.3 (since then it sets h)
   if cell.h and (cell.h >= lvl + DANGER_LEVELS or (cell.e and cell.h >= lvl)) then return true end
   if (cell.d or 0) > 0 and cell.dh and cell.dh >= lvl - 2 then return true end
   return false
@@ -520,9 +520,11 @@ do
   function DangerCell(key)
     local R = WritPathLearned and WritPathLearned.roads
     local c = R and R.v == 2 and R.cells and R.cells[key]
-    if c and (c.h or c.s or (c.d or 0) > 0) then return c end
+    -- by a town, mobs seen only by the other faction are its guards (f: who saw them, "A", "H" or both)
+    local mine = UnitFactionGroup("player") == "Horde" and "H" or "A"
+    if c and (c.h or c.s or (c.d or 0) > 0) and not (c.f and c.f ~= mine and Towns()[key]) then return c end
     local s = WritPath_Danger and WritPath_Danger[key]
-    if s and not Towns()[key] then
+    if s and (s[3] == mine or not Towns()[key]) then
       shipped[key] = shipped[key] or { h = s[1], e = s[2] == 1 or nil, shipped = true }
       return shipped[key]
     end
@@ -1670,6 +1672,8 @@ local function RecordMobs(p, now)
     end
   end
   if not (lo or skull) then return end
+  -- a "??" mob is 10 or more levels above you: kept as that level, which still means something once you've levelled
+  if skull then local sk = math.min(63, PlayerLevel() + 10); lo, hi = math.min(lo or sk, sk), math.max(hi or sk, sk) end
   local R = Roads()
   local key = CellKey(p)
   local cell = R.cells[key]
@@ -1677,6 +1681,8 @@ local function RecordMobs(p, now)
   if lo then cell.l, cell.h = math.min(cell.l or lo, lo), math.max(cell.h or hi, hi) end
   if skull then cell.s = true end
   if elite then cell.e = true end
+  local me = UnitFactionGroup("player") == "Horde" and "H" or "A"   -- who saw them: the other side's guards show up
+  if not cell.f then cell.f = me elseif cell.f ~= me then cell.f = "AH" end
 end
 T.RecordMobs = RecordMobs
 

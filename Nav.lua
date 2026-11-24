@@ -184,6 +184,25 @@ local function Ahead(w, i)
   end
   return best and best > i and best or i
 end
+-- yards from you to the nearest stretch of a road's waypoints (nil: not on this continent, or no position)
+local ROAD_LEAVE = 100
+function WritPath_RoadGap(w)
+  local pc, px, py = PlayerYds()
+  if not (pc and px and w) then return nil end
+  local best
+  for k = 1, #w - 1 do
+    local ac, ax, ay = WorldYds(w[k])
+    local bc, bx, by = WorldYds(w[k + 1])
+    if ac == pc and bc == pc and ax and bx then
+      local dx, dy = bx - ax, by - ay
+      local len2 = dx * dx + dy * dy
+      local t = len2 > 0 and math.max(0, math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) or 0
+      local d = math.sqrt((px - ax - t * dx) ^ 2 + (py - ay - t * dy) ^ 2)
+      if not best or d < best then best = d end
+    end
+  end
+  return best
+end
 ---------------------------------------------------------------- terrain walks (Shortest Path Forever)
 -- With Shortest Path Forever installed, the walk to a step's spot follows the ground (around cliffs, water and
 -- buildings) instead of a straight line. Its public API (WalkPath) gives the bends; the arrow leads through them the
@@ -270,8 +289,14 @@ local function Target(s)
   local w = s and s.way
   if not w then return WalkTarget(s) end
   -- a road step with Shortest Path Forever: its ground path to the road's end, which knows the cliffs a traced road
-  -- (and the straight ride onto it) can't. The traced road is the fallback while there's no path.
-  if SPF() then
+  -- (and the straight ride onto it) can't. The traced road is the fallback while there's no path. Once you're on
+  -- the road, the road leads (1.17.3: the ground path wandered off a road that ran straight to Felwood, and the
+  -- arrow kept swinging off it). Off it again only past ROAD_LEAVE yards, so the arrow doesn't flip at the edge.
+  local near = WritPath_RoadGap(w)
+  if near then
+    if near <= ON_ROAD then s.onRoad = true elseif near > ROAD_LEAVE then s.onRoad = nil end
+  end
+  if SPF() and not s.onRoad then
     local g = WalkTarget(s)
     if walk.pts then return g end   -- while it's being worked out (or there's none), the traced road
   end
@@ -288,6 +313,7 @@ local function Target(s)
   if moved then s.wayI = i; SetWaypoint(s) end
   return w[i]
 end
+function WritPath_ArrowTarget() local s = ROUTE[WritPathNav.step]; return s and Target(s) end   -- for tests
 
 ---------------------------------------------------------------- guide window
 local WIDTH, SHOWN = 310, 12   -- up to 12 rows, as many as fit in STEPS_H
