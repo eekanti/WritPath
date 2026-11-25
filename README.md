@@ -154,7 +154,8 @@ the current step when that one is done.
 - **Hearthstone / teleport** steps: routes use your Hearthstone (to where it's bound), a shaman's Astral Recall, a
   mage's city teleports (with Runes of Teleportation) and a druid's Teleport: Moonglade on the legs where they save
   the most time, as their cooldowns allow. WritPath learns your hearth's spot when you set it at an innkeeper or
-  land from it; until then it uses your bind town's flight point.
+  land from it; until then it uses your bind town's flight point. A mage teleport's landing spot is learned the
+  first time you cast it; until then the planner allows a minute's walk from where you land to the flight master.
 - **Customer** steps finish only when you hand the writ in. Talk to the customer and WritPath hands it in for you
   (`/writs accept` turns that off).
 - **Learn the flight path** steps appear for any zone the route takes you to where you don't have its flight
@@ -165,7 +166,8 @@ the current step when that one is done.
 - **Learn the flight path at X, then fly to Y**: routes also use your faction's flight paths you haven't learned
   yet. Riding up to one learns it, and you can take off from it straight away to any you have.
 - The rest of the trip is worked out again from where you stand after each hand-in, whenever you gain a flight
-  path, and when you enter a new zone (chat only says so when the way ahead changes).
+  path, and when you enter a new zone. On a new zone the route you're on is kept unless the new one is at least
+  90 seconds quicker (chat only says so when the way ahead changes).
 - If a step gets stuck, tick its box to skip it; untick it to undo that.
 
 The footer under the guide shows the running plan's money: **cost** (what you actually paid once you've bought,

@@ -2436,6 +2436,20 @@ local function Reroute(q, why, quiet)
   local past = (WritPathNav.step or 1) > 1
   local plan = PlanOwned(left, q, nil, past)
   if #plan.route == 0 then return end
+  -- a quiet re-plan (on entering a zone) keeps the route you're on unless the new one is clearly quicker (1.19.2: a mage
+  -- told to teleport to Ironforge was sent somewhere else on landing, over and over, for a few seconds saved): the
+  -- same writs in the route's own order, timed from here with the same teleports, against the new plan
+  if quiet then
+    local byId, old, seen = {}, {}, {}
+    for _, p in ipairs(plan.route) do byId[p.id] = p end
+    for _, st in ipairs(WritPathNav.route) do
+      if st.writ and byId[st.writ] and not seen[st.writ] then seen[st.writ] = true; old[#old + 1] = byId[st.writ] end
+    end
+    if #old == #plan.route then
+      local _, saved = PlanTeleports(plan.start, old)
+      if (plan.secs or 0) > PathSecs(plan.start, old) - saved - 90 then return end
+    end
+  end
   local steps = Steps(plan)
   if keep then table.insert(steps, 2, keep) end
   -- a quiet re-plan (on entering a zone) leaves the route alone when the way ahead comes out the same

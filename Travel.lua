@@ -1779,6 +1779,14 @@ function T.SaveHearth()
     WritPathChar.hearth = { name = name, map = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10, t = time() }
   end
 end
+-- where a mage's city teleport put you (only when you're in that town: not after a cast that was cut short)
+function T.SaveLanding(spell)
+  local fp, p = TownSpot(MAGE[spell]), T.PlayerPoint()
+  if not (fp and p and not p.sea and p.inst == fp.inst and Dist(p, fp) < 1500) then return end
+  WritPathChar = WritPathChar or {}
+  WritPathChar.landing = WritPathChar.landing or {}
+  WritPathChar.landing[spell] = { map = p.map, x = math.floor(p.x * 10 + 0.5) / 10, y = math.floor(p.y * 10 + 0.5) / 10 }
+end
 function T.Teleports()
   local list = {}
   local hs, hsName = T.HearthSpot()
@@ -1796,9 +1804,14 @@ function T.Teleports()
   local runes = ItemCount(RUNE)
   if runes > 0 then
     for spell, town in pairs(MAGE) do
-      local p = KnowsSpell(spell) and TownSpot(town)
+      -- where the spell lands, recorded the first time you cast it. Until then the town's flight point, plus a
+      -- minute for the walk there: a teleport lands away from the flight master (Ironforge's in the Mystic Ward), and
+      -- planning as if it landed right by it made a teleport look quicker than it is. Once there, the re-plan from
+      -- where you really stood found a better way and sent you off it (1.19.2)
+      local land = KnowsSpell(spell) and WritPathChar and WritPathChar.landing and WritPathChar.landing[spell]
+      local p = land and T.Point(land.map, land.x, land.y) or (KnowsSpell(spell) and TownSpot(town))
       if p then list[#list + 1] = { key = "mage" .. spell, text = "Cast Teleport: " .. town, dest = p, destName = town,
-                                    ready = 0, cd = 0, cast = 25, rune = true, runes = runes } end
+                                    ready = 0, cd = 0, cast = land and 25 or 85, rune = true, runes = runes } end
     end
   end
   if KnowsSpell(MOONGLADE) then
@@ -1828,6 +1841,8 @@ rec:SetScript("OnEvent", WritPath_Timed("road recorder events", function(_, even
     -- landed from a hearthstone: that's where it's bound
     if name:find("Hearthstone") or name:find("Astral Recall") then C_Timer.After(8, T.SaveHearth) end
   end
+  -- landed from a mage's city teleport: that's where it lands
+  if spellID and MAGE[spellID] then C_Timer.After(8, function() T.SaveLanding(spellID) end) end
 end))
 local acc = 0
 rec:SetScript("OnUpdate", WritPath_Timed("road recorder", function(_, e) acc = acc + e; if acc >= 0.5 then acc = 0; Poll() end end))
