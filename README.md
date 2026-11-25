@@ -6,7 +6,9 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
   the two, starting from the
   writs you have and priced from WritPath's own auction house scan (or Auctionator's), each writ once a day (the game's
   limit). With no target, it plans just the writs you have, in the shortest hand-in order.
-- **Guided route:** a RestedXP-style step list with an arrow, flight paths, zone crossings and boats.
+- **Guided route:** a RestedXP-style step list with flight paths, zone crossings and boats. The walks between stops
+  are led by [Shortest Path Forever](https://www.curseforge.com/wow/addons/shortest-path-forever)'s arrow, on real
+  roads and around cliffs and water.
 - **Map pins:** drop a pin on the map and WritPath routes you there the same way.
 - **Buying help:** at the auction house a shopping panel buys the plan's list one click at a time, with a price cap.
 - **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
@@ -26,23 +28,29 @@ through it; add `#buy` to the address to start on the Buy writs plan).
 
 ## Install
 
-1. Open the [latest release](https://github.com/eekanti/WritPath/releases/latest) and download
+WritPath needs **[Shortest Path Forever](https://www.curseforge.com/wow/addons/shortest-path-forever)**: the game
+won't load WritPath without it. Get it on CurseForge, like WritPath.
+
+1. Install Shortest Path Forever if you don't have it.
+2. Open the [latest release](https://github.com/eekanti/WritPath/releases/latest) and download
    **WritPath-x.y.z.zip** (under Assets).
-2. Unzip it into `World of Warcraft/_forever_/Interface/AddOns/`, so you have `AddOns/WritPath/WritPath.toc`.
-3. Restart the game the first time (a `/reload` doesn't load a new addon).
+3. Unzip it into `World of Warcraft/_forever_/Interface/AddOns/`, so you have `AddOns/WritPath/WritPath.toc`.
+4. Restart the game the first time (a `/reload` doesn't load a new addon).
 
 (Downloading **Code > Download ZIP** works too, but its folder is called `WritPath-main`: rename it to `WritPath`.)
 
-Everything WritPath needs is in this folder. Optional addons it uses when you have them:
+What Shortest Path Forever does for WritPath: each step's spot is handed to it as a walking journey, along the
+ground (around cliffs, water and buildings) and on roads, by your own *Follow roads* and road detour settings, with
+its route line on the maps. Its arrow leads, and WritPath's own arrow steps aside so there's one arrow. Turn its
+arrow off (its Interface settings) and WritPath's arrow follows the same path instead. A journey you start yourself
+in Shortest Path Forever is left alone. WritPath also asks it how far each customer is from the others on the
+ground, so plans are timed by the real way, not a straight line.
 
-- **Auctionator**: not needed (WritPath scans writ prices itself). If you have it, its prices are used when its
-  scan is newer (only for items WritPath's own scan didn't see).
+Optional addons WritPath uses when you have them:
+
+- **Auctionator**: not needed (WritPath scans writ prices itself). If you have it, the newer of the two scans is
+  used, and Auctionator fills in items WritPath's scan didn't see.
 - **EllesmereUI**: WritPath's windows take its look; otherwise they use a plain dark style.
-- **Shortest Path Forever**: installed alongside WritPath from CurseForge. Each step's spot is handed to it as a
-  walking journey: along the ground (around cliffs, water and buildings) and on roads, by your own *Follow roads*
-  and road detour settings, with its route line on the maps. Its arrow leads, and WritPath's own arrow steps aside
-  so there's one arrow. Turn its arrow off (its Interface settings) and WritPath's arrow follows the same path
-  instead. A journey you start yourself in Shortest Path Forever is left alone.
 
 First time: open any flight master's map once on each continent, so WritPath learns which flight paths you know.
 Crossings, boats and flight times you use are learned as you travel.
@@ -137,8 +145,9 @@ talking to anyone (`/writs accept` turns this off).
 
 ### Follow the guide
 
-The guide window shows the next steps, and an arrow on screen points to the current one with the distance.
-When you get there, the arrow's label says **here** in large type.
+The guide window shows the next steps. Shortest Path Forever's arrow leads you along the ground to the current one,
+and its route line shows on the maps. With its arrow turned off, WritPath's own arrow points the same way, with the
+distance; when you get there, its label says **here** in large type.
 
 **Map pins.** Drop a pin on the world map (outside a writ route) and WritPath plans the way there, with roads,
 flights, boats and the same warnings about high-level mobs, and the arrow leads you. Clear the pin to stop, or drop
@@ -189,14 +198,16 @@ list after asking. What WritPath has learned stays.
 
 - **Customer spots**: the map pin when you accept a writ, and your exact spot when you hand one in. Customers
   that were "zone only" become exact.
-- **Roads, boats and zeppelins** you ride, and **flight times** of flights you take.
+- **Zone crossings, boats and zeppelins** you ride, and **flight times** of flights you take.
 - **Winding paths** (while you follow a writ route): when the way you rode to a border was much longer than a straight line (around mountains),
   its turns are saved. Once two of your rides agree, routes follow it, with a guide step at each turn
   (`/writs travel` shows how many it knows).
-- **Your hearthstone's spot**, when you set it at an innkeeper or land from it.
-- **Map roads**: WritPath ships the roads and trails of every outdoor zone, traced from the zone maps, so routes
-  follow the drawn roads from the start instead of riding a straight line through the mountains. Route times use
-  your own mount's speed once WritPath has seen you mounted.
+- **Your hearthstone's spot**, when you set it at an innkeeper or land from it, and where each mage city teleport
+  lands, the first time you cast it.
+- **Map roads**: WritPath ships the roads and trails of every outdoor zone, traced from the zone maps. The planner
+  uses them to time a route and to choose between roads, flights and boats before Shortest Path Forever has measured
+  the walk; on the ground, Shortest Path Forever's own roads lead. Route times use your own mount's speed once
+  WritPath has seen you mounted.
 - **Dangerous stretches**: on a route, WritPath notes the hostile mobs around you (from enemy nameplates, so turn
   those on) and the level of anyone who dies. A guide step warns in red when the way ahead has mobs 3 or more levels
   above you, elites at your level, "??" mobs, or deaths of players near your level, and routes go round those roads
@@ -206,8 +217,9 @@ list after asking. What WritPath has learned stays.
   levels above you gets the warning, and the stop's row in the plan gets a red "lvl 55-60 zone" chip.
 - **Flight paths you know**, each time you open a flight master's map.
 
-It starts from what ships with it (customer spots from community sources and QuestieDB, RestedXP's roads, boats
-and flight points, and trips other WritPath players recorded), and what you learn always wins.
+It starts from what ships with it (customer spots from community sources and QuestieDB, flight points and times
+from RestedXP and Polestar, boats, roads traced from the zone maps, and trips other WritPath players recorded), and
+what you learn always wins. [CREDITS.md](CREDITS.md) lists every source.
 
 ### Slash commands
 
@@ -220,7 +232,9 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs plan` | Open the planner (writs for a rep target, or Merchant's Favor) |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs accept` | Turn off (or back on) opening and accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
+| `/writs pins` | Turn off (or back on) a map pin you drop becoming a route |
 | `/writs autofly` | Turn on (or off) taking the guide's flight when you talk to its flight master (the planner's Auto-fly box) |
+| `/writs hearth` | Turn off (or back on) using your Hearthstone in plans, for this character (the planner's Hearth box) |
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
 | `/writs discord` | The WritPath Discord's invite link, selected so Ctrl+C copies it |
