@@ -917,9 +917,12 @@ function T.Build()
   end
 end
 
--- shortest times from a place to every node (cached per place)
-local function From(src)
-  local key = src.map .. ":" .. src.x .. ":" .. src.y .. (loose and ":loose" or "")
+-- a straight ride this short won't cross a mountain, so a road route may beat Shortest Path Forever's walk (yards)
+local SHORT_RIDE = 200
+-- shortest times from a place to every node (cached per place). ground: only short straight rides (from the place
+-- onto the network, and between places): the routes that may beat a known walk on the ground (1.19.3)
+local function From(src, ground)
+  local key = src.map .. ":" .. src.x .. ":" .. src.y .. (loose and ":loose" or "") .. (ground and ":ground" or "")
   if cache[key] then return cache[key] end
   local dist, prev, done = {}, {}, {}
   -- a binary heap of { time, node }: the road network can have many places
@@ -953,7 +956,7 @@ local function From(src)
   -- costs a bit more, because the straight line may run into hills
   local open = {}
   for _, n in ipairs(nodes) do
-    if n.p.inst == src.inst then
+    if n.p.inst == src.inst and not (ground and Dist(src, n.p) > SHORT_RIDE) then
       local o = open[n.zone]
       if o == nil then o = Open(src.map, n.zone); open[n.zone] = o end
       if o then
@@ -973,7 +976,7 @@ local function From(src)
       -- otherwise make the stop look quicker: Nethergarde -> Farholde Keep -> Thelsamar)
       local landed = prev[u] and prev[u][2].kind == "fly"
       for _, e in ipairs(nodes[u].edges) do
-        if not (landed and e.kind == "fly") then
+        if not (landed and e.kind == "fly") and not (ground and e.kind == "ride" and Dist(nodes[u].p, e.to.p) > SHORT_RIDE) then
           local nd = best + e.cost
           if not dist[e.to.i] or nd < dist[e.to.i] then dist[e.to.i], prev[e.to.i] = nd, { u, e }; Push(nd, e.to.i) end
         end
@@ -997,7 +1000,6 @@ T.WalkKey = WalkKey
 -- yards or false } }. Your own spot is never a saved one, so this is how the first leg of a plan gets the ground way.
 local here
 local HERE_NEAR = 30   -- yards: still standing where those were worked out from
-local SHORT_RIDE = 200 -- yards: a straight ride this short won't cross a mountain, so a road route may beat the walk
 function T.SetHere(p, rows) here = p and { p = p, rows = rows } or nil end
 function T.WalkYards(a, b)
   if here then
@@ -1057,41 +1059,29 @@ function Time(a, b)
     end
     return v
   end
-  -- every straight ride on the way to node i is short (the ride from a to the first place, and each "ride" edge)
-  local function Grounded(i)
-    local g = r.grounded
-    if not g then g = {}; r.grounded = g end
-    local v = g[i]
-    if v == nil then
-      local p = r.prev[i]
-      if not p then v = Dist(a, nodes[i].p) <= SHORT_RIDE
-      else
-        local k = p[2].kind
-        if k == "fly" or k == "sail" then v = false
-        elseif k == "ride" and Dist(nodes[p[1]].p, nodes[i].p) > SHORT_RIDE then v = false
-        else v = Grounded(p[1]) end
-      end
-      g[i] = v
-    end
-    return v
-  end
+  -- and with the ground way known, the quickest way where every straight ride is short, searched for as such (1.19.3:
+  -- only the quickest way of all was checked, so a road route that opened by cutting a corner off-road lost to the
+  -- walk beside it: Splintertree to the Emerald Sanctuary took the walk, 394 s, not the road, 299 s)
+  local rg = walk and From(a, true)
   -- the places you can ride straight to b from: only its own zone's when its roads are known (1.17.0: every place on
   -- the map was checked, for every leg)
   local list = (not loose and roads and roads[b.map]) and (byZone[b.map] or {}) or nodes
-  local open = {}
+  local open, from = {}, r
   for _, n in ipairs(list) do
-    local d = r.dist[n.i]
-    if d and walk and not Carried(n.i) and not (Grounded(n.i) and Dist(n.p, b) <= SHORT_RIDE) then d = nil end
-    if d and n.p.inst == b.inst then
+    if n.p.inst == b.inst then
       local o = open[n.zone]
       if o == nil then o = Open(b.map, n.zone); open[n.zone] = o end
       if o then
-        d = d + Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
-        if not best or d < best then best, via = d, n end
+        local ride = Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
+        local d = r.dist[n.i]
+        if d and walk and not Carried(n.i) then d = nil end
+        if d and (not best or d + ride < best) then best, via, from = d + ride, n, r end
+        local g = rg and Dist(n.p, b) <= SHORT_RIDE and rg.dist[n.i]
+        if g and (not best or g + ride < best) then best, via, from = g + ride, n, rg end
       end
     end
   end
-  return best, via, r
+  return best, via, from
 end
 
 
@@ -1213,9 +1203,10 @@ function T.Legs(a, b)
     end
   end
   FlushRoad()
-  -- two crossings at the same spot (a border straight back out) say nothing useful twice
+  -- two crossings at the same spot (a border straight back out) say nothing useful twice. Not a road or a path with
+  -- waypoints that ends by a border: that dropped the whole road (1.19.3: Ashenvale's road north to Felwood)
   for j = #legs, 2, -1 do
-    if legs[j].kind == "cross" and legs[j - 1].kind == "cross" and Dist(legs[j].at, legs[j - 1].at) < 30 then table.remove(legs, j - 1) end
+    if legs[j].kind == "cross" and legs[j - 1].kind == "cross" and not legs[j - 1].way and Dist(legs[j].at, legs[j - 1].at) < 30 then table.remove(legs, j - 1) end
   end
   -- the stretch you ride to reach each step (after a flight or a boat, from where you land), and the last one to b
   local from = a

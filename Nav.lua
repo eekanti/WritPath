@@ -224,6 +224,46 @@ local function SPF()
 end
 local function WalkReset() if walk.cancel then pcall(walk.cancel) end; walk = {} end
 
+-- 1.19.3: the arrow follows Shortest Path Forever's own journey to the step's spot. Its WalkPath (above, the fallback)
+-- leaves out its road data, so the arrow led beside roads through trees and up slopes; its journeys use your own
+-- Follow roads and road detour settings, the way its own arrow goes. WritPath asks it for a walking journey to the
+-- step's spot (NavigateRoute, policy "walking": the flights, boats and order of stops stay WritPath's), and points at
+-- where its guidance points (Guidance) while that journey is WritPath's. Its own route line shows on the maps too.
+-- A journey you start yourself in Shortest Path Forever is left alone: the arrow falls back to WalkPath.
+local journey = { key = nil, tried = 0, mine = false }
+local function JourneyAPI()
+  local api = ShortestPathForever and ShortestPathForever.API
+  if type(api) == "table" and api.version == 2 and type(api.NavigateRoute) == "function" and type(api.Guidance) == "function"
+     and type(api.Cancel) == "function" then return api end
+end
+function WritPath_JourneyCancel()
+  local api = JourneyAPI()
+  if api and journey.mine then pcall(api.Cancel, OWNER) end
+  journey.key, journey.mine = nil, false
+end
+function WritPath_JourneyState() return journey end   -- for tests
+-- the point Shortest Path Forever's guidance aims at on its walk to `at` ({ map, x, y, label }), or nil
+local function JourneyTarget(at)
+  local api = JourneyAPI()
+  if not (api and at) then return nil end
+  local key = ("%d:%.2f:%.2f"):format(at[1], at[2], at[3])
+  local now = GetTime()
+  -- asked once per spot (it replans as you move); again after a refusal (combat, loading), every 5 seconds
+  if journey.key ~= key and now - journey.tried >= (journey.failed == key and 5 or 0) then
+    journey.tried = now
+    local ok, started = pcall(api.NavigateRoute, OWNER, { { map = at[1], x = at[2] / 100, y = at[3] / 100, title = at[4] } }, { policy = "walking" })
+    if ok and started then journey.key, journey.mine, journey.failed = key, true, nil else journey.failed = key end
+  end
+  if journey.key ~= key then return nil end
+  local ok, g = pcall(api.Guidance)
+  local p = ok and type(g) == "table" and g.owner == OWNER and g.point
+  if not (p and p.map and p.x and p.y) then return nil end
+  local t = journey.target or {}
+  t[1], t[2], t[3], t[4] = p.map, p.x * 100, p.y * 100, at[4]
+  journey.target = t
+  return t
+end
+
 local function WalkAsk(s, at)
   local api, now = SPF(), GetTime()
   if not api then return end
@@ -371,6 +411,9 @@ function WritPath_WalkState() return walk end   -- for tests
 
 local function Target(s)
   local w = s and s.way
+  -- Shortest Path Forever's journey to the step's spot (the end of a road step: its own roads lead there)
+  local j = s and JourneyTarget(w and w[#w] or s.at)
+  if j then return j end
   if not w then return WalkTarget(s) end
   -- a road step with Shortest Path Forever: its ground path to where you join the road, which knows the cliffs the
   -- straight ride onto it can't. The traced road is the fallback while there's no path. Once you're on the road,
@@ -719,6 +762,12 @@ arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   local s = ROUTE[WritPathNav.step]; if not s then return end
   local g = Target(s)   -- where the arrow points: a road's next waypoint, along the ground path, or the step's spot
   if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
+  -- Shortest Path Forever's own arrow already shows this journey: one arrow, not two pointing the same way. Faded,
+  -- not hidden: the guide's polling runs on this frame. With its arrow turned off (its Interface settings), this one
+  -- leads instead (1.19.3)
+  if g == journey.target and not (ShortestPathForeverDB and ShortestPathForeverDB.arrow == false) then
+    self.tex:SetAlpha(0); self.text:SetText(""); return
+  end
   local dist, angle = Vector(g)
   -- the distance shown is to the marker (the map pin: a road's next waypoint, or the step's spot), not to the spot
   -- the arrow follows 25 yards ahead on the ground path (1.18.0)
@@ -772,6 +821,7 @@ function WritPath_SetRoute(route, titleText, doneText)
   WritPathNav.pinRoute = nil   -- a map pin's route says so itself, after this (Planner.lua)
   ROUTE = route or {}
   WritPathNav.manual, lastStep = {}, nil
+  if not route and WritPath_JourneyCancel then WritPath_JourneyCancel() end   -- no route: Shortest Path Forever's journey ends too
   if not route then WritPathNav.skipWrit, WritPathNav.skipFp = nil, nil end   -- cleared: skips go with the route
   Show(true)
 end

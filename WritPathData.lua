@@ -34,6 +34,11 @@ WritPath_Data = {
     -- Stranglethorn went straight over the mountains into it (bug report, 2026-11-24)
     { from = 1431, to = 1430, x = 90.5, y = 41.0 },   -- Duskwood -> Deadwind Pass (the road east from Darkshire)
     { from = 1431, to = 1433, x = 94.2, y = 10.4 },   -- Duskwood -> Redridge Mountains (the road north-east)
+    -- the road north out of Ashenvale into southern Felwood (the Emerald Sanctuary): missing, so a route from
+    -- Splintertree went round by Astranaar and Darkshore, 990 s for a 394 s ride. The spot is where Shortest Path
+    -- Forever's ground path crosses the border (2026-11-25)
+    { from = 1440, to = 1448, x = 55.6, y = 33.0 },   -- Ashenvale -> Felwood
+    { from = 1448, to = 1440, x = 55.5, y = 94.6 },   -- Felwood -> Ashenvale
   },
   -- flight times in seconds between flight points (taxi node ids), either direction
   flights = {

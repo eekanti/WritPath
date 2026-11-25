@@ -2780,25 +2780,9 @@
  },
  "1440": {
   "name": "Ashenvale",
-  "note": "the roads into Darkshore (north-west) and the Barrens (south) are approximate at their ends",
+  "note": "the roads into Darkshore (north-west) and the Barrens (south) are approximate at their ends 2026-11-25: the road north into Felwood runs up the valley east of Raynewood Retreat (traced by the author on the map; it was a straight line from Raynewood over the hills), and joins the main road at 64.8, 60.5; the road south (from 66, 61) now meets the main road.",
   "roads": [
    [
-    [
-     56.1,
-     28.9
-    ],
-    [
-     56.5,
-     33
-    ],
-    [
-     58,
-     40
-    ],
-    [
-     60,
-     46
-    ],
     [
      61.5,
      52
@@ -2840,6 +2824,14 @@
     [
      63,
      60
+    ],
+    [
+     64.8,
+     60.5
+    ],
+    [
+     66,
+     61
     ],
     [
      67,
@@ -2998,6 +2990,80 @@
     [
      68.5,
      86
+    ]
+   ],
+   [
+    [
+     64.8,
+     60.5
+    ],
+    [
+     64.5,
+     57.5
+    ],
+    [
+     64.3,
+     54.5
+    ],
+    [
+     64.0,
+     51.3
+    ],
+    [
+     63.8,
+     49.7
+    ],
+    [
+     63.5,
+     48.1
+    ],
+    [
+     62.7,
+     46.4
+    ],
+    [
+     62.0,
+     45.6
+    ],
+    [
+     61.3,
+     44.0
+    ],
+    [
+     60.7,
+     42.4
+    ],
+    [
+     60.4,
+     40.8
+    ],
+    [
+     60.0,
+     40.0
+    ],
+    [
+     59.0,
+     38.4
+    ],
+    [
+     57.4,
+     36.7
+    ],
+    [
+     56.1,
+     35.1
+    ],
+    [
+     55.6,
+     33.5
+    ],
+    [
+     55.5,
+     31.1
+    ],
+    [
+     55.6,
+     28.9
     ]
    ]
   ],
