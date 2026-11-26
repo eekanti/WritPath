@@ -7,9 +7,8 @@ A World of Warcraft: Forever addon for Craftsman's Writs (Durotar Supply and Log
   writs you have and priced from WritPath's own auction house scan (or Auctionator's), each writ once a day (the game's
   limit). With no target, it plans just the writs you have, in the shortest hand-in order.
 - **Guided route:** a RestedXP-style step list with flight paths, zone crossings and boats. The walks between stops
-  are led by [Shortest Path Forever](https://www.curseforge.com/wow/addons/shortest-path-forever)'s arrow, on real
+  follow [Shortest Path Forever](https://www.curseforge.com/wow/addons/shortest-path-forever)'s journeys, on real
   roads and around cliffs and water.
-- **Map pins:** drop a pin on the map and WritPath routes you there the same way.
 - **Buying help:** at the auction house a shopping panel buys the plan's list one click at a time, with a price cap.
 - **Money:** what each writ and its item cost and what its coin pouch paid, per plan.
 - **Learns as you play:** customer spots at turn-in, zone crossings, boats you take, flight times, which
@@ -145,14 +144,12 @@ talking to anyone (`/writs accept` turns this off).
 
 ### Follow the guide
 
-The guide window shows the next steps. Shortest Path Forever's arrow leads you along the ground to the current one,
-and its route line shows on the maps. With its arrow turned off, WritPath's own arrow points the same way, with the
-distance; when you get there, its label says **here** in large type.
+The guide window shows the next steps. The arrow leads you along the ground to the current one, on the way Shortest
+Path Forever finds (its route line shows on the maps). It looks and stands just like Shortest Path Forever's own arrow:
+the step's number, the distance, and "Stop 3 of 9" with the step's name; when you get there, the gold pin. Its arrow
+steps aside while WritPath's leads, and is back for journeys of your own. To go somewhere that isn't a writ, plan a
+journey in Shortest Path Forever (Shift-click the world map).
 
-**Map pins.** Drop a pin on the world map (outside a writ route) and WritPath plans the way there, with roads,
-flights, boats and the same warnings about high-level mobs, and the arrow leads you. Clear the pin to stop, or drop
-another to go somewhere else. While a writ route is in progress, a pin you drop doesn't replace it. `/writs pins`
-turns this off (or back on).
 Scroll over the steps with the mouse wheel to see the rest of the route (or the finished steps); it jumps back to
 the current step when that one is done.
 
@@ -232,7 +229,6 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs plan` | Open the planner (writs for a rep target, or Merchant's Favor) |
 | `/writs runs` | Your last runs: the planner's time estimate against your real travel and buying time |
 | `/writs accept` | Turn off (or back on) opening and accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
-| `/writs pins` | Turn off (or back on) a map pin you drop becoming a route |
 | `/writs autofly` | Turn on (or off) taking the guide's flight when you talk to its flight master (the planner's Auto-fly box) |
 | `/writs hearth` | Turn off (or back on) using your Hearthstone in plans, for this character (the planner's Hearth box) |
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |

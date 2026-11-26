@@ -1666,7 +1666,7 @@ end
 -- bag spaces and quest log slots a plan still needs: writ scrolls you buy and the items to fill them, quests
 -- you haven't accepted yet; for Favor, crates and fillings (a crate is handed in as soon as it's accepted)
 local function Room(plan)
-  local bags, quests, want = 0, 0, {}
+  local bags, quests, want, at = 0, 0, {}, {}
   local CRATE = {}
   if plan.favor then
     for _, c in ipairs(WritPath_Crates or {}) do CRATE[c[1]] = true end
@@ -1675,24 +1675,36 @@ local function Room(plan)
     for _, p in ipairs(plan.route or {}) do
       if not p.have then want[p.id] = (want[p.id] or 0) + 1 end
       if p.w.req then want[p.w.req] = (want[p.w.req] or 0) + (p.w.n or 1) end
-      if not InLog(p.w.q) then quests = quests + 1 end
+      if not InLog(p.w.q) then
+        quests = quests + 1
+        local c = p.w.c or p.id; at[c] = (at[c] or 0) + 1
+      end
     end
   end
+  -- writs are opened one customer at a time as you reach them (Nav.lua), so the log only needs room for the
+  -- customer who takes the most (1.19.4)
+  local most = 0
+  for _, n in pairs(at) do most = math.max(most, n) end
   for id, n in pairs(want) do
     local extra = (plan.favor and plan.noBags) and n or (n - Count(id))
     local writ = WritPath_Writs[id] ~= nil
     bags = bags + NewSlots(id, extra, (writ or CRATE[id]) and 1 or 20)
   end
-  return bags, quests
+  return bags, quests, most
 end
 local lastRoom
 local function WarnRoom(plan)
   if not plan or not ((plan.route and #plan.route > 0) or (plan.picks and #plan.picks > 0)) then return end
-  local bags, quests = Room(plan)
+  local bags, quests, most = Room(plan)
   local freeBags, freeQuests = FreeBagSlots(), FreeQuestSlots()
   local short = {}
   if freeBags and bags > freeBags then short[#short + 1] = ("%d bag spaces (you have %d free)"):format(bags, freeBags) end
-  if freeQuests and quests > freeQuests then short[#short + 1] = ("%d quest log slots (you have %d free)"):format(quests, freeQuests) end
+  -- with writs opened for you, only the biggest customer's writs need to fit at once; opening them yourself, all do
+  local auto = not (WritPathNav and WritPathNav.noAutoAccept)
+  local need = auto and most or quests
+  if freeQuests and need > freeQuests then
+    short[#short + 1] = (auto and "%d quest log slots for one customer (you have %d free)" or "%d quest log slots (you have %d free)"):format(need, freeQuests)
+  end
   local msg = #short > 0 and ("|cFFFF3333This plan needs " .. table.concat(short, " and ") .. "!|r") or nil
   if msg and msg ~= lastRoom then
     Print(msg)
@@ -2747,44 +2759,6 @@ WritPath_PlannerInternals.StartRun, WritPath_PlannerInternals.RunTurnin = StartR
 WritPath_PlannerInternals.Go = function(plan) current = plan; local h = rawget(goBtn, "_s_OnClick") or goBtn:GetScript("OnClick"); h(goBtn) end
 WritPath_ReplanFromBags = WritPath_Timed("replanning (bags)", WritPath_ReplanFromBags)
 
----------------------------------------------------------------- map pins (1.18.0)
--- A map pin you drop yourself becomes a route: the same travel steps a writ route gets (roads, flights, boats,
--- danger warnings), then the pin, and the arrow leads you there. A writ route in progress wins: a pin dropped then
--- is left alone. Clearing the pin clears its route, and a new pin replaces it. WritPath's own pins (the next road
--- waypoint, set as you go) are told apart by being on the route. /writs pins turns it off (WritPathNav.noPins).
--- (no locals of its own here: Planner.lua's main chunk is at Lua's 200-local limit)
-WritPath_PlannerInternals.PinRoute = function()
-  if not WritPathNav or WritPathNav.noPins then return end
-  local wp = C_Map.GetUserWaypoint and C_Map.GetUserWaypoint()
-  if not wp then   -- cleared: its route goes too
-    if WritPathNav.pinRoute then WritPath_SetRoute(nil) end
-    return
-  end
-  if not wp.position then return end
-  local map, x, y = wp.uiMapID, wp.position.x * 100, wp.position.y * 100
-  for _, s in ipairs(WritPath_CurrentRoute and WritPath_CurrentRoute() or {}) do   -- WritPath's own pin: on the route
-    for _, g in ipairs(s.way or {}) do
-      if g[1] == map and math.abs(g[2] - x) < 0.3 and math.abs(g[3] - y) < 0.3 then return end
-    end
-    if s.at and s.at[1] == map and math.abs(s.at[2] - x) < 0.3 and math.abs(s.at[3] - y) < 0.3 then return end
-  end
-  if not WritPathNav.pinRoute and WritPath_RouteActive() then return end  -- a writ route in progress wins
-  if Travel.IsContinent(map) then                                         -- dropped on the continent map
-    local z, zx, zy = Travel.Place(map, x / 100, y / 100)
-    if z then map, x, y = z, zx, zy end
-  end
-  local from, to = Travel.PlayerPoint(), Travel.Point(map, x, y)
-  if not (from and to) then return end
-  local steps = {}
-  local warn = TravelSteps(steps, from, to)
-  steps[#steps + 1] = { at = { map, x, y, "Map pin" }, lines = { "{goto} To your map pin", warn }, done = { pin = true } }
-  WritPath_SetRoute(steps, "Map pin", "You're at your map pin.")
-  WritPathNav.pinRoute = true
-end
-WritPath_PlannerInternals.PinRoute = WritPath_Timed("map pin route", WritPath_PlannerInternals.PinRoute)
-WritPath_PlannerInternals.pinEvents = CreateFrame("Frame")
-WritPath_PlannerInternals.pinEvents:RegisterEvent("USER_WAYPOINT_UPDATED")
--- a moment later: the pin is set, and a road waypoint WritPath sets itself is on the route by then
-WritPath_PlannerInternals.pinEvents:SetScript("OnEvent", function()
-  C_Timer.After(0.1, function() WritPath_PlannerInternals.PinRoute() end)
-end)
+-- (1.19.4: a map pin you dropped used to become a WritPath route here. Shortest Path Forever plans a journey to any
+-- spot you Shift-click on the world map, with the same flights, boats and roads, so that's gone: it fought its
+-- journeys over the one map pin, and a pin route vanished at its first stop.)

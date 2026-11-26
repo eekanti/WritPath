@@ -1,7 +1,7 @@
 -- WritPath guide: a step window and a navigation arrow.
 -- Steps complete by themselves (writ handed in, flight taken, zone reached); the
 -- checkbox on a step completes it by hand. Styled through EllesmereUI's skinning API when it's
--- installed; otherwise a plain flat dark look. The arrow is WritPath's own (Media/arrow.tga).
+-- installed; otherwise a plain flat dark look. The arrow is drawn as Shortest Path Forever draws its own.
 -- /writs  show or hide the guide     /writs help  the other commands
 
 local ROUTE = {}   -- the planned route (WritPathNav.route); empty until you start one from the planner
@@ -243,16 +243,29 @@ function WritPath_JourneyCancel()
 end
 function WritPath_JourneyState() return journey end   -- for tests
 -- the point Shortest Path Forever's guidance aims at on its walk to `at` ({ map, x, y, label }), or nil
+-- "Stop 3 of 9: Juo", as the step window numbers its steps: under both arrows (Shortest Path Forever shows it as the
+-- stop's tooltip line, under its arrow and its arrival pin) (1.19.4)
+function WritPath_StopTitle(name)
+  return ("Stop %d of %d: %s"):format(WritPathNav.step or 1, math.max(#ROUTE, WritPathNav.step or 1), name or "")
+end
 local function JourneyTarget(at)
   local api = JourneyAPI()
   if not (api and at) then return nil end
-  local key = ("%d:%.2f:%.2f"):format(at[1], at[2], at[3])
+  local line = WritPath_StopTitle(at[4])
+  local key = ("%d:%.2f:%.2f:%s"):format(at[1], at[2], at[3], line)
   local now = GetTime()
   -- asked once per spot (it replans as you move); again after a refusal (combat, loading), every 5 seconds
   if journey.key ~= key and now - journey.tried >= (journey.failed == key and 5 or 0) then
     journey.tried = now
-    local ok, started = pcall(api.NavigateRoute, OWNER, { { map = at[1], x = at[2] / 100, y = at[3] / 100, title = at[4] } }, { policy = "walking" })
-    if ok and started then journey.key, journey.mine, journey.failed = key, true, nil else journey.failed = key end
+    local stops = { { map = at[1], x = at[2] / 100, y = at[3] / 100, title = at[4], tooltip = line } }
+    local ok, started = pcall(api.NavigateRoute, OWNER, stops, { policy = "walking" })
+    if ok and started then
+      journey.key, journey.mine, journey.failed = key, true, nil
+      -- A journey already going to this spot (resumed after a /reload, started before the stop line existed) is
+      -- taken over as it stands, without the line or the stop number. Sent again by its owner now, the same stop
+      -- only relabels it (no new search), and the line shows (1.19.4).
+      pcall(api.NavigateRoute, OWNER, stops, { policy = "walking" })
+    else journey.failed = key end
   end
   if journey.key ~= key then return nil end
   local ok, g = pcall(api.Guidance)
@@ -574,23 +587,97 @@ if EllesmereUI and EllesmereUI.RegisterSkin then
 end
 
 ---------------------------------------------------------------- arrow
+-- 1.19.4: drawn the way Shortest Path Forever draws its own arrow, so the two never look like different things: the
+-- client's tracked-arrow art circling the step's gold numbered marker (ForeverCore's, which Shortest Path Forever
+-- brings), "123 yd" under it and "Stop 3 of 9: name" under that, dimmed while the way lies behind you; arrived, its
+-- gold pin and the name. Sizes and spacing are its own (UI/Arrow.lua), and it takes its Arrow scale setting. Nothing
+-- is copied: the art is read from those addons' folders and the client.
+local ARROW_RADIUS, STEP_SIZE, PIN_SIZE = 36, 32, 36
+local PIN = "Interface\\AddOns\\ShortestPathForever\\media\\Pin"
 local arrow = CreateFrame("Frame", "WritPathArrow", UIParent)
-arrow:SetSize(42, 42); arrow:SetPoint("TOP", UIParent, "TOP", 0, -120)
-arrow:SetMovable(true); arrow:EnableMouse(true); arrow:RegisterForDrag("LeftButton"); arrow:SetClampedToScreen(true)
-arrow:SetScript("OnDragStart", arrow.StartMoving)
-arrow:SetScript("OnDragStop", function(self)
-  self:StopMovingOrSizing(); local p, _, rp, x, y = self:GetPoint(); WritPathNav.arrowPos = { p, rp, x, y }
-end)
-arrow.tex = arrow:CreateTexture(nil, "ARTWORK"); arrow.tex:SetAllPoints(); arrow.tex:SetTexture(TEX.arrow)
-arrow.text = arrow:CreateFontString(nil, "OVERLAY")
-arrow.text:SetFont(GameFontNormal:GetFont(), 10, "OUTLINE"); arrow.text:SetPoint("TOP", arrow, "BOTTOM", 0, -5)
-arrow.text:SetJustifyH("CENTER")
--- arrived: the name and "here" in large type (1.18.0: at size 10 it was easy to miss)
-function arrow:Big(big)
-  big = big and true or false
-  if self.big == big then return end
-  self.big = big
-  self.text:SetFont(GameFontNormal:GetFont(), big and 20 or 10, "OUTLINE")
+arrow:SetSize(100, 100); arrow:SetPoint("TOP", UIParent, "TOP", 0, -120); arrow:SetFrameStrata("BACKGROUND")
+arrow:EnableMouse(false)   -- click-through, like its arrow; it isn't dragged on its own any more
+arrow.anchor, arrow.looked, arrow.behind, arrow.hush, arrow.hushing = false, -1e9, false, false, false
+-- Locked to where Shortest Path Forever's arrow stands (1.19.4): pinned to its frame, so its stock place (which
+-- steps aside for the quest tracker) and wherever you dragged it are this arrow's place too. Its frame has no name and
+-- is made the first time it's needed, so it's looked for among UIParent's children, every few seconds until found.
+-- Until then, its saved place, or its stock place under the top of the screen.
+local function SPFArrowFrame()
+  for _, f in ipairs({ UIParent:GetChildren() }) do
+    if type(f) == "table" and rawget(f, "Arrow") and rawget(f, "Distance") and rawget(f, "Progress") and rawget(f, "ArrivalTitle") then
+      return f
+    end
+  end
+end
+function arrow:Place()
+  if self.anchor then return end
+  local now = GetTime()
+  if self.looked and now - self.looked < 3 then return end
+  self.looked = now
+  local f = WritPath_Open(SPFArrowFrame)
+  self:ClearAllPoints()
+  if f then
+    self.anchor = f; self:SetPoint("CENTER", f, "CENTER")
+    -- it sets its own alpha as it draws; while WritPath's arrow leads, it's set straight back to 0
+    if hooksecurefunc then
+      hooksecurefunc(f, "SetAlpha", function(fr, a)
+        if self.hush and not self.hushing and a ~= 0 then self.hushing = true; fr:SetAlpha(0); self.hushing = false end
+      end)
+    end
+    if self.hush then f:SetAlpha(0) end
+    return
+  end
+  local db = ShortestPathForeverDB
+  local sc = (tonumber(self:GetEffectiveScale()) or 1) / (tonumber(UIParent:GetEffectiveScale()) or 1)
+  if db and type(db.arrowX) == "number" and type(db.arrowY) == "number" and sc > 0 then
+    self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", db.arrowX / sc, db.arrowY / sc)
+  else self:SetPoint("TOP", UIParent, "TOP", 0, -120 / (sc > 0 and sc or 1)) end
+end
+-- One arrow, WritPath's (1.19.4): for a walk WritPath handed to Shortest Path Forever, its journey still finds the
+-- way (roads, by your settings) and this arrow points along it, but its own arrow is kept faded out: alone on a
+-- one-stop journey it shows a plain diamond and puts "Stop 3 of 9" in small white type, which isn't this look.
+-- A journey you start yourself in it keeps its arrow; so does turning its arrow off (this one leads either way).
+function arrow:Hush(on)
+  on = on and true or false
+  if self.hush == on then return end
+  self.hush = on
+  local f = self.anchor
+  if f then self.hushing = true; f:SetAlpha(on and 0 or 1); self.hushing = false end
+end
+arrow:SetScript("OnHide", function(self) self:Hush(false) end)
+arrow.icon = arrow:CreateTexture(nil, "BACKGROUND"); arrow.icon:SetPoint("CENTER")
+arrow.tex = arrow:CreateTexture(nil, "BACKGROUND")
+if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("Navigation-Tracked-Arrow") then
+  arrow.tex:SetAtlas("Navigation-Tracked-Arrow", true)
+else arrow.tex:SetTexture(TEX.arrow); arrow.tex:SetSize(42, 42) end
+arrow.dist = arrow:CreateFontString(nil, "BACKGROUND", "GameFontNormal")
+arrow.dist:SetPoint("TOP", arrow.icon, "BOTTOM", 0, -8)
+arrow.text = arrow:CreateFontString(nil, "BACKGROUND", "GameFontNormal")   -- the stop's title
+arrow.text:SetPoint("TOP", arrow.dist, "BOTTOM", 0, -4); arrow.text:SetWidth(240); arrow.text:SetJustifyH("CENTER")
+-- the step's marker (1 to 25; ForeverCore's ring and diamond past that), or the gold pin once you're there
+function arrow:Icon(step, arrived)
+  local FC = type(ForeverCore) == "table" and ForeverCore.Art
+  local file, size = PIN, PIN_SIZE
+  if not arrived then
+    file = FC and ((FC.Marker and FC.Marker(step)) or (FC.Diamond and FC.Diamond())) or TEX.icon
+    size = STEP_SIZE
+  end
+  if self.iconFile == file then return end
+  self.iconFile = file
+  self.icon:SetTexCoord(0, 1, 0, 1); self.icon:SetTexture(file); self.icon:SetSize(size, size)
+  if arrived then self.tex:Hide(); self.dist:Hide() else self.tex:Show(); self.dist:Show() end
+  self.text:ClearAllPoints()
+  self.text:SetPoint("TOP", arrived and self.icon or self.dist, "BOTTOM", 0, arrived and -8 or -4)
+end
+-- angle: counter-clockwise from straight ahead; the arrow points that way from the edge of its orbit
+function arrow:Draw(angle)
+  self.tex:SetRotation(angle); self.tex:ClearAllPoints()
+  self.tex:SetPoint("CENTER", self.icon, "CENTER", -math.sin(angle) * ARROW_RADIUS, math.cos(angle) * ARROW_RADIUS)
+end
+function arrow:Scale()
+  local db = ShortestPathForeverDB
+  local sc = ((db and tonumber(db.arrowScale)) or 100) / 100
+  if self.scale ~= sc then self.scale = sc; self:SetScale(sc) end
 end
 arrow:Hide()
 
@@ -759,42 +846,46 @@ arrow:SetScript("OnUpdate", WritPath_Timed("guide arrow", function(self, e)
   if poll > 0.5 then poll = 0; Refresh(true) end
   if tick < 0.03 then return end
   local dt = tick; tick = 0
-  local s = ROUTE[WritPathNav.step]; if not s then return end
+  local s = ROUTE[WritPathNav.step]; if not s then self:Hush(false); return end
   local g = Target(s)   -- where the arrow points: a road's next waypoint, along the ground path, or the step's spot
-  if not g then self.tex:SetAlpha(0); self.text:SetText(""); return end
-  -- Shortest Path Forever's own arrow already shows this journey: one arrow, not two pointing the same way. Faded,
-  -- not hidden: the guide's polling runs on this frame. With its arrow turned off (its Interface settings), this one
-  -- leads instead (1.19.3)
-  if g == journey.target and not (ShortestPathForeverDB and ShortestPathForeverDB.arrow == false) then
-    self.tex:SetAlpha(0); self.text:SetText(""); return
-  end
+  if not g then self:SetAlpha(0) end
+  -- following WritPath's own journey in Shortest Path Forever: its arrow stands down, this one leads (Hush above)
+  self:Hush(g ~= nil and g == journey.target)
+  if not g then return end
+  self:Scale(); self:Place()
   local dist, angle = Vector(g)
   -- the distance shown is to the marker (the map pin: a road's next waypoint, or the step's spot), not to the spot
   -- the arrow follows 25 yards ahead on the ground path (1.18.0)
   local marker = (s.way and s.way[s.wayI or 1]) or s.at
   local mdist = marker and Vector(marker) or dist
-  self:Big(mdist and mdist < 10)
+  local arrived = mdist and mdist < 10
+  self:Icon(WritPathNav.step, arrived)
+  self.text:SetText(arrived and marker[4] or WritPath_StopTitle(g[4]))
+  if arrived then self:SetAlpha(1); return end
   if not dist then
-    self.tex:SetAlpha(angle == "continent" and 0.4 or 0); self.tex:SetRotation(0)
-    self.text:SetText(g[4] .. "\n" .. (angle == "continent" and "|cFFFF5722other continent|r" or "~"))
+    self:SetAlpha(angle == "continent" and 1 or 0); self.tex:Hide()
+    self.dist:SetText(angle == "continent" and "|cFFFF5722other continent|r" or "~")
     return
   end
-  if mdist and mdist < 10 then
-    self.tex:SetAlpha(0); self.text:SetText(marker[4] .. "\n|cFF00FF25here|r"); return
-  end
-  -- the bearing eases round over a quarter second instead of snapping, so the path's small jumps don't twitch the
-  -- arrow; your own turning (facing) isn't eased. A new step, or a turn past 90 degrees, snaps straight there.
-  if angle then
-    local b = self.bear
-    if b and self.bearStep == WritPathNav.step then
-      local d = (angle - b + math.pi) % (2 * math.pi) - math.pi
-      if math.abs(d) > math.pi / 2 then b = angle else b = b + d * math.min(1, dt / 0.25) end
-    else b = angle end
-    self.bear, self.bearStep, angle = b, WritPathNav.step, b
-  end
   local facing = WritPath_Open(GetPlayerFacing)
-  if facing and angle then self.tex:SetAlpha(1); self.tex:SetRotation(angle - facing) else self.tex:SetAlpha(0) end
-  self.text:SetText(("%s\n(%dyd)"):format(g[4], math.floor(mdist or dist)))
+  if not (facing and angle) then self:SetAlpha(0); return end
+  self.tex:Show()
+  -- eased round the shortest way as Shortest Path Forever's arrow is (exponential, so the frame rate doesn't
+  -- matter), so the path's small jumps don't twitch it; a new step snaps straight there
+  local want = (angle - facing) % (2 * math.pi)
+  local b = self.bearStep == WritPathNav.step and self.bear
+  if b then
+    local d = (want - b + math.pi) % (2 * math.pi) - math.pi
+    b = (b + d * (1 - math.exp(-18 * dt))) % (2 * math.pi)
+  else b = want end
+  self.bear, self.bearStep = b, WritPathNav.step
+  self:Draw(b)
+  -- dimmed while the way lies behind you: past 120 degrees, until back inside 100 (its compass rule)
+  local off = math.abs((b + math.pi) % (2 * math.pi) - math.pi) * 180 / math.pi
+  self.behind = off > 120 or (self.behind and off >= 100) or false
+  self:SetAlpha(self.behind and 0.4 or 1)
+  local metres = ShortestPathForeverDB and ShortestPathForeverDB.metres
+  self.dist:SetText((metres and "%d m" or "%d yd"):format(math.floor((mdist or dist) + 0.5)))
 end))
 -- the poll lives on the arrow; keep it running while only the window is shown
 guide:SetScript("OnUpdate", WritPath_Timed("guide window", function(_, e) if not arrow:IsShown() then poll = poll + e; if poll > 0.5 then poll = 0; Refresh(true) end end end))
@@ -818,7 +909,6 @@ close:SetScript("OnClick", function() Show(false) end)
 -- the planner hands over a new route here; progress starts fresh
 function WritPath_SetRoute(route, titleText, doneText)
   WritPathNav.route, WritPathNav.title, WritPathNav.doneText, WritPathNav.doneRep = route, titleText, doneText, nil
-  WritPathNav.pinRoute = nil   -- a map pin's route says so itself, after this (Planner.lua)
   ROUTE = route or {}
   WritPathNav.manual, lastStep = {}, nil
   if not route and WritPath_JourneyCancel then WritPath_JourneyCancel() end   -- no route: Shortest Path Forever's journey ends too
@@ -1024,9 +1114,12 @@ ev:SetScript("OnEvent", WritPath_Timed("guide events", function(_, event, ...)
     WritPathNav = WritPathNav or {}
     WritPathNav.manual = WritPathNav.manual or {}
     if WritPathNav.shown == nil then WritPathNav.shown = true end
+    -- a map pin's route, from before 1.19.4 (Shortest Path Forever plans those now): not a writ route, so it goes
+    if WritPathNav.pinRoute then WritPathNav.route, WritPathNav.title, WritPathNav.doneText = nil, nil, nil end
+    WritPathNav.pinRoute, WritPathNav.noPins = nil, nil
     ROUTE = WritPathNav.route or {}
     local p = WritPathNav.guidePos; if p then guide:ClearAllPoints(); guide:SetPoint(p[1], UIParent, p[2], p[3], p[4]) end
-    p = WritPathNav.arrowPos; if p then arrow:ClearAllPoints(); arrow:SetPoint(p[1], UIParent, p[2], p[3], p[4]) end
+    WritPathNav.arrowPos = nil   -- 1.19.4: the arrow stands where Shortest Path Forever's does
     Show(WritPathNav.shown)
     PlaceMini()
   elseif WritPathNav then
@@ -1043,8 +1136,6 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs|r  show or hide the guide")
     Print("  |cFFFFD100/writs plan|r  open the planner (writs for a rep target, or Merchant's Favor)")
     Print("  |cFFFFD100/writs runs|r  your last runs: the planner's time estimate against your real time")
-    Print("  |cFFFFD100/writs pins|r  turn off (or back on) a map pin you drop becoming a route the arrow leads you on"
-      .. (WritPathNav.noPins and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs accept|r  turn off (or back on) opening and accepting writs, handing them in, and handing in Sealed crates")
     Print("  |cFFFFD100/writs autofly|r  turn on (or off) flying to the next stop when you talk to the guide's flight master"
       .. (WritPathNav.autoFly and " |cFFAAAAAA(on now)|r" or ""))
@@ -1055,10 +1146,6 @@ SlashCmdList.WRITPATH = function(msg)
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs hearth|r  turn off (or back on) using your Hearthstone in plans, for this character"
       .. ((WritPathChar and WritPathChar.noHearth) and " |cFFAAAAAA(off now)|r" or ""))
-  elseif msg == "pins" then
-    WritPathNav.noPins = not WritPathNav.noPins or nil
-    Print(WritPathNav.noPins and "Map pins no longer become routes."
-      or "A map pin you drop becomes a route, and the arrow leads you there (not while a writ route is in progress).")
   elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "hearth" then
     local on = WritPathChar and WritPathChar.noHearth   -- off now: turn it on
