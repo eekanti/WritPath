@@ -19,8 +19,8 @@ WritPath_Customers = {
   ["Bor'dorc"] = { npc = "Bor'dorc", map = 1452, x = 65.1, y = 33.2, src = "polestar" },
   ["Bullets Bigblast"] = { npc = "Bullets Bigblast", map = 1435, x = 70, y = 41.6, src = "questie" },
   ["Calliard"] = { npc = "Calliard", map = 1430, x = 48.35, y = 68.72, src = "questie" },
-  ["Centaur Pariah"] = { npc = "Centaur Pariah", map = 1443, x = 50.42, y = 86.65, src = "wowforever",
-    patrol = "He patrols the southern bluffs between 43, 85 and 50, 87, often pausing at 49, 87. Try /target Centaur Pariah." },
+  ["Centaur Pariah"] = { npc = "Centaur Pariah", map = 1443, x = 46.6, y = 86.3, src = "wowforever",   -- the middle of his walk: players handed in from 44.3 to 50.5 (1.19.6)
+    patrol = "He wanders the southern bluffs between 44, 86 and 50, 87, so the map spot is the middle of his walk. Look along the bluffs either way, or try /target Centaur Pariah." },
   ["Cowardly Peon"] = { npc = "Cowardly Peon", map = 1440, x = 78.5, y = 68.9, src = "questie" },
   ["Dendrite Starblaze"] = { npc = "Dendrite Starblaze", map = 1450, x = 56.21, y = 30.64, src = "wowforever" },
   ["Durganon"] = { npc = "Durganon", map = 1427, x = 41.1, y = 58.3, src = "game" },
