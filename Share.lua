@@ -329,3 +329,85 @@ ev:SetScript("OnEvent", WritPath_Timed("sharing", function(_, event, prefix, msg
     end
   end
 end))
+
+---------------------------------------------------------------- exporting, to paste in the Discord (1.19.5)
+-- For players the collector's web doesn't reach: /writs export shows everything this copy would share (what you
+-- learned under your id, and what others passed on to you under theirs) as text, selected for Ctrl+C, to paste in
+-- the WritPath Discord's #share-your-data. The author's tools/import.js reads it. Same records, same anonymity: random
+-- ids, no names, no gold, no items.
+--   WritPath export <version> <time>
+--   X:<id>:rec;rec;...   (one contributor's records, lines kept short)
+--   E:<count>            (every record above; a paste cut short is told apart by it)
+local function ExportText()
+  local lines, count = { ("WritPath export %s %d"):format(WritPath_VERSION or "?", time()) }, 0
+  local function Add(id, list)
+    local body = ""
+    for _, r in ipairs(list) do
+      if Valid(r) then
+        if body ~= "" and #body + #r + 1 > MAXLEN then lines[#lines + 1] = "X:" .. id .. ":" .. body; body = "" end
+        body = body == "" and r or body .. ";" .. r
+        count = count + 1
+      end
+    end
+    if body ~= "" then lines[#lines + 1] = "X:" .. id .. ":" .. body end
+  end
+  Add(MyId(), Records())
+  local R, by = Relay(), {}
+  for rec, e in pairs(R.recs) do for id in pairs(e.by) do by[id] = by[id] or {}; table.insert(by[id], rec) end end
+  local ids = {}
+  for id in pairs(by) do ids[#ids + 1] = id end
+  table.sort(ids)
+  for _, id in ipairs(ids) do table.sort(by[id]); Add(id, by[id]) end
+  lines[#lines + 1] = "E:" .. count
+  return table.concat(lines, "\n"), count
+end
+WritPath_ShareExportText = ExportText   -- for tests
+
+local exWin, exBox, exText
+local function BuildExport()
+  if exWin then return end
+  exWin = CreateFrame("Frame", "WritPathExport", UIParent, "BackdropTemplate")
+  exWin:SetSize(460, 300); exWin:SetPoint("CENTER", 0, 80)
+  exWin:SetFrameStrata("DIALOG"); exWin:SetToplevel(true); exWin:EnableMouse(true); exWin:SetClampedToScreen(true)
+  exWin:SetMovable(true); exWin:RegisterForDrag("LeftButton")
+  exWin:SetScript("OnDragStart", exWin.StartMoving); exWin:SetScript("OnDragStop", exWin.StopMovingOrSizing)
+  local bg = exWin:CreateTexture(nil, "BACKGROUND", nil, -8); bg:SetAllPoints(); bg:SetColorTexture(0.06, 0.06, 0.07, 1)
+  exWin:Hide()
+  tinsert(UISpecialFrames, "WritPathExport")   -- Escape closes it
+  local note = exWin:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  note:SetPoint("TOP", 0, -12); note:SetWidth(430)
+  note:SetText("Press |cFFFFD100Ctrl+C|r to copy, then paste it in the WritPath Discord's |cFFFFD100#share-your-data|r")
+  exWin.note = note
+  local scroll = CreateFrame("ScrollFrame", nil, exWin, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", 14, -36); scroll:SetPoint("BOTTOMRIGHT", -32, 14)
+  exBox = CreateFrame("EditBox", nil, scroll)
+  exBox:SetMultiLine(true); exBox:SetMaxLetters(0); exBox:SetAutoFocus(false)
+  exBox:SetFontObject(ChatFontSmall or GameFontHighlightSmall); exBox:SetWidth(410)
+  scroll:SetScrollChild(exBox)
+  -- selectable but not editable; Escape closes it
+  exBox:SetScript("OnTextChanged", function(self, user) if user then self:SetText(exText or ""); self:HighlightText() end end)
+  exBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+  exBox:SetScript("OnMouseUp", function(self) self:HighlightText() end)
+  exBox:SetScript("OnEscapePressed", function() exWin:Hide() end)
+  exWin:SetScript("OnHide", function() exBox:ClearFocus() end)
+  local S = WritPath_Skin and WritPath_Skin()
+  if S then
+    S.Shell(exWin); S.Font(note)
+  else
+    exWin:SetBackdrop({ bgFile = "Interface/BUTTONS/WHITE8X8", edgeFile = "Interface/BUTTONS/WHITE8X8", edgeSize = 1 })
+    exWin:SetBackdropColor(0.06, 0.06, 0.07, 0.97); exWin:SetBackdropBorderColor(0, 0, 0, 1)
+  end
+end
+
+function WritPath_ShareExport()
+  local text, n = ExportText()
+  local P = function(m) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. m) end
+  if n == 0 then P("Nothing to export yet: WritPath hasn't learned any roads, paths or customer spots on this account."); return end
+  BuildExport()
+  exText = text
+  exBox:SetText(text)
+  exWin:Show(); exWin:Raise()
+  exBox:SetFocus(); exBox:HighlightText()
+  P(("%d records are selected: press |cFFFFD100Ctrl+C|r, then paste them in the WritPath Discord's |cFFFFD100#share-your-data|r (Discord makes a long paste a file, which is fine). No names, gold or items are in it."):format(n))
+end
+WritPath_ShareExportInternals = { Win = function() return exWin end, Box = function() return exBox end }   -- for tests

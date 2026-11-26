@@ -1142,6 +1142,7 @@ SlashCmdList.WRITPATH = function(msg)
     Print("  |cFFFFD100/writs travel|r  which flight paths, roads and ships WritPath knows (for a route that walks everywhere)")
     Print("  |cFFFFD100/writs leg|r  why the way to the next customer looks the way it does (to report a bad route)")
     Print("  |cFFFFD100/writs discord|r  the WritPath Discord's invite link, selected so Ctrl+C copies it (help and news)")
+    Print("  |cFFFFD100/writs export|r  your learned roads and customer spots as text, to paste in the Discord's #share-your-data")
     Print("  |cFFFFD100/writs share|r  turn off (or back on) sharing the roads and spots you learn (anonymously, player to player)"
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs hearth|r  turn off (or back on) using your Hearthstone in plans, for this character"
@@ -1157,6 +1158,7 @@ SlashCmdList.WRITPATH = function(msg)
     Print(WritPathNav.autoFly and "Auto-fly on: at the flight master the guide sends you to, you take off for its next stop (hold Shift to choose yourself)."
       or "Auto-fly off: you choose your flights.")
   elseif msg == "discord" then WritPath_CopyDiscord()
+  elseif msg == "export" then WritPath_ShareExport()
   elseif msg == "share" then
     WritPathNav.noShare = not WritPathNav.noShare or nil
     Print(WritPathNav.noShare and "No longer sharing what you learn, or passing on what others learned."

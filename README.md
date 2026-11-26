@@ -234,6 +234,7 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
 | `/writs discord` | The WritPath Discord's invite link, selected so Ctrl+C copies it |
+| `/writs export` | Your learned roads and customer spots as text, selected for Ctrl+C, to paste in the Discord's #share-your-data |
 | `/writs share` | Turn off (or back on) sharing what you learn with WritPath's author (see below) |
 | `/writs help` | This list, in game |
 
@@ -260,6 +261,10 @@ it and ships the good parts to everyone in later versions.
 - **Limited:** what's passed on to others is at most 40 hidden messages at a time, at most once every 15 minutes per
   player and to at most 4 players in 10 minutes, sent at the pace most addons keep to. Your copy keeps at most 5,000
   records from others, each for 3 weeks, and accepts at most 2,000 a day from any one player.
+
+**Not reaching anyone?** If you play alone or few WritPath players are around you, type `/writs export`: it shows the same
+records (yours, and what others passed on to you, still under random ids) selected for Ctrl+C. Paste them in the
+WritPath Discord's #share-your-data channel; a long paste becomes a file, which is fine.
 
 `/writs share` turns all of this off (and back on).
 
