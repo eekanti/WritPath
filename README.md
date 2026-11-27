@@ -212,6 +212,13 @@ list after asking. What WritPath has learned stays.
   what your own faction saw counts: the other faction's guards show up as hostile), so you're warned on roads you haven't ridden yet; what you see yourself
   wins. Where nothing is known about the way, the zone's level range decides: a zone whose mobs start 3 or more
   levels above you gets the warning, and the stop's row in the plan gets a red "lvl 55-60 zone" chip.
+- **Safe routing** (the planner's Safe box, or `/writs safe`; per character, off unless you tick it): a filter on top
+  of Cheapest, Optimized and Fastest. Plans leave out customers with mobs more than 5 levels above you seen near
+  them (where nobody has been, a zone whose mobs all start that far above you), writs you already have for such a
+  customer stay off the route with the reason, and routes go round roads with such mobs wherever there's another way.
+  Flights and boats are always fine. It uses the same mob levels as the warnings, so the more WritPath players ride a
+  road, the better it knows it. Shortest Path Forever leads the last walk to each stop and doesn't know mob levels:
+  the guide's red warning still tells you when that walk passes trouble.
 - **Flight paths you know**, each time you open a flight master's map.
 
 It starts from what ships with it (customer spots from community sources and QuestieDB, flight points and times
@@ -231,6 +238,7 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs accept` | Turn off (or back on) opening and accepting writs for you, handing them in at their customer, and handing Sealed crates in at the camp |
 | `/writs autofly` | Turn on (or off) taking the guide's flight when you talk to its flight master (the planner's Auto-fly box) |
 | `/writs hearth` | Turn off (or back on) using your Hearthstone in plans, for this character (the planner's Hearth box) |
+| `/writs safe` | Turn on (or off) Safe routing for this character: no customers or roads with mobs more than 5 levels above you (the planner's Safe box) |
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
 | `/writs discord` | The WritPath Discord's invite link, selected so Ctrl+C copies it |

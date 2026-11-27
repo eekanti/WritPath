@@ -447,10 +447,11 @@ end
 ---------------------------------------------------------------- the graph
 local nodes, byZone, cache, roads
 local builtLevel   -- the player level the route map was built for (dangerous roads depend on it)
+local builtSafe, safeBad = false, {}   -- built with Safe routing on; hexes judged unsafe so far (see UnsafeAlong)
 local roadZone = {}       -- zones with traced roads: off-road riding there counts OFFROAD slower
 local OFFROAD = 1.3   -- off-road penalty
 
-function T.Reset() nodes, byZone, cache, roads, roadZone = nil, nil, nil, nil, {} end
+function T.Reset() nodes, byZone, cache, roads, roadZone, safeBad = nil, nil, nil, nil, {}, {} end
 local function Ride(zone) return roadZone[zone] and OFFROAD or 1 end   -- straight riding inside a zone
 
 -- Checkpoint hexes: the world is tiled with hexagons HEX yards across (flat side to flat side, pointy top), named
@@ -602,6 +603,63 @@ local function DangerAlong(a, b)
 end
 T.DangerAlong = DangerAlong
 
+-- Safe routing (1.20.0, per character: WritPathChar.safe, the planner's Safe box or /writs safe). A filter on top of
+-- every plan (Cheapest, Optimized, Fastest): no customer where mobs more than SAFE_LEVELS above you were seen by the
+-- spot (or, where nobody has ridden near it, in a zone whose mobs all start that far above you), and a ride through
+-- such mobs costs SAFE_COST more, so routes go round them wherever there is another way. Flights and ships are safe.
+local SAFE_LEVELS, SAFE_COST = 5, 1800
+function T.SafeOn() return (WritPathChar and WritPathChar.safe) and true or false end
+local function Unsafe(cell, lvl)
+  if not cell then return false end
+  if cell.s and not cell.h then return true end   -- a skull from before 1.17.3
+  return cell.h ~= nil and cell.h > lvl + SAFE_LEVELS
+end
+T.Unsafe, T.SAFE_LEVELS = Unsafe, SAFE_LEVELS
+-- why a customer is too dangerous for Safe routing, or nil (c: a customer, { map, x, y, exact })
+function T.SafeWhy(c)
+  if not (T.SafeOn() and c and c.map) then return nil end
+  local lvl = PlayerLevel()
+  local p = c.exact ~= false and c.x and T.Point(c.map, c.x, c.y)
+  local known, hi = 0, nil
+  if p and p.wx then
+    -- the spot's hex and two rings round it: about 100 yards
+    local seen, ring = { [HexKey(p)] = true }, { HexKey(p) }
+    for _ = 1, 2 do
+      local nxt = {}
+      for _, k in ipairs(ring) do
+        for _, n in ipairs(HexNeighbours(k)) do if not seen[n] then seen[n] = true; nxt[#nxt + 1] = n end end
+      end
+      ring = nxt
+    end
+    for k in pairs(seen) do
+      local cell = DangerCell(k)
+      if cell then
+        known = known + 1
+        if Unsafe(cell, lvl) then hi = math.max(hi or 0, cell.h or (lvl + 10)) end
+      end
+    end
+  end
+  if hi then return ("mobs up to level %d by the customer (Safe routing: you're %d)"):format(hi, lvl) end
+  if known > 0 then return nil end
+  local lo, zhi = T.ZoneLevels(c.map)
+  if lo and lo > lvl + SAFE_LEVELS then return ("a level %d-%d zone (Safe routing: you're %d)"):format(lo, zhi, lvl) end
+end
+-- the extra seconds for a straight ride from a to b with Safe routing on: SAFE_COST when it passes mobs too high
+-- for you, else 0. (Only while the route map is built for Safe routing.)
+local function UnsafeAlong(a, b)
+  if not (builtSafe and a and b and a.wx and b.wx and a.inst == b.inst) then return 0 end
+  local n = math.max(1, math.floor(Dist(a, b) / 40))
+  for i = 0, n do
+    local t = i / n
+    local k = HexKey({ inst = a.inst, wx = a.wx + (b.wx - a.wx) * t, wy = a.wy + (b.wy - a.wy) * t })
+    local bad = safeBad[k]
+    if bad == nil then bad = Unsafe(DangerCell(k), builtLevel); safeBad[k] = bad end
+    if bad then return SAFE_COST end
+  end
+  return 0
+end
+T.UnsafeAlong = UnsafeAlong
+
 -- riding straight from one zone into another is only allowed when WritPath knows no roads for one of them:
 -- between two zones with known roads the way goes over a road, a boat or a flight (a straight line across a
 -- border runs into the mountains between Feralas and Un'Goro, Duskwood and Stranglethorn, ...)
@@ -688,6 +746,7 @@ end
 
 function T.Build()
   builtLevel = PlayerLevel()
+  builtSafe, safeBad = T.SafeOn(), {}
   SetRide()
   hostileCity = UnitFactionGroup("player") == "Horde" and ALLIANCE_CITIES or HORDE_CITIES
   nodes, byZone, cache, roads = {}, {}, {}, {}
@@ -865,13 +924,15 @@ function T.Build()
   -- 8 hexes of road. The traced roads and Shortest Path Forever's ground paths do that job.)
   local TRAIL = 1.15
   local function RoadDanger(a, b)
-    local n = math.max(1, math.floor(Dist(a, b) / 50))
+    local n, extra = math.max(1, math.floor(Dist(a, b) / 50)), 0
     for i = 0, n do
       local t = i / n
       local q = { inst = a.inst, wx = a.wx + (b.wx - a.wx) * t, wy = a.wy + (b.wy - a.wy) * t }
-      if Dangerous(DangerCell(HexKey(q)), builtLevel) then return 60 end
+      local c = DangerCell(HexKey(q))
+      if builtSafe and Unsafe(c, builtLevel) then return SAFE_COST end   -- Safe routing: round it if at all possible
+      if extra == 0 and Dangerous(c, builtLevel) then extra = 60 end
     end
-    return 0
+    return extra
   end
   for m, z in pairs(WritPath_MapRoads or {}) do
     local spot = {}
@@ -906,10 +967,10 @@ function T.Build()
     for _, a in ipairs(list) do
       for _, b in ipairs(list) do
         if a ~= b and a.p.inst == b.p.inst then
-          if a.kind ~= "road" and b.kind ~= "road" then Edge(a, b, Dist(a.p, b.p) / RIDE * Ride(a.zone), "ride")
+          if a.kind ~= "road" and b.kind ~= "road" then Edge(a, b, Dist(a.p, b.p) / RIDE * Ride(a.zone) + UnsafeAlong(a.p, b.p), "ride")
           elseif a.kind ~= b.kind then
             local d = Dist(a.p, b.p)
-            if d < 400 then Edge(a, b, d / RIDE * OFFROAD, "ride") end   -- onto or off a road
+            if d < 400 then Edge(a, b, d / RIDE * OFFROAD + UnsafeAlong(a.p, b.p), "ride") end   -- onto or off a road
           end
         end
       end
@@ -960,7 +1021,10 @@ local function From(src, ground)
       local o = open[n.zone]
       if o == nil then o = Open(src.map, n.zone); open[n.zone] = o end
       if o then
-        dist[n.i] = Dist(src, n.p) / RIDE * (n.zone == src.map and Ride(src.map) or UNKNOWN)
+        local d = Dist(src, n.p)
+        -- Safe routing: rides off to a nearby place are checked for mobs too high for you (far ones aren't: a
+        -- long straight ride from where you stand is seldom the way anyway, and checking each would be slow)
+        dist[n.i] = d / RIDE * (n.zone == src.map and Ride(src.map) or UNKNOWN) + (d <= 2000 and UnsafeAlong(src, n.p) or 0)
         Push(dist[n.i], n.i)
       end
     end
@@ -1030,6 +1094,7 @@ end
 function Time(a, b)
   if not (a and b) then return 600 end
   if nodes and builtLevel ~= PlayerLevel() then T.Reset() end   -- a new level: danger is judged afresh
+  if nodes and builtSafe ~= T.SafeOn() then T.Reset() end        -- Safe routing turned on or off
   if nodes and math.abs((MountSpeed() or DEFAULT_RIDE) - builtSpeed) > 0.3 then T.Reset() end   -- a faster (or slower) mount
   if not nodes then T.Build() end
   -- straight there, or over the known roads, ships and flights and then straight to the stop
@@ -1040,6 +1105,7 @@ function Time(a, b)
   if walk then best = walk / RIDE * math.max(Ride(a.map), Ride(b.map))
   elseif walk == false then best = nil       -- no way on foot: only roads, flights and ships
   else best = (a.inst == b.inst and Direct(a.map, b.map)) and Dist(a, b) / RIDE * (a.map == b.map and Ride(a.map) or UNKNOWN) or nil end
+  if best then best = best + UnsafeAlong(a, b) end   -- Safe routing (the walk is judged by its straight line)
   local via
   local r = From(a)
   -- the ground way is known (Shortest Path Forever): a route that stays on the ground (roads, crossings, rides) beats
@@ -1072,7 +1138,7 @@ function Time(a, b)
       local o = open[n.zone]
       if o == nil then o = Open(b.map, n.zone); open[n.zone] = o end
       if o then
-        local ride = Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN)
+        local ride = Dist(n.p, b) / RIDE * (n.zone == b.map and Ride(b.map) or UNKNOWN) + UnsafeAlong(n.p, b)
         local d = r.dist[n.i]
         if d and walk and not Carried(n.i) then d = nil end
         if d and (not best or d + ride < best) then best, via, from = d + ride, n, r end

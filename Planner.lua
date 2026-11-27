@@ -439,7 +439,8 @@ local function Candidates(zoneOnly)
     if Done(w.q) then why = "done today"
     elseif not c then why = "customer unknown"
     elseif not c.exact and not zoneOnly then why = "only the zone is known"
-    elseif not QuickOK(c) then why = "not next to a flight path you have (Quick)" end
+    elseif not QuickOK(c) then why = "not next to a flight path you have (Quick)"
+    else why = Travel.SafeWhy(c) and "too dangerous for your level (Safe routing)" end
     local cost, have, need
     if not why then cost, have = Cost(id); if not cost then why = have end end
     if why then skipped[#skipped + 1] = { id = id, why = why }
@@ -593,6 +594,8 @@ local function PlanOwned(only, skipQuest, planned, ready, priced)   -- priced: p
       later[#later + 1] = { id = id, w = w, why = "its item (" .. (ItemName(w.req) or "the item") .. ") isn't on the auction house" }
     elseif not QuickOK(c) then
       later[#later + 1] = { id = id, w = w, why = "not next to a flight path you have (Quick)" }
+    elseif Travel.SafeWhy(c) then
+      later[#later + 1] = { id = id, w = w, why = Travel.SafeWhy(c) .. ": turn Safe off to go there" }
     else
       local cost, _, need = Cost(id)
       local stop = { id = id, w = w, rep = REP[w.tier] or 0, c = c, pos = Pos(c.map, c.x, c.y),
@@ -1249,6 +1252,12 @@ local function PlaceHearth()
   hearthChk:SetChecked(not (WritPathChar and WritPathChar.noHearth))
 end
 PlaceHearth()
+-- Safe routing (per character, WritPathChar.safe; also /writs safe): see Travel.lua's T.SafeWhy
+hearthChk.safe = CreateFrame("CheckButton", nil, buyRow, "UICheckButtonTemplate"); hearthChk.safe:SetSize(22, 22)
+hearthChk.safe:SetPoint("LEFT", hearthL, "RIGHT", 8, 0)
+hearthChk.safeL = Text(buyRow); hearthChk.safeL:SetPoint("LEFT", hearthChk.safe, "RIGHT", 2, 0)
+hearthChk.safeL:SetText("Safe"); hearthChk.safeL:SetWordWrap(false)
+hearthChk.safe:SetChecked(WritPathChar and WritPathChar.safe and true or false)
 for _, w in ipairs({ repBox, planBtn }) do
   w:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Plan")
@@ -1459,7 +1468,7 @@ local function ApplySkin(S)
   S.CloseButton(closeX)
   for _, btn in ipairs(buttons) do S.Button(btn); if S.StateButtonLabel then S.StateButtonLabel(btn) end end
   S.EditBox(repBox, { padInput = true })
-  if S.Checkbox then for _, chk in ipairs({ bagsChk, hearthChk, flyChk }) do if not chk.wpSkinned then chk.wpSkinned = true; S.Checkbox(chk) end end end
+  if S.Checkbox then for _, chk in ipairs({ bagsChk, hearthChk, hearthChk.safe, flyChk }) do if not chk.wpSkinned then chk.wpSkinned = true; S.Checkbox(chk) end end end
   for _, c in pairs(cards) do S.Panel(c, { inset = true }) end
   if Bar() and S.ScrollBar then S.ScrollBar(Bar()) end
   for _, fs in ipairs(fonts) do S.Font(fs) end
@@ -2143,6 +2152,27 @@ end)
 hearthChk:SetScript("OnLeave", function() GameTooltip:Hide() end)
 WritPath_HearthCheck = hearthChk   -- for tests
 if skin and skin.Checkbox and not hearthChk.wpSkinned then hearthChk.wpSkinned = true; skin.Checkbox(hearthChk) end
+-- Safe routing on or off (1.20.0): the shown plan (and a route under way) is planned again
+function WritPath_SetSafe(on)
+  WritPathChar = WritPathChar or {}
+  WritPathChar.safe = on or nil
+  hearthChk.safe:SetChecked(on and true or false)
+  if WritPath_RouteActive and WritPath_RouteActive() and WritPath_RerouteNow then WritPath_RerouteNow("safe routing " .. (on and "on" or "off"), true) end
+end
+hearthChk.safe:SetScript("OnShow", function(self) self:SetChecked(WritPathChar and WritPathChar.safe and true or false) end)
+hearthChk.safe:SetScript("OnClick", function(self)
+  WritPath_SetSafe(self:GetChecked() and true or false)
+  DoPlan()
+end)
+hearthChk.safe:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText("Safe routing")
+  GameTooltip:AddLine(("On: every plan leaves out customers with mobs more than %d levels above you nearby, and routes go round roads with such mobs wherever there's another way. Flights and boats are always fine."):format(Travel.SAFE_LEVELS or 5), 1, 1, 1, true)
+  GameTooltip:AddLine("Off: any customer, by the quickest way (you're still warned about danger on the way).", 1, 1, 1, true)
+  GameTooltip:AddLine("Mob levels come from what WritPath players saw from the road; where nobody has been, the zone's level range.", 0.7, 0.7, 0.7, true)
+  GameTooltip:Show()
+end)
+hearthChk.safe:SetScript("OnLeave", function() GameTooltip:Hide() end)
+if skin and skin.Checkbox and not hearthChk.safe.wpSkinned then hearthChk.safe.wpSkinned = true; skin.Checkbox(hearthChk.safe) end
 flyChk:SetScript("OnShow", function(self) self:SetChecked(WritPathNav and WritPathNav.autoFly and true or false) end)
 flyChk:SetScript("OnClick", function(self) WritPath_SetAutoFly(self:GetChecked() and true or false) end)
 flyChk:SetScript("OnEnter", function(self)

@@ -1147,12 +1147,19 @@ SlashCmdList.WRITPATH = function(msg)
       .. (WritPathNav.noShare and " |cFFAAAAAA(off now)|r" or ""))
     Print("  |cFFFFD100/writs hearth|r  turn off (or back on) using your Hearthstone in plans, for this character"
       .. ((WritPathChar and WritPathChar.noHearth) and " |cFFAAAAAA(off now)|r" or ""))
+    Print("  |cFFFFD100/writs safe|r  turn on (or off) Safe routing for this character: no customers or roads with mobs more than 5 levels above you"
+      .. ((WritPathChar and WritPathChar.safe) and " |cFFAAAAAA(on now)|r" or ""))
   elseif msg == "runs" then WritPath_RunReport()
   elseif msg == "hearth" then
     local on = WritPathChar and WritPathChar.noHearth   -- off now: turn it on
     if WritPath_SetHearth then WritPath_SetHearth(on and true or false) end
     Print(on and "Plans may use your Hearthstone again where it saves time."
       or "Plans no longer use your Hearthstone (Astral Recall and teleport spells still count).")
+  elseif msg == "safe" then
+    local on = not (WritPathChar and WritPathChar.safe)
+    if WritPath_SetSafe then WritPath_SetSafe(on) else WritPathChar = WritPathChar or {}; WritPathChar.safe = on or nil end
+    Print(on and "Safe routing on: plans leave out customers with mobs more than 5 levels above you nearby, and routes go round roads with them where they can."
+      or "Safe routing off: plans use every customer, by the quickest way.")
   elseif msg == "autofly" then
     WritPath_SetAutoFly(not WritPathNav.autoFly)
     Print(WritPathNav.autoFly and "Auto-fly on: at the flight master the guide sends you to, you take off for its next stop (hold Shift to choose yourself)."
