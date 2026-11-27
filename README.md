@@ -234,7 +234,7 @@ window's header Plan (map), Report (bag), Discord (its logo) and Clear (red X). 
 | `/writs travel` | Which flight paths, roads and ships WritPath knows (when a route walks everywhere) |
 | `/writs leg` | Why the way to the next customer looks the way it does (to report a bad route) |
 | `/writs discord` | The WritPath Discord's invite link, selected so Ctrl+C copies it |
-| `/writs export` | Your learned roads and customer spots as text, selected for Ctrl+C, to paste in the Discord's #share-your-data |
+| `/writs export` | Your learned roads, customer spots and route timings as text, selected for Ctrl+C, to paste in the Discord's #share-your-data |
 | `/writs share` | Turn off (or back on) sharing what you learn with WritPath's author (see below) |
 | `/writs help` | This list, in game |
 
@@ -265,6 +265,8 @@ it and ships the good parts to everyone in later versions.
 **Not reaching anyone?** If you play alone or few WritPath players are around you, type `/writs export`: it shows the same
 records (yours, and what others passed on to you, still under random ids) selected for Ctrl+C. Paste them in the
 WritPath Discord's #share-your-data channel; a long paste becomes a file, which is fine.
+It also holds your finished routes, timed stop by stop against the planner's estimate, so slow legs can be found and
+fixed. Those are only in the export, never passed on in game.
 
 `/writs share` turns all of this off (and back on).
 

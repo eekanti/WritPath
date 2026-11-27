@@ -338,6 +338,45 @@ end))
 --   WritPath export <version> <time>
 --   X:<id>:rec;rec;...   (one contributor's records, lines kept short)
 --   E:<count>            (every record above; a paste cut short is told apart by it)
+-- Your finished runs (1.19.7), export only: never passed on in game. U = a run, S = one of its stops in the planned
+-- order: when it was handed in (k-th, 0 = not), the planner's seconds for the leg to it and the real ones.
+-- U,start,mode,writs,done,est,travel,buying,pace version,from map,x,y
+-- S,start,i,k,quest,map,x,y,est,real,teleport
+local MODES = { cheap = true, fast = true, mine = true, quick = true }
+local RUNCHECK = {
+  U = function(f) return #f == 12 and N(f[2], 1, 4e9) and MODES[f[3]] and N(f[4], 0, 99) and N(f[5], 0, 99) and N(f[6], 0, 1e6)
+                     and N(f[7], 0, 1e6) and (f[8] == "-" or N(f[8], 0, 1e6)) and N(f[9], 0, 99)
+                     and ((f[10] == "-" and f[11] == "-" and f[12] == "-") or (Map(f[10]) and XY(f[11], f[12]))) end,
+  S = function(f) return #f == 11 and N(f[2], 1, 4e9) and N(f[3], 1, 99) and N(f[4], 0, 99) and N(f[5], 1, 999999)
+                     and Map(f[6]) and XY(f[7], f[8]) and N(f[9], 0, 1e6) and (f[10] == "-" or N(f[10], 0, 1e6))
+                     and (f[11] == "-" or f[11]:match("^%w+$") ~= nil) end,
+}
+local function ValidRun(rec)
+  if type(rec) ~= "string" or #rec > 200 or rec:find("[|;]") then return false end
+  local f = {}
+  for part in (rec .. ","):gmatch("([^,]*),") do f[#f + 1] = part end
+  local c = RUNCHECK[f[1]]
+  return (c and c(f)) and true or false
+end
+WritPath_ShareValidRun = ValidRun   -- for tests and the collector's import
+local function RunRecords()
+  local out = {}
+  for _, r in ipairs(WritPathNav and WritPathNav.runs or {}) do
+    if r.stops and #r.stops > 0 and r.start then
+      out[#out + 1] = ("U,%d,%s,%d,%d,%d,%d,%s,%d,%s"):format(r.start, r.quick and "quick" or (r.mode or "cheap"), r.writs or 0,
+        r.done or 0, math.floor((r.est or 0) + 0.5), math.floor((r.travel or 0) + 0.5),
+        r.boughtAt and tostring(r.boughtAt - r.start) or "-", r.pv or 0, r.from or "-,-,-")
+      for i, st in ipairs(r.stops) do
+        if st.map and st.x and st.y then
+          out[#out + 1] = ("S,%d,%d,%d,%d,%d,%.1f,%.1f,%d,%s,%s"):format(r.start, i, st.k or 0, st.q or 0, st.map, st.x, st.y,
+            st.est or 0, st.real and tostring(math.floor(st.real + 0.5)) or "-", st.tp or "-")
+        end
+      end
+    end
+  end
+  return out
+end
+
 local function ExportText()
   local lines, count = { ("WritPath export %s %d"):format(WritPath_VERSION or "?", time()) }, 0
   local function Add(id, list)
@@ -358,8 +397,18 @@ local function ExportText()
   for id in pairs(by) do ids[#ids + 1] = id end
   table.sort(ids)
   for _, id in ipairs(ids) do table.sort(by[id]); Add(id, by[id]) end
+  -- your runs, on T: lines (an older import reads only X: lines and the E: count, which leaves them out)
+  local body, runs = "", 0
+  for _, r in ipairs(RunRecords()) do
+    if ValidRun(r) then
+      if body ~= "" and #body + #r + 1 > MAXLEN then lines[#lines + 1] = "T:" .. MyId() .. ":" .. body; body = "" end
+      body = body == "" and r or body .. ";" .. r
+      if r:sub(1, 1) == "U" then runs = runs + 1 end
+    end
+  end
+  if body ~= "" then lines[#lines + 1] = "T:" .. MyId() .. ":" .. body end
   lines[#lines + 1] = "E:" .. count
-  return table.concat(lines, "\n"), count
+  return table.concat(lines, "\n"), count, runs
 end
 WritPath_ShareExportText = ExportText   -- for tests
 
@@ -400,14 +449,15 @@ local function BuildExport()
 end
 
 function WritPath_ShareExport()
-  local text, n = ExportText()
+  local text, n, runs = ExportText()
   local P = function(m) DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WritPath|r " .. m) end
-  if n == 0 then P("Nothing to export yet: WritPath hasn't learned any roads, paths or customer spots on this account."); return end
+  if n == 0 and runs == 0 then P("Nothing to export yet: WritPath hasn't learned any roads, paths or customer spots on this account."); return end
   BuildExport()
   exText = text
   exBox:SetText(text)
   exWin:Show(); exWin:Raise()
   exBox:SetFocus(); exBox:HighlightText()
-  P(("%d records are selected: press |cFFFFD100Ctrl+C|r, then paste them in the WritPath Discord's |cFFFFD100#share-your-data|r (Discord makes a long paste a file, which is fine). No names, gold or items are in it."):format(n))
+  P(("%d records%s are selected: press |cFFFFD100Ctrl+C|r, then paste them in the WritPath Discord's |cFFFFD100#share-your-data|r (Discord makes a long paste a file, which is fine). No names, gold or items are in it."):format(n,
+    runs > 0 and (" and %d run%s (each stop's planned and real time)"):format(runs, runs == 1 and "" or "s") or ""))
 end
 WritPath_ShareExportInternals = { Win = function() return exWin end, Box = function() return exBox end }   -- for tests

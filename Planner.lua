@@ -1530,6 +1530,17 @@ local function StartRun(plan)
   WritPathNav.run = { start = time(), est = plan.secs or 0, writs = #plan.route, rep = 0, done = 0, pv = PACE_V, idle = 0,
                       quick = plan.quick or nil, mode = plan.mine and "mine" or (WritPathNav.planChoice or "cheap"), ids = {} }
   for _, p in ipairs(plan.route) do WritPathNav.run.ids[p.w.q] = REP[p.w.tier] or 0 end
+  -- each stop's planned time (1.19.7): the leg from the stop before (or where you planned), less a teleport the plan
+  -- puts on it; each hand-in adds its real time, so /writs export can show where a route lost its time
+  local run, prev = WritPathNav.run, plan.start
+  run.stops = {}
+  if prev and prev.map then run.from = ("%d,%.1f,%.1f"):format(prev.map, prev.x or 0, prev.y or 0) end
+  for i, p in ipairs(plan.route) do
+    local tp, c = plan.tele and plan.tele[i], p.c or {}
+    run.stops[i] = { q = p.w.q, map = c.map, x = c.x, y = c.y, tp = tp and tp.tp and tp.tp.key or nil,
+                     est = math.max(0, math.floor(Secs(prev, p.pos) + 20 - (tp and tp.save or 0) + 0.5)) }
+    prev = p.pos
+  end
 end
 -- buying ends when you close the auction house
 function WritPath_RunBought()
@@ -1575,6 +1586,13 @@ local function RunTurnin(q)
   local run = WritPathNav and WritPathNav.run
   if not (run and run.ids and run.ids[q]) then return end
   run.done = (run.done or 0) + 1
+  for _, st in ipairs(run.stops or {}) do   -- this stop's real time: since the hand-in before, less standing still
+    if st.q == q and not st.k then
+      st.k = run.done
+      st.real = math.max(0, time() - (run.last or run.boughtAt or run.start) - ((run.idle or 0) - (run.idleAtLast or 0)))
+      break
+    end
+  end
   run.rep = (run.rep or 0) + run.ids[q]
   run.last = time()
   run.idleAtLast = run.idle or 0   -- standing still after the last hand-in isn't part of the run
