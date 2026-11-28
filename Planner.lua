@@ -131,7 +131,8 @@ end
 -- It's saved for the writ and for its customer, so every writ that customer takes gets the exact spot.
 local turnin
 local function NoteTurnin()
-  local name = UnitName("npc") or UnitName("target")
+  -- the name can be secret (the game hides it in some places): then nothing is learned here
+  local name = UnitName and (WritPath_Text(UnitName("npc")) or WritPath_Text(UnitName("target")))
   local here = WritPath_Travel.PlayerPoint()
   if name and here then turnin = { npc = name, map = here.map, x = here.x, y = here.y, at = GetTime() } end
 end
@@ -2363,7 +2364,9 @@ ev:RegisterEvent("TAXIMAP_OPENED")
 ev:SetScript("OnEvent", WritPath_Timed("planner events", function(_, event, a1)
   -- the camp's crate takers: every finished quest handed in there (Sealed crates, the camp's own quests)
   local CAMP = { ["Dokimi"] = true, ["Marcy Baker"] = true }
-  local function AtCamp() local n = UnitName and (UnitName("npc") or UnitName("target")); return n and CAMP[n] or false end
+  local function AtCamp()   -- a secret name (the game hides some) is not the camp
+    local n = UnitName and (WritPath_Text(UnitName("npc")) or WritPath_Text(UnitName("target"))); return n and CAMP[n] or false
+  end
   local function CrateTitle(t) return t and (t:find("Crate") or t:find("Shipping Container")) and true or false end
   if event == "QUEST_COMPLETE" or event == "QUEST_PROGRESS" then
     NoteTurnin()   -- first: who you're handing in to, and where
