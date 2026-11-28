@@ -342,7 +342,7 @@ end))
 -- order: when it was handed in (k-th, 0 = not), the planner's seconds for the leg to it and the real ones.
 -- U,start,mode,writs,done,est,travel,buying,pace version,from map,x,y
 -- S,start,i,k,quest,map,x,y,est,real,teleport
-local MODES = { cheap = true, fast = true, mine = true, quick = true }
+local MODES = { cheap = true, optimized = true, fast = true, mine = true, quick = true }   -- every mode a run can have (Planner.lua StartRun)
 local RUNCHECK = {
   U = function(f) return #f == 12 and N(f[2], 1, 4e9) and MODES[f[3]] and N(f[4], 0, 99) and N(f[5], 0, 99) and N(f[6], 0, 1e6)
                      and N(f[7], 0, 1e6) and (f[8] == "-" or N(f[8], 0, 1e6)) and N(f[9], 0, 99)
